@@ -1,0 +1,61 @@
+name: בדיקות לסוכן השיחות
+
+# מחקר לסוכן ניתוח השיחות (#20). קריאה בלבד: מסמכי ה-API של הבוט, מבנה הטבלה, ומה יש בשרת.
+# בלי מפתחות של הבוט ובלי פרטים של לידים. רץ ידנית, או כשהקובץ .github/run-agent-probe משתנה.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/run-agent-probe']
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: מסמכי ה-API של UChat
+        continue-on-error: true
+        run: python3 scripts/agent-probe.py api https://www.uchat.com.au/api
+      - name: מסמכי ה-API של CloudChat
+        continue-on-error: true
+        run: python3 scripts/agent-probe.py api https://console.thecloud.chat/api
+      - name: מבנה הטבלה
+        continue-on-error: true
+        run: python3 scripts/agent-probe.py sheet 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים'
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: התקנת sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: מה יש בשרת בשביל הסוכן (קריאה בלבד)
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then
+            echo "::error::חסרים סודות: SERVER_HOST, SERVER_USER, SERVER_PASSWORD"; exit 1
+          fi
+          OUT=$(sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20 "$USER@$HOST" '
+            echo "== שעון"; date "+%Y-%m-%d %H:%M %Z (%z)"; cat /etc/timezone 2>/dev/null
+            echo "== cron"
+            if command -v crontab >/dev/null; then
+              E=$(crontab -l 2>&1 >/dev/null); C=$?
+              if [ $C -eq 0 ]; then echo "crontab עובד, משימות פעילות: $(crontab -l 2>/dev/null | grep -cvE "^[[:space:]]*(#|$)")"
+              elif echo "$E" | grep -qi "no crontab"; then echo "crontab עובד, אין משימות"
+              else echo "crontab נכשל: $(echo "$E" | head -1 | sed "s/$(whoami)/<user>/g")"; fi
+            else echo "אין crontab"; fi
+            echo "== PHP בשורת הפקודה"; php -v | head -1
+            php -m 2>/dev/null | grep -ixE "curl|openssl|json|mbstring|sodium|sqlite3|pdo_sqlite" | tr "\n" " "; echo
+            php -r "echo \"max_execution_time=\", ini_get(\"max_execution_time\"), \" memory_limit=\", ini_get(\"memory_limit\"), PHP_EOL;"
+            echo "== תיקיית הבית"; [ -w "$HOME" ] && echo "אפשר לכתוב מחוץ לאתר" || echo "אי אפשר לכתוב"
+            echo "== יציאה לשירותים (בלי מפתח, מצפים ל-401 או 404)"
+            for u in https://console.thecloud.chat/api/flow/tags https://www.uchat.com.au/api/flow/tags https://api.anthropic.com/v1/models https://api.openai.com/v1/models https://sheets.googleapis.com/v4/spreadsheets/x https://oauth2.googleapis.com/token https://script.google.com/; do
+              printf "%s -> " "$u"; curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$u"; echo
+            done
+          ' 2>&1) || { echo "::error::החיבור נכשל: $(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          echo "$OUT"
+          echo "$OUT" | python3 scripts/agent-probe.py notice 'שרת לסוכן'
