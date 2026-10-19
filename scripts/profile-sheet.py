@@ -95,3 +95,30 @@ x = collections.Counter((s or '(ריק)', (q.lower() or '(ריק)')) for s, q in
 out.append('סטטוס מול סטטוס שאלון: ' + '; '.join(f'{a}/{b} ({v})' for (a, b), v in x.most_common(12)))
 
 print('\n'.join(out))
+
+# בדיקת כלל הכפילויות: מה יש בשורה שנזרקת לעומת זו שנשארת
+WIN = 10
+qi, ai, pi = h.index('סטטוס שאלון'), h.index('סכום ששולם'), h.index('מוצר שנקנה')
+cmp = collections.Counter()
+for v in groups.values():
+    v = sorted(v, key=lambda i: (pd[i], i))
+    cl = [v[0]]
+    def judge(cl):
+        if len(cl) < 2:
+            return
+        keep = max(cl, key=lambda i: (filled[i], -i))
+        for d in cl:
+            if d == keep:
+                continue
+            kq, dq = data[keep][qi].strip().lower(), data[d][qi].strip().lower()
+            ka, da = data[keep][ai].strip(), data[d][ai].strip()
+            same = all(data[keep][j].strip() == data[d][j].strip() for j in range(len(h)) if j not in (h.index('קוד מזהה'), h.index('לינק לשיחה')))
+            tag = 'זהות לגמרי' if same else f'נשארת {kq or "ריק"}/{"סכום" if ka else "בלי"} מול נזרקת {dq or "ריק"}/{"סכום" if da else "בלי"}'
+            cmp[tag] += 1
+    for a, b in zip(v, v[1:]):
+        if (pd[b] - pd[a]).total_seconds() <= WIN:
+            cl.append(b)
+        else:
+            judge(cl); cl = [b]
+    judge(cl)
+print('כפילויות לפי הכלל (10 שניות): ' + '; '.join(f'{k} ({c})' for k, c in cmp.most_common(12)))
