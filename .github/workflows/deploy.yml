@@ -1,6 +1,6 @@
 name: פריסה לשרת
 
-# הפריסה האוטומטית כבויה: הסודות הצביעו על שרת לא נכון (2026-10-19).
+# הפריסה האוטומטית כבויה עד שיוגדר שרת היעד.
 # מחזירים את push רק אחרי שהמנהל אישר שהשרת בסודות הוא השרת הנכון. ראו docs/ENVIRONMENTS.md.
 on:
   workflow_dispatch:
@@ -36,7 +36,7 @@ jobs:
                '[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null; command -v node >/dev/null'; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::אין Node אצל המשתמש בשרת, הפריסה מדולגת. צריך אתר Node.js ב-CloudPanel, ראו docs/ENVIRONMENTS.md"
+            echo "::warning::אין Node 20 ומעלה אצל המשתמש בשרת, הפריסה מדולגת. ראו docs/ENVIRONMENTS.md"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4

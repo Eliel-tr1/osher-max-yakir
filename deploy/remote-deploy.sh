@@ -8,7 +8,7 @@ BASE="$HOME/apps/$APP"
 REL="$1"
 PORT_APP="${APP_PORT:-3100}"
 
-# CloudPanel מתקין Node לכל אתר Node.js דרך nvm של משתמש האתר
+# אם Node מותקן דרך nvm של המשתמש, טוענים אותו
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null
 
 if ! command -v node >/dev/null; then
