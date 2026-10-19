@@ -15,6 +15,7 @@ on:
       - '.github/workflows/ci.yml'
       - '.github/workflows/profile-sheet.yml'
       - 'scripts/profile-sheet.py'
+      - '.github/workflows/refresh-data.yml'
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,8 @@ concurrency:
 
 env:
   SITE_URL: https://ai.vitrue.co.il/oshermax/
+  SHEET_ID: 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU
+  SHEET_TAB: לידים
 
 jobs:
   deploy:
@@ -53,6 +56,8 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         run: |
           npm ci
+          # הנתונים האמיתיים נבנים לפני הבנייה. אם הטבלה לא נקראת או שמבנה עמודה השתנה, הפריסה נעצרת
+          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --tab "$SHEET_TAB"
           npm run check
       - name: אריזה
         if: steps.gate.outputs.ready == 'true'

@@ -1,8 +1,8 @@
-import type { Lead, LeadStatus, Process, QuestionnaireStatus } from './types';
+import type { Lead, LeadsFile } from './types';
 
 /**
- * נתוני הדגמה מומצאים לגמרי. אין כאן אף ליד אמיתי.
- * הם נוצרים מאותו זרע בכל פעם, כדי שהבדיקות והצילומים יהיו יציבים.
+ * נתוני הדגמה מומצאים לגמרי, באותו מבנה כמו הטבלה האמיתית. אין כאן אף ליד אמיתי.
+ * אותו זרע בכל פעם, כדי שהבדיקות והצילומים יהיו יציבים.
  */
 function seeded(seed: number) {
   let s = seed >>> 0;
@@ -12,36 +12,54 @@ function seeded(seed: number) {
   };
 }
 
-const STATUSES: LeadStatus[] = ['ליד חדש', 'אין מענה', 'עבר', 'לא עבר', null, null];
-const PROCESSES: Process[] = ['תהליך ראשי', 'תהליך ראשי', 'הרשמה לאתגר', "צ'אטבוט"];
-const PRODUCTS = ['אתגר 21 יום', 'ליווי אישי', 'סדנה מקוונת'];
+const PRODUCTS: [string, number[]][] = [
+  ['Demo Plan A', [29, 49, 99]],
+  ['Demo Plan B', [5, 9]],
+  ['Demo Plan C', [149, 299, 599]],
+  ['Demo Plan D', [87, 167]],
+];
+const TESTS = ['Demo Test 20K', 'Demo Test 100K', 'Demo Test 200K', 'Demo Access 50K', 'Demo Instant 20K'];
+const PROCESSES = ['תהליך ראשי', 'תהליך ראשי', 'תהליך ראשי', 'הרשמה לאתגר'];
 
-export function demoLeads(count = 180, until = new Date('2026-10-19T12:00:00+03:00')): Lead[] {
+export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00+03:00')): LeadsFile {
   const rnd = seeded(20261019);
-  const out: Lead[] = [];
-  const spanMs = 45 * 24 * 60 * 60 * 1000;
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+  const spanMs = 75 * 24 * 60 * 60 * 1000;
+  const leads: Lead[] = [];
   for (let i = 0; i < count; i++) {
-    const enteredAt = new Date(until.getTime() - Math.floor(rnd() * spanMs));
-    const answered = rnd() < 0.55;
+    // יותר לידים לקראת הסוף, כמו בצמיחה אמיתית
+    const at = new Date(until.getTime() - Math.floor(rnd() ** 1.6 * spanMs));
+    const answered = rnd() < 0.6;
     const step = answered ? Math.floor(rnd() * 11) : null;
-    let qs: QuestionnaireStatus = null;
-    if (answered && step !== null) {
-      qs = step >= 10 ? 'finished' : step > 0 ? 'started' : null;
-      if (qs === 'finished' && rnd() < 0.35) qs = rnd() < 0.5 ? 'payment' : 'converted';
-    }
-    const paid = qs === 'converted';
-    out.push({
-      id: `DEMO-${String(i + 1).padStart(4, '0')}`,
-      enteredAt,
-      status: STATUSES[Math.floor(rnd() * STATUSES.length)],
-      answeredChatbot: answered,
-      questionnaireStep: step,
-      questionnaireStatus: qs,
-      process: PROCESSES[Math.floor(rnd() * PROCESSES.length)],
+    let qStatus: string | null = null;
+    if (answered && step !== null && step > 0) qStatus = step >= 9 ? 'finished' : 'started';
+    if (qStatus === 'finished') qStatus = rnd() < 0.55 ? 'converted' : rnd() < 0.6 ? 'payment' : 'finished';
+    const [name, prices] = pick(PRODUCTS);
+    const converted = qStatus === 'converted';
+    const payment = qStatus === 'payment';
+    leads.push({
+      at: at.toISOString(),
+      source: "אורגני - צ'אטבוט וואטסאפ",
+      process: pick(PROCESSES),
+      status: answered ? (rnd() < 0.2 ? 'עבר' : 'לא עבר') : null,
+      qStatus,
+      answered,
+      step,
       score: answered ? Math.round(rnd() * 70) : null,
-      product: paid ? PRODUCTS[Math.floor(rnd() * PRODUCTS.length)] : null,
-      amountPaid: paid ? [297, 990, 2400][Math.floor(rnd() * 3)] : null,
+      test: converted || (payment && rnd() < 0.3) ? pick(TESTS) : null,
+      product: payment ? name : null,
+      amount: converted || payment ? pick(prices) : null,
+      removedAt: rnd() < 0.01 ? new Date(at.getTime() + 3600_000).toISOString() : null,
     });
   }
-  return out.sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime());
+  leads.sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    version: 1,
+    origin: 'demo',
+    generatedAt: until.toISOString(),
+    sheetRows: count + 37,
+    duplicatesRemoved: 37,
+    skippedRows: 0,
+    leads,
+  };
 }

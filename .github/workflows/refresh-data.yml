@@ -1,0 +1,58 @@
+name: עדכון נתונים
+
+# כל 5 דקות: קורא את לשונית הלידים, מנקה כפילויות ופרטים אישיים, ומעלה לשרת רק את קובץ הנתונים.
+# גיטהאב לא מבטיח דיוק בזמנים: לפעמים ריצה מתעכבת בכמה דקות.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://ai.vitrue.co.il/oshermax/
+  SHEET_ID: 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU
+  SHEET_TAB: לידים
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+      HOST: ${{ secrets.SERVER_HOST }}
+      USER: ${{ secrets.SERVER_USER }}
+      PORT: ${{ secrets.SERVER_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: קריאת הטבלה
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --tab "$SHEET_TAB" --out leads.json
+      - name: העלאה לשרת
+        run: |
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then echo "::error::חסרים סודות של השרת"; exit 1; fi
+          sudo apt-get install -y -qq sshpass >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq sshpass)
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
+          STATE=.cache/osher-max-dashboard
+          sshpass -e scp -P "${PORT:-22}" $OPTS leads.json "$USER@$HOST:$STATE/leads-upload.json"
+          sshpass -e scp -P "${PORT:-22}" $OPTS deploy/static-deploy.sh "$USER@$HOST:$STATE/static-deploy.sh"
+          sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "bash ~/$STATE/static-deploy.sh data ~/$STATE/leads-upload.json"
+      - name: הכתובת מציגה את הנתונים החדשים?
+        run: |
+          WANT=$(grep -o '"generatedAt":"[^"]*"' leads.json)
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "${SITE_URL}data/leads.json?t=$(date +%s)" | head -c 300 | grep -qF "$WANT"; then
+              echo "::notice title=עדכון נתונים::$(head -c 200 leads.json | grep -o '"sheetRows":[0-9]*'), $WANT"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::הנתונים עלו לשרת, אבל הכתובת לא מציגה אותם"
+          exit 1

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# רץ על השרת אחרי כל העלאה: מחליף את התיקייה oshermax באתר בגרסה החדשה.
-# שימוש: static-deploy.sh <גרסה> <קובץ-ההעלאה>
+# רץ על השרת אחרי כל העלאה.
+#   static-deploy.sh <גרסה> <קובץ-ההעלאה>   מחליף את התיקייה oshermax באתר בגרסה חדשה של הדשבורד
+#   static-deploy.sh data <leads.json>       מחליף רק את קובץ הנתונים (כל 5 דקות)
 #
 # באתר יש פרויקטים חיים אחרים. הסקריפט נוגע רק ב:
 #   <האתר>/oshermax                      - הדשבורד עצמו
@@ -25,6 +26,19 @@ fail() { echo "$1" >&2; rm -f "$ARCHIVE"; exit 1; }
 [ -w "$SITE" ] || fail "אין הרשאת כתיבה לתיקיית האתר. לא נגעתי בכלום."
 if [ -L "$TARGET" ] || { [ -e "$TARGET" ] && [ ! -f "$TARGET/$MARK" ]; }; then
   fail "בתיקייה $NAME באתר יש משהו שלא אנחנו העלינו. לא נגעתי בה."
+fi
+
+if [ "$REL" = data ]; then
+  # עדכון נתונים בלבד: רק לתוך דשבורד שכבר באוויר, ורק קובץ שנראה תקין
+  [ -f "$TARGET/$MARK" ] || fail "הדשבורד עוד לא באוויר. לא נגעתי בכלום."
+  [ -s "$ARCHIVE" ] && head -c 200 "$ARCHIVE" | grep -q '"version":1' && grep -q '"leads":\[' "$ARCHIVE" \
+    || fail "קובץ הנתונים שהועלה לא תקין. הנתונים שבאוויר נשארו כמו שהם."
+  mkdir -p "$TARGET/data"
+  cp "$ARCHIVE" "$TARGET/data/.leads.json.tmp"
+  mv -f "$TARGET/data/.leads.json.tmp" "$TARGET/data/leads.json"
+  rm -f "$ARCHIVE"
+  echo "הנתונים עודכנו"
+  exit 0
 fi
 
 mkdir -p "$STATE"

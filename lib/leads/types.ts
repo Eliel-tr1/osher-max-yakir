@@ -1,28 +1,37 @@
-/** ליד אחד, אחרי ניקוי. רק השדות שהדשבורד צריך - בלי שם, טלפון ומייל. */
-export type LeadStatus = 'ליד חדש' | 'אין מענה' | 'עבר' | 'לא עבר' | null;
-
-export type QuestionnaireStatus = 'started' | 'finished' | 'payment' | 'converted' | null;
-
-export type Process = 'תהליך ראשי' | 'הרשמה לאתגר' | "צ'אטבוט" | null;
-
+/**
+ * ליד אחד אחרי ניקוי, כפי שהוא נשמר בקובץ הנתונים שעולה לשרת.
+ * בלי שם, טלפון, מייל, קישור לשיחה, קוד מזהה או הערות: הקובץ נגיש לכל מי שיש לו את הכתובת.
+ */
 export interface Lead {
-  id: string;
-  enteredAt: Date;
-  status: LeadStatus;
-  answeredChatbot: boolean;
-  questionnaireStep: number | null;
-  questionnaireStatus: QuestionnaireStatus;
-  process: Process;
+  /** תאריך כניסה, ISO */
+  at: string;
+  source: string | null;
+  process: string | null;
+  /** "סטטוס": ליד חדש / אין מענה / עבר / לא עבר */
+  status: string | null;
+  /** "סטטוס שאלון", באותיות קטנות: started / finished / payment / converted */
+  qStatus: string | null;
+  answered: boolean;
+  step: number | null;
   score: number | null;
+  /** "מבחן" */
+  test: string | null;
+  /** "מוצר שנקנה", null כשריק או "-" */
   product: string | null;
-  amountPaid: number | null;
+  amount: number | null;
+  /** "הסיר את עצמו?": בטבלה כתוב שם תאריך ההסרה */
+  removedAt: string | null;
 }
 
-/** מאיפה הגיעו הנתונים שמוצגים, כדי שהמסך תמיד יגיד את זה בבירור. */
-export type LeadsSource = 'demo' | 'sheet';
-
-export interface LeadsResult {
-  source: LeadsSource;
+export interface LeadsFile {
+  version: 1;
+  /** demo = נתוני הדגמה מומצאים; sheet = הטבלה האמיתית */
+  origin: 'demo' | 'sheet';
+  generatedAt: string;
+  /** שורות עם נתונים בטבלה, לפני ניקוי */
+  sheetRows: number;
+  duplicatesRemoved: number;
+  /** שורות בלי תאריך כניסה תקין */
+  skippedRows: number;
   leads: Lead[];
-  fetchedAt: Date;
 }

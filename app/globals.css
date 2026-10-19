@@ -1,35 +1,47 @@
 :root {
+  color-scheme: light;
   --bg: #f6f5f2;
   --surface: #ffffff;
+  --surface-2: #f1efea;
   --ink: #1d1b18;
   --ink-2: #57524a;
-  --ink-3: #8a847a;
+  --ink-3: #6f6a61;
   --line: #e4e0d8;
+  --grid: #ecebe6;
   --accent: #2f5d50;
-  --accent-soft: #e3ece8;
   --notice: #fff4d6;
   --notice-ink: #6b4e00;
+  --error: #fde8e7;
+  --error-ink: #8a1c17;
+  /* צבעי נתונים: פלטה מאומתת לראייה לקויה בצבעים (סדרה 1 ו-2 בלבד) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
   --radius: 14px;
   --font: system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --bg: #161513;
     --surface: #201f1c;
+    --surface-2: #2a2925;
     --ink: #f1eee8;
-    --ink-2: #bdb7ac;
-    --ink-3: #8d877d;
+    --ink-2: #c3beb4;
+    --ink-3: #a29c91;
     --line: #34322d;
+    --grid: #2e2d29;
     --accent: #8cc2b0;
-    --accent-soft: #1f2d28;
     --notice: #33290f;
     --notice-ink: #f0d58a;
+    --error: #3a1715;
+    --error-ink: #f6b4ae;
+    --series-1: #3987e5;
+    --series-2: #d95926;
   }
 }
 
 * { box-sizing: border-box; }
-
 html, body { margin: 0; }
 
 body {
@@ -41,78 +53,114 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.page {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 32px 16px 48px;
+button, input, select { font: inherit; color: inherit; }
+
+.page { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+
+.head { margin-bottom: 16px; }
+.head h1, .page > h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.head .sub { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
+
+.status { color: var(--ink-2); }
+
+.notice { background: var(--notice); color: var(--notice-ink); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 16px; font-size: 14px; }
+.notice.error { background: var(--error); color: var(--error-ink); }
+.notice.inline { margin: 0 0 14px; }
+
+/* סינון */
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 18px; margin-bottom: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+  padding: 6px 12px; font-size: 14px; cursor: pointer; min-height: 36px;
+}
+.chips button.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chips button:focus-visible, .barrow:focus-visible, .more:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.chips.small button { padding: 4px 10px; font-size: 13px; min-height: 32px; }
+.dates, .selects { display: flex; flex-wrap: wrap; gap: 10px; }
+.dates label, .selects label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.dates input, .selects select {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 10px; min-height: 36px; max-width: 260px;
 }
 
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px 24px;
-  margin-bottom: 20px;
-}
-
-.head h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
-
-.period { color: var(--ink-2); font-size: 15px; }
-
-.notice {
-  background: var(--notice);
-  color: var(--notice-ink);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  margin-bottom: 24px;
-  font-size: 15px;
-}
-
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.tile {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 18px 18px 16px;
-  min-width: 0;
-}
-
-.tile .label { color: var(--ink-2); font-size: 14px; margin: 0 0 6px; }
-
-.tile .value {
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  margin: 0;
-}
-
+/* מספרי מפתח */
+.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+.tile .label { color: var(--ink-2); font-size: 14px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tile .value { font-size: 32px; font-weight: 650; line-height: 1.1; margin: 0; }
 .tile .sub { color: var(--ink-3); font-size: 13px; margin: 8px 0 0; }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.tbc { font-size: 11px; background: var(--notice); color: var(--notice-ink); border-radius: 999px; padding: 1px 7px; }
 
-.next {
-  margin-top: 24px;
-  background: var(--surface);
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 20px;
-  color: var(--ink-2);
+/* כרטיסים */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; min-width: 0; }
+.card h2 { margin: 0 0 10px; font-size: 18px; }
+.card h3 { margin: 18px 0 8px; font-size: 15px; color: var(--ink-2); font-weight: 600; }
+.cardhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cardhead h2 { margin: 0; }
+.hint { margin: -4px 0 12px; color: var(--ink-3); font-size: 13px; }
+.empty { color: var(--ink-3); font-size: 14px; margin: 8px 0; }
+
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+.side { background: var(--surface-2); border-radius: 12px; padding: 14px 16px; position: sticky; top: 12px; }
+.side .label { margin: 0 0 10px; font-weight: 600; overflow-wrap: anywhere; }
+.side dl { margin: 0; display: grid; gap: 8px; }
+.side dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.side dt { color: var(--ink-2); }
+.side dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* עמודות */
+.chart { position: relative; }
+.chart svg { width: 100%; display: block; overflow: visible; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .tick { fill: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .cap { fill: var(--ink-2); font-size: 11px; font-weight: 600; }
+.tip {
+  position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; z-index: 2;
+  background: var(--ink); color: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  display: flex; flex-direction: column; gap: 2px; white-space: nowrap;
 }
+.tip i, .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-inline-end: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-2); margin-top: 6px; }
 
-.next h2 { margin: 0 0 6px; font-size: 17px; color: var(--ink); }
-.next p { margin: 0; }
+/* רשימה מדורגת */
+.barlist { display: grid; gap: 4px; }
+.barrow {
+  display: grid; grid-template-columns: minmax(90px, 220px) minmax(0, 1fr) 56px; gap: 10px; align-items: center;
+  background: none; border: 0; padding: 5px 6px; border-radius: 8px; text-align: start; width: 100%;
+}
+button.barrow { cursor: pointer; }
+button.barrow:hover, .barrow.on { background: var(--surface-2); }
+.barrow .name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barrow .track { height: 14px; display: block; }
+.barrow .fill { display: block; height: 100%; border-radius: 4px 0 0 4px; min-width: 2px; }
+.barrow .num { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.more { margin-top: 6px; background: none; border: 0; color: var(--series-1); cursor: pointer; padding: 4px 6px; font-size: 14px; }
 
-.foot { margin-top: 28px; color: var(--ink-3); font-size: 13px; }
+/* טבלת חום */
+.heat .scroll { overflow-x: auto; }
+.heat table { border-collapse: separate; border-spacing: 2px; font-size: 13px; min-width: 100%; }
+.heat th, .heat td { padding: 6px 8px; text-align: center; white-space: nowrap; border-radius: 4px; }
+.heat thead th { color: var(--ink-2); font-weight: 600; }
+.heat tbody th, .heat tfoot th { text-align: start; font-weight: 500; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.heat td { font-variant-numeric: tabular-nums; min-width: 64px; }
+.heat .total, .heat tfoot td { font-weight: 650; }
+.heat tfoot th, .heat tfoot td { border-top: 1px solid var(--line); }
+
+.foot { margin-top: 24px; color: var(--ink-3); font-size: 13px; }
+
+@media (max-width: 1000px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 @media (max-width: 760px) {
-  .page { padding-top: 20px; }
+  .page { padding-top: 18px; }
   .head h1 { font-size: 22px; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .tile { padding: 14px; }
-  .tile .value { font-size: 28px; }
+  .tile { padding: 12px; }
+  .tile .value { font-size: 26px; }
+  .split { grid-template-columns: 1fr; }
+  .side { position: static; }
+  .barrow { grid-template-columns: minmax(80px, 42%) minmax(0, 1fr) 44px; gap: 8px; }
+  .card { padding: 14px; }
 }
