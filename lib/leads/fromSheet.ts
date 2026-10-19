@@ -7,6 +7,11 @@ export const REQUIRED_COLUMNS = [
   'שלב בשאלון', 'סטטוס שאלון', 'שם תהליך', 'ניקוד לקוח', 'מבחן', 'מוצר שנקנה', 'סכום ששולם',
 ] as const;
 
+/** עמודות שהדשבורד משתמש בהן אם הן קיימות. בלעדיהן השדה פשוט ריק. */
+export const OPTIONAL_COLUMNS = ['אופן שיחה'] as const;
+
+type Column = (typeof REQUIRED_COLUMNS)[number] | (typeof OPTIONAL_COLUMNS)[number];
+
 /**
  * כפילות: אותו משתמש (טלפון, ובלי טלפון מייל) בשתי שורות שהפרש תאריך הכניסה ביניהן עד כמה שניות.
  * מהזוג נשארת השורה עם יותר תאים מלאים (החלטת המנהל, #13). שורות של אותו משתמש בהפרש גדול יותר
@@ -30,7 +35,7 @@ export function leadsFromRows(rows: string[][], generatedAt = new Date()): Leads
   const idx = new Map(header.map((h, i) => [h.trim(), i]));
   const missing = REQUIRED_COLUMNS.filter((c) => !idx.has(c));
   if (missing.length) throw new SheetShapeError(`חסרות עמודות בלשונית הלידים: ${missing.join(', ')}`);
-  const col = (r: string[], name: (typeof REQUIRED_COLUMNS)[number]) => (r[idx.get(name)!] ?? '').trim();
+  const col = (r: string[], name: Column) => (idx.has(name) ? (r[idx.get(name)!] ?? '') : '').trim();
 
   const data = body.filter((r) => r.some((c) => c.trim() !== ''));
   const raws: Raw[] = [];
@@ -97,8 +102,8 @@ export function findDuplicates(raws: Raw[]): Set<number> {
   return dropped;
 }
 
-function toLead(r: Raw, col: (r: string[], name: (typeof REQUIRED_COLUMNS)[number]) => string): Lead {
-  const c = (name: (typeof REQUIRED_COLUMNS)[number]) => col(r.cells, name);
+function toLead(r: Raw, col: (r: string[], name: Column) => string): Lead {
+  const c = (name: Column) => col(r.cells, name);
   const num = (v: string) => (v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
   const removedRaw = c('הסיר את עצמו?');
   const removedAt = removedRaw ? (parseSheetDate(removedRaw)?.toISOString() ?? r.at.toISOString()) : null;
@@ -115,5 +120,6 @@ function toLead(r: Raw, col: (r: string[], name: (typeof REQUIRED_COLUMNS)[numbe
     product: cleanText(c('מוצר שנקנה')),
     amount: parseAmount(c('סכום ששולם')),
     removedAt,
+    mode: cleanText(c('אופן שיחה')),
   };
 }

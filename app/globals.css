@@ -57,7 +57,16 @@ button, input, select { font: inherit; color: inherit; }
 
 .page { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
 
-.head { margin-bottom: 16px; }
+.head { margin-bottom: 16px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 10px 20px; }
+.refresh { display: flex; flex-direction: column; align-items: end; gap: 4px; }
+.refresh button {
+  background: var(--ink); color: var(--surface); border: 0; border-radius: 10px; padding: 8px 16px; min-height: 40px;
+  font-weight: 600; cursor: pointer;
+}
+.refresh button:disabled { opacity: 0.6; cursor: progress; }
+.refresh button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.refresh span { font-size: 13px; color: var(--ink-2); min-height: 1.2em; max-width: 320px; text-align: end; }
+.refresh span.err { color: var(--error-ink); }
 .head h1, .page > h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
 .head .sub { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
 
@@ -84,7 +93,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 /* מספרי מפתח */
-.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
 .tile .label { color: var(--ink-2); font-size: 14px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tile .value { font-size: 32px; font-weight: 650; line-height: 1.1; margin: 0; }
@@ -103,7 +112,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
 .side { background: var(--surface-2); border-radius: 12px; padding: 14px 16px; position: sticky; top: 12px; }
-.side .label { margin: 0 0 10px; font-weight: 600; overflow-wrap: anywhere; }
+.side .label { margin: 0 0 10px; font-weight: 600; overflow-wrap: anywhere; text-align: right; unicode-bidi: plaintext; }
 .side dl { margin: 0; display: grid; gap: 8px; }
 .side dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
 .side dt { color: var(--ink-2); }
@@ -126,12 +135,12 @@ button, input, select { font: inherit; color: inherit; }
 /* רשימה מדורגת */
 .barlist { display: grid; gap: 4px; }
 .barrow {
-  display: grid; grid-template-columns: minmax(90px, 220px) minmax(0, 1fr) 56px; gap: 10px; align-items: center;
+  display: grid; grid-template-columns: minmax(90px, 300px) minmax(0, 1fr) 56px; gap: 10px; align-items: center;
   background: none; border: 0; padding: 5px 6px; border-radius: 8px; text-align: start; width: 100%;
 }
 button.barrow { cursor: pointer; }
 button.barrow:hover, .barrow.on { background: var(--surface-2); }
-.barrow .name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barrow .name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; unicode-bidi: plaintext; }
 .barrow .track { height: 14px; display: block; }
 .barrow .fill { display: block; height: 100%; border-radius: 4px 0 0 4px; min-width: 2px; }
 .barrow .num { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -142,7 +151,21 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .heat table { border-collapse: separate; border-spacing: 2px; font-size: 13px; min-width: 100%; }
 .heat th, .heat td { padding: 6px 8px; text-align: center; white-space: nowrap; border-radius: 4px; }
 .heat thead th { color: var(--ink-2); font-weight: 600; }
-.heat tbody th, .heat tfoot th { text-align: start; font-weight: 500; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.heat tbody th, .heat tfoot th { text-align: right; font-weight: 500; max-width: 300px; overflow: hidden; text-overflow: ellipsis; unicode-bidi: plaintext; }
+.heat td small { display: block; color: var(--ink-3); font-size: 11px; font-weight: 400; }
+.heat td small.split-note { white-space: nowrap; }
+.breakdown td, .tests td { min-width: 76px; }
+.breakdown th.mode { color: var(--ink-3); }
+.breakdown .group-note th { font-size: 11px; color: var(--ink-3); font-weight: 500; padding-top: 0; }
+.breakdown thead tr:first-child th { vertical-align: bottom; }
+.tests { margin-top: 14px; }
+.tests tbody th button {
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: right; unicode-bidi: plaintext; font: inherit;
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; width: 100%;
+}
+.tests tbody th button:hover { text-decoration: underline; }
+.tests tbody th button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.tests tr.on th, .tests tr.on td { background: var(--surface-2); }
 .heat td { font-variant-numeric: tabular-nums; min-width: 64px; }
 .heat .total, .heat tfoot td { font-weight: 650; }
 .heat tfoot th, .heat tfoot td { border-top: 1px solid var(--line); }
@@ -150,7 +173,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .foot { margin-top: 24px; color: var(--ink-3); font-size: 13px; }
 
 @media (max-width: 1000px) {
-  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {

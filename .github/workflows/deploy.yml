@@ -79,6 +79,21 @@ jobs:
           sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:$STATE/release-$REL.tgz"
           sshpass -e scp -P "${PORT:-22}" $OPTS deploy/static-deploy.sh "$USER@$HOST:$STATE/static-deploy.sh"
           sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "bash ~/$STATE/static-deploy.sh $REL ~/$STATE/release-$REL.tgz"
+      - name: הגדרת כפתור הרענון
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        run: |
+          if [ -z "$REFRESH_TOKEN" ]; then
+            echo "::warning::אין סוד REFRESH_TOKEN: כפתור הרענון בדשבורד לא יעבוד עד שיוגדר"
+            exit 0
+          fi
+          if ! printf '%s' "$REFRESH_TOKEN" | grep -qE '^[A-Za-z0-9_]+$'; then
+            echo "::error::REFRESH_TOKEN לא נראה כמו מפתח של גיטהאב"; exit 1
+          fi
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
+          printf "<?php return ['token' => '%s', 'repo' => '%s', 'workflow' => 'refresh-data.yml', 'ref' => 'main'];\n" "$REFRESH_TOKEN" "$GITHUB_REPOSITORY" \
+            | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "umask 077; cat > ~/.cache/osher-max-dashboard/refresh-config.php"
       - name: הכתובת מציגה את הגרסה החדשה?
         if: steps.gate.outputs.ready == 'true'
         run: |
@@ -86,7 +101,8 @@ jobs:
           for i in $(seq 1 12); do
             if curl -fsS "${SITE_URL}version.json?t=$(date +%s)" | grep -q "\"sha\":\"$REL\""; then
               CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL")
-              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE)"
+              BTN=$(curl -s "${SITE_URL}refresh.php" | head -c 200)
+              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). כפתור הרענון: $BTN"
               exit 0
             fi
             sleep 5

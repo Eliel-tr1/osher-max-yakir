@@ -33,13 +33,33 @@ export function paidByBot(l: Lead): boolean {
   return l.qStatus === 'converted';
 }
 
-/**
- * שילם לא דרך הבוט: יש סכום, ואין converted.
- * לבירור (#12): רוב השורות האלה בסטטוס payment, ולא ידוע אם payment הוא תשלום בפועל.
- */
+/** שילם, אבל לא בהכרח בזכות הבוט: סטטוס שאלון payment (החלטת המנהל, #16). */
 export function paidOther(l: Lead): boolean {
-  return !paidByBot(l) && (l.amount ?? 0) > 0;
+  return l.qStatus === 'payment';
 }
+
+/** רכש: converted או payment (#16). */
+export function purchased(l: Lead): boolean {
+  return paidByBot(l) || paidOther(l);
+}
+
+/** התחיל את המסע (התחלת שיחה): ענה לצ'אטבוט, עמודה I (#16, לאישור המנהל). */
+export function startedJourney(l: Lead): boolean {
+  return l.answered;
+}
+
+/** התחיל שאלון: עמודה K, "שלב בשאלון", מלאה (#16). */
+export function startedQuestionnaire(l: Lead): boolean {
+  return l.step !== null;
+}
+
+/** סיים שאלון: עמודה L, finished או converted (#16). */
+export function finishedQuestionnaire(l: Lead): boolean {
+  return l.qStatus === 'finished' || l.qStatus === 'converted';
+}
+
+export const PASSED = 'עבר';
+export const FAILED = 'לא עבר';
 
 /** שם המוצר של רכישה: "מוצר שנקנה", ואם ריק אז "מבחן" (לבירור, #12). */
 export function productOf(l: Lead): string {
@@ -48,32 +68,150 @@ export function productOf(l: Lead): string {
 
 export interface Summary {
   leads: number;
+  startedJourney: number;
+  passed: number;
+  failed: number;
+  purchased: number;
+  /** רכשו מתוך מי שהתחיל שיחה */
+  purchasedOfStarted: number;
   paidBot: number;
   paidOther: number;
+  /** סך הכול שולם: עמודה AM, על כל מי שרכש */
+  totalPaid: number;
   revenueBot: number;
   revenueOther: number;
-  /** ממוצע סכום לעסקה דרך הבוט, null כשאין */
   avgDealBot: number | null;
-  /** ממוצע סכום לכל העסקאות, null כשאין */
   avgDealAll: number | null;
 }
 
 export function summarize(leads: Lead[]): Summary {
-  const bot = leads.filter(paidByBot);
-  const other = leads.filter(paidOther);
   const sum = (xs: Lead[]) => xs.reduce((s, l) => s + (l.amount ?? 0), 0);
   const withAmount = (xs: Lead[]) => xs.filter((l) => (l.amount ?? 0) > 0);
-  const botPaidAmounts = withAmount(bot);
-  const all = [...botPaidAmounts, ...other];
+  const bot = leads.filter(paidByBot);
+  const other = leads.filter(paidOther);
+  const all = leads.filter(purchased);
+  const botA = withAmount(bot);
+  const allA = withAmount(all);
   return {
     leads: leads.length,
+    startedJourney: leads.filter(startedJourney).length,
+    passed: leads.filter((l) => l.status === PASSED).length,
+    failed: leads.filter((l) => l.status === FAILED).length,
+    purchased: all.length,
+    purchasedOfStarted: all.filter(startedJourney).length,
     paidBot: bot.length,
     paidOther: other.length,
+    totalPaid: sum(all),
     revenueBot: sum(bot),
     revenueOther: sum(other),
-    avgDealBot: botPaidAmounts.length ? sum(botPaidAmounts) / botPaidAmounts.length : null,
-    avgDealAll: all.length ? sum(all) / all.length : null,
+    avgDealBot: botA.length ? sum(botA) / botA.length : null,
+    avgDealAll: allA.length ? sum(allA) / allA.length : null,
   };
+}
+
+/** ערכי "אופן שיחה" בסדר קבוע. ערך אחר שיופיע בטבלה יתווסף בסוף. */
+export const MODES = ['שירות', 'מכירותי', 'גם וגם', 'אין שיחה'];
+export const UNSET = 'לא סווג';
+
+export interface BreakdownRow {
+  name: string;
+  leads: number;
+  startedQ: number;
+  finishedQ: number;
+  purchased: number;
+  paidBot: number;
+  paidOther: number;
+  totalPaid: number;
+  passed: number;
+  failed: number;
+  /** לפי אופן שיחה, באותו סדר כמו modes */
+  byMode: number[];
+}
+
+export interface Breakdown {
+  rows: BreakdownRow[];
+  total: BreakdownRow;
+  modes: string[];
+}
+
+/** טבלת פילוח: לכל קבוצה כמה לידים, שאלון, רכישות, תשלום, עברו ונכשלו, ואופן שיחה. */
+export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: string[]): Breakdown {
+  const extra = [...new Set(leads.map((l) => l.mode).filter((m): m is string => !!m && !MODES.includes(m)))].sort();
+  const modes = [...MODES, ...extra, UNSET];
+  const empty = (name: string): BreakdownRow => ({
+    name, leads: 0, startedQ: 0, finishedQ: 0, purchased: 0, paidBot: 0, paidOther: 0, totalPaid: 0, passed: 0, failed: 0,
+    byMode: modes.map(() => 0),
+  });
+  const add = (r: BreakdownRow, l: Lead) => {
+    r.leads++;
+    if (startedQuestionnaire(l)) r.startedQ++;
+    if (finishedQuestionnaire(l)) r.finishedQ++;
+    if (purchased(l)) {
+      r.purchased++;
+      r.totalPaid += l.amount ?? 0;
+    }
+    if (paidByBot(l)) r.paidBot++;
+    if (paidOther(l)) r.paidOther++;
+    if (l.status === PASSED) r.passed++;
+    if (l.status === FAILED) r.failed++;
+    r.byMode[modes.indexOf(l.mode && modes.includes(l.mode) ? l.mode : UNSET)]++;
+  };
+  const groups = new Map<string, BreakdownRow>();
+  for (const name of order ?? []) groups.set(name, empty(name));
+  const total = empty('סך הכול');
+  for (const l of leads) {
+    const g = groupOf(l);
+    if (!groups.has(g)) groups.set(g, empty(g));
+    add(groups.get(g)!, l);
+    add(total, l);
+  }
+  const rows = [...groups.values()];
+  if (!order) rows.sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
+  return { rows, total, modes };
+}
+
+/** קבוצה לפי תוצאת המבחן, בסדר: עבר, לא עבר, בלי סטטוס. */
+export function resultOf(l: Lead): string {
+  return l.status === PASSED || l.status === FAILED ? l.status : 'בלי סטטוס';
+}
+export const RESULT_ORDER = [PASSED, FAILED, 'בלי סטטוס'];
+
+export interface TestStat {
+  name: string;
+  total: number;
+  passed: number;
+  failed: number;
+  /** אחוז מעבר מתוך מי שיש לו תוצאה, null כשאין */
+  passRate: number | null;
+}
+
+export function testStats(leads: Lead[]): TestStat[] {
+  const m = new Map<string, TestStat>();
+  for (const l of leads) {
+    if (!l.test) continue;
+    const s = m.get(l.test) ?? { name: l.test, total: 0, passed: 0, failed: 0, passRate: null };
+    s.total++;
+    if (l.status === PASSED) s.passed++;
+    if (l.status === FAILED) s.failed++;
+    m.set(l.test, s);
+  }
+  return [...m.values()]
+    .map((s) => ({ ...s, passRate: s.passed + s.failed ? s.passed / (s.passed + s.failed) : null }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}
+
+/** עברו ונכשלו לאורך זמן: לפי יום, או לפי חודש כשהטווח ארוך. */
+export function passFailOverTime(leads: Lead[], by: 'day' | 'month'): { key: string; passed: number; failed: number }[] {
+  const keyOf = by === 'day' ? (l: Lead) => dayKey(l.at) : (l: Lead) => monthKey(l.at);
+  const keys = by === 'day' ? perDay(leads).map((d) => d.day) : [...new Set(leads.map(keyOf))].sort();
+  const m = new Map(keys.map((k) => [k, { key: k, passed: 0, failed: 0 }]));
+  for (const l of leads) {
+    const r = m.get(keyOf(l));
+    if (!r) continue;
+    if (l.status === PASSED) r.passed++;
+    if (l.status === FAILED) r.failed++;
+  }
+  return [...m.values()];
 }
 
 /** כמה הסירו את עצמם, לפי תאריך ההסרה (ולא לפי תאריך הכניסה). */
@@ -90,7 +228,7 @@ export interface Purchase {
 
 export function purchases(leads: Lead[]): Purchase[] {
   return leads
-    .filter((l) => paidByBot(l) || paidOther(l))
+    .filter(purchased)
     .map((l) => ({ at: l.at, channel: paidByBot(l) ? 'bot' : 'other', product: productOf(l), amount: l.amount }));
 }
 

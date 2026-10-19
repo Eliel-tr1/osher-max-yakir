@@ -66,6 +66,13 @@ describe('leadsFromRows', () => {
     expect(file.leads[0].removedAt).toBe('2026-10-06T13:47:00.000Z');
   });
 
+  it('reads the optional conversation mode column, and works without it', () => {
+    const withMode = leadsFromRows([[...HEADER, 'אופן שיחה'], [...row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' }), 'מכירותי']]);
+    expect(withMode.leads[0].mode).toBe('מכירותי');
+    const without = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })]);
+    expect(without.leads[0].mode).toBeNull();
+  });
+
   it('fails loudly when a needed column is renamed', () => {
     const header = HEADER.map((h) => (h === 'סכום ששולם' ? 'סכום' : h));
     expect(() => leadsFromRows([header])).toThrow(SheetShapeError);

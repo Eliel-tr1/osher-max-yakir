@@ -6,7 +6,7 @@ import { countBy, inRange, matrixByMonth, perDay, productStats, purchases, remov
 function lead(p: Partial<Lead>): Lead {
   return {
     at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false,
-    step: null, score: null, test: null, product: null, amount: null, removedAt: null, ...p,
+    step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null, ...p,
   };
 }
 
@@ -20,10 +20,20 @@ const sample = [
 ];
 
 describe('summarize', () => {
-  it('splits bot payments (converted) from other payments (amount without converted)', () => {
+  it('counts converted as paid by the bot and payment as paid not necessarily by the bot', () => {
     expect(summarize(sample)).toEqual({
-      leads: 6, paidBot: 3, paidOther: 1, revenueBot: 400, revenueOther: 50, avgDealBot: 200, avgDealAll: 150,
+      leads: 6, startedJourney: 0, passed: 0, failed: 0, purchased: 5, purchasedOfStarted: 0,
+      paidBot: 3, paidOther: 2, totalPaid: 450, revenueBot: 400, revenueOther: 50, avgDealBot: 200, avgDealAll: 150,
     });
+  });
+
+  it('counts passed, failed, conversation starts, and purchases among those who started', () => {
+    const s = summarize([
+      lead({ status: 'עבר', answered: true, qStatus: 'converted', amount: 10 }),
+      lead({ status: 'לא עבר', answered: true }),
+      lead({ status: 'לא עבר', qStatus: 'payment', amount: 5 }),
+    ]);
+    expect([s.passed, s.failed, s.startedJourney, s.purchased, s.purchasedOfStarted]).toEqual([1, 2, 2, 2, 1]);
   });
 
   it('has no averages when nothing was paid', () => {
@@ -37,8 +47,8 @@ describe('purchases and products', () => {
   it('names a purchase by product, then by test, and gives count, average, min and max', () => {
     const stats = productStats(purchases(sample));
     expect(stats).toEqual([
+      { name: 'P1', count: 2, revenue: 50, avg: 50, min: 50, max: 50 },
       { name: 'T1', count: 2, revenue: 400, avg: 200, min: 100, max: 300 },
-      { name: 'P1', count: 1, revenue: 50, avg: 50, min: 50, max: 50 },
       { name: 'T2', count: 1, revenue: 0, avg: null, min: null, max: null },
     ]);
   });
@@ -46,8 +56,8 @@ describe('purchases and products', () => {
   it('builds a month by name table with exact counts, in Israel time', () => {
     const m = matrixByMonth(purchases(sample), (p) => p.product, (p) => p.at);
     expect(m.months).toEqual(['2026-09', '2026-10']);
-    expect(m.rows[0]).toEqual({ name: 'T1', total: 2, byMonth: [1, 1] });
-    expect(m.monthTotals).toEqual([1, 3]);
+    expect(m.rows.find((r) => r.name === 'T1')).toEqual({ name: 'T1', total: 2, byMonth: [1, 1] });
+    expect(m.monthTotals).toEqual([1, 4]);
     // 30/09 23:30 בישראל הוא עדיין ספטמבר, גם אם ב-UTC זה 20:30
     expect(matrixByMonth([{ at: '2026-09-30T20:30:00.000Z' }], () => 'x', (x) => x.at).months).toEqual(['2026-09']);
   });
@@ -104,5 +114,43 @@ describe('date presets', () => {
     const c = rangeFor('custom', now, { from: '2026-10-01', to: '2026-10-01' });
     expect([c.from?.toISOString(), c.to?.toISOString()]).toEqual(['2026-09-30T21:00:00.000Z', '2026-10-01T21:00:00.000Z']);
     expect(rangeFor('all', now)).toEqual({ from: null, to: null });
+  });
+});
+
+describe('breakdowns', () => {
+  const ls = [
+    lead({ status: 'עבר', step: 3, qStatus: 'converted', amount: 100, mode: 'מכירותי' }),
+    lead({ status: 'עבר', step: 10, qStatus: 'finished', mode: 'שירות' }),
+    lead({ status: 'לא עבר', step: 1, qStatus: 'payment', amount: 50 }),
+    lead({ status: 'לא עבר', mode: 'משהו חדש' }),
+    lead({}),
+  ];
+
+  it('groups by test result in a fixed order, with questionnaire, purchases, paid total and conversation mode', async () => {
+    const { breakdown, resultOf, RESULT_ORDER } = await import('../lib/metrics');
+    const b = breakdown(ls, resultOf, RESULT_ORDER);
+    expect(b.modes).toEqual(['שירות', 'מכירותי', 'גם וגם', 'אין שיחה', 'משהו חדש', 'לא סווג']);
+    expect(b.rows.map((r) => [r.name, r.leads, r.startedQ, r.finishedQ, r.purchased, r.totalPaid])).toEqual([
+      ['עבר', 2, 2, 2, 1, 100],
+      ['לא עבר', 2, 1, 0, 1, 50],
+      ['בלי סטטוס', 1, 0, 0, 0, 0],
+    ]);
+    expect(b.rows[0].byMode).toEqual([1, 1, 0, 0, 0, 0]);
+    expect(b.rows[1].byMode).toEqual([0, 0, 0, 0, 1, 1]);
+    expect(b.total).toMatchObject({ leads: 5, passed: 2, failed: 2, purchased: 2, totalPaid: 150 });
+  });
+
+  it('gives each test its pass rate, and pass and fail over time', async () => {
+    const { testStats, passFailOverTime } = await import('../lib/metrics');
+    const t = testStats([
+      lead({ test: 'A', status: 'עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A' }),
+      lead({ test: 'B' }),
+    ]);
+    expect(t[0]).toEqual({ name: 'A', total: 4, passed: 1, failed: 2, passRate: 1 / 3 });
+    expect(t[1].passRate).toBeNull();
+    const days = passFailOverTime([
+      lead({ at: '2026-10-01T07:00:00.000Z', status: 'עבר' }), lead({ at: '2026-10-03T07:00:00.000Z', status: 'לא עבר' }),
+    ], 'day');
+    expect(days).toEqual([{ key: '2026-10-01', passed: 1, failed: 0 }, { key: '2026-10-02', passed: 0, failed: 0 }, { key: '2026-10-03', passed: 0, failed: 1 }]);
   });
 });

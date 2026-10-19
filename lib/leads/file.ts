@@ -7,7 +7,7 @@ export function pack(file: LeadsFile): string {
 
 const EMPTY: Lead = {
   at: '', source: null, process: null, status: null, qStatus: null, answered: false,
-  step: null, score: null, test: null, product: null, amount: null, removedAt: null,
+  step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null,
 };
 
 export function unpack(json: unknown): LeadsFile {

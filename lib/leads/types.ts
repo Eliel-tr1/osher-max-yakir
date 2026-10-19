@@ -21,6 +21,8 @@ export interface Lead {
   amount: number | null;
   /** "הסיר את עצמו?": בטבלה כתוב שם תאריך ההסרה */
   removedAt: string | null;
+  /** "אופן שיחה" (עמודה BD): שירות / מכירותי / גם וגם / אין שיחה */
+  mode: string | null;
 }
 
 export interface LeadsFile {

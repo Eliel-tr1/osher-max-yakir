@@ -145,7 +145,7 @@ export function BarList({ items, color = '--series-1', max: maxShown = 10, selec
             className={`barrow${selected === it.name ? ' on' : ''}`}
             {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(it.name), 'aria-pressed': selected === it.name } : {})}
           >
-            <span className="name" title={it.name}>{it.name}</span>
+            <span className="name" title={it.name} dir="auto">{it.name}</span>
             <span className="track">
               <span className="fill" style={{ width: `${(it.count / top) * 100}%`, background: `var(${color})` }} />
             </span>
@@ -188,7 +188,7 @@ export function HeatTable({ months, rows, monthTotals, maxRows = 12, nameHeader 
           <tbody>
             {shown.map((r) => (
               <tr key={r.name}>
-                <th scope="row" title={r.name}>{r.name}</th>
+                <th scope="row" title={r.name} dir="auto">{r.name}</th>
                 {r.byMonth.map((v, i) => (
                   <td key={months[i]} style={v ? { background: `color-mix(in srgb, var(--series-1) ${Math.round(8 + (v / peak) * 42)}%, transparent)` } : undefined}>
                     {v ? nf.format(v) : ''}
@@ -210,6 +210,132 @@ export function HeatTable({ months, rows, monthTotals, maxRows = 12, nameHeader 
       {rows.length > maxRows && (
         <button type="button" className="more" onClick={() => setAll(!all)}>
           {all ? 'להציג פחות' : `להציג את כל ה-${nf.format(rows.length)}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const pctFmt = new Intl.NumberFormat('he-IL', { style: 'percent', maximumFractionDigits: 0 });
+export function pct(part: number, whole: number): string {
+  return whole ? pctFmt.format(part / whole) : '-';
+}
+
+/** מספר ומתחתיו אחוז קטן מתוך בסיס */
+function Cell({ v, of }: { v: number; of?: number }) {
+  return (
+    <td>
+      {nf.format(v)}
+      {of !== undefined && of > 0 && <small>{pct(v, of)}</small>}
+    </td>
+  );
+}
+
+export interface BreakdownView {
+  rows: { name: string; leads: number; startedQ: number; finishedQ: number; purchased: number; paidBot: number; paidOther: number; totalPaid: number; passed: number; failed: number; byMode: number[] }[];
+  total: BreakdownView['rows'][number];
+  modes: string[];
+}
+
+/** טבלת פילוח: שורה לכל קבוצה, ועמודות של המסע מהליד ועד התשלום. */
+export function BreakdownTable({ data, groupHeader, showResult, showModes }: {
+  data: BreakdownView;
+  groupHeader: string;
+  showResult: boolean;
+  showModes: boolean;
+}) {
+  if (!data.total.leads) return <p className="empty">אין נתונים בטווח הזה</p>;
+  const line = (r: BreakdownView['rows'][number]) => (
+      <tr key={r.name}>
+        <th scope="row" dir="auto">{r.name}</th>
+        <td>{nf.format(r.leads)}</td>
+        <Cell v={r.startedQ} of={r.leads} />
+        <Cell v={r.finishedQ} of={r.leads} />
+        <td>
+          {nf.format(r.purchased)}
+          {r.leads > 0 && <small>{pct(r.purchased, r.leads)}</small>}
+          {r.purchased > 0 && <small className="split-note">בוט {nf.format(r.paidBot)} · לא בוט {nf.format(r.paidOther)}</small>}
+        </td>
+        <td>{money.format(r.totalPaid)}</td>
+        {showResult && <Cell v={r.passed} of={r.leads} />}
+        {showResult && <Cell v={r.failed} of={r.leads} />}
+        {showModes && r.byMode.map((v, i) => <Cell key={data.modes[i]} v={v} of={r.leads} />)}
+      </tr>
+  );
+  return (
+    <div className="heat breakdown">
+      <div className="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">{groupHeader}</th>
+              <th scope="col">לידים</th>
+              <th scope="col">התחילו שאלון</th>
+              <th scope="col">סיימו שאלון</th>
+              <th scope="col">רכשו</th>
+              <th scope="col">שולם</th>
+              {showResult && <th scope="col">עברו</th>}
+              {showResult && <th scope="col">נכשלו</th>}
+              {showModes && data.modes.map((m) => <th key={m} scope="col" className="mode">{m}</th>)}
+            </tr>
+            {showModes && (
+              <tr className="group-note">
+                <th colSpan={showResult ? 8 : 6} />
+                <th colSpan={data.modes.length} scope="colgroup">אופן שיחה</th>
+              </tr>
+            )}
+          </thead>
+          <tbody>{data.rows.map((r) => line(r))}</tbody>
+          {data.rows.length > 1 && <tfoot>{line(data.total)}</tfoot>}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** טבלת מבחנים: לחיצה על שורה בוחרת את המבחן לגרף. */
+export function TestTable({ items, selected, onSelect, max: maxShown = 10 }: {
+  items: { name: string; total: number; passed: number; failed: number; passRate: number | null }[];
+  selected: string | null;
+  onSelect: (name: string | null) => void;
+  max?: number;
+}) {
+  const [all, setAll] = useState(false);
+  if (!items.length) return <p className="empty">אין מבחנים בטווח הזה</p>;
+  const shown = all ? items : items.slice(0, maxShown);
+  return (
+    <div className="heat tests">
+      <div className="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">מבחן</th>
+              <th scope="col">סך הכול</th>
+              <th scope="col">עברו</th>
+              <th scope="col">נכשלו</th>
+              <th scope="col">אחוז מעבר</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((t) => (
+              <tr key={t.name} className={selected === t.name ? 'on' : ''}>
+                <th scope="row">
+                  <button type="button" dir="auto" aria-pressed={selected === t.name} onClick={() => onSelect(selected === t.name ? null : t.name)} title={t.name}>
+                    {t.name}
+                  </button>
+                </th>
+                <td>{nf.format(t.total)}</td>
+                <td>{nf.format(t.passed)}</td>
+                <td>{nf.format(t.failed)}</td>
+                <td>{t.passRate === null ? '-' : pctFmt.format(t.passRate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {items.length > maxShown && (
+        <button type="button" className="more" onClick={() => setAll(!all)}>
+          {all ? 'להציג פחות' : `להציג את כל ה-${nf.format(items.length)}`}
         </button>
       )}
     </div>

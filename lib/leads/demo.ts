@@ -20,6 +20,8 @@ const PRODUCTS: [string, number[]][] = [
 ];
 const TESTS = ['Demo Test 20K', 'Demo Test 100K', 'Demo Test 200K', 'Demo Access 50K', 'Demo Instant 20K'];
 const PROCESSES = ['תהליך ראשי', 'תהליך ראשי', 'תהליך ראשי', 'הרשמה לאתגר'];
+const MODES = ['שירות', 'מכירותי', 'מכירותי', 'גם וגם', 'אין שיחה', null, null];
+const SOURCES = ["אורגני - צ'אטבוט וואטסאפ", "אורגני - צ'אטבוט וואטסאפ", "אורגני - צ'אטבוט וואטסאפ", 'Demo Source'];
 
 export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00+03:00')): LeadsFile {
   const rnd = seeded(20261019);
@@ -39,9 +41,9 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
     const payment = qStatus === 'payment';
     leads.push({
       at: at.toISOString(),
-      source: "אורגני - צ'אטבוט וואטסאפ",
+      source: pick(SOURCES),
       process: pick(PROCESSES),
-      status: answered ? (rnd() < 0.2 ? 'עבר' : 'לא עבר') : null,
+      status: answered ? (rnd() < (converted ? 0.45 : 0.15) ? 'עבר' : 'לא עבר') : null,
       qStatus,
       answered,
       step,
@@ -50,6 +52,7 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
       product: payment ? name : null,
       amount: converted || payment ? pick(prices) : null,
       removedAt: rnd() < 0.01 ? new Date(at.getTime() + 3600_000).toISOString() : null,
+      mode: answered ? pick(MODES) : null,
     });
   }
   leads.sort((a, b) => a.at.localeCompare(b.at));
