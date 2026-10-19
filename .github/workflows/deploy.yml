@@ -16,6 +16,7 @@ on:
       - '.github/workflows/profile-sheet.yml'
       - 'scripts/profile-sheet.py'
       - '.github/workflows/refresh-data.yml'
+      - '.github/run-refresh'
   workflow_dispatch:
 
 concurrency:

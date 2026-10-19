@@ -6,6 +6,10 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  # הסוכן לא יכול להפעיל ידנית, אז שינוי בקובץ הזה מפעיל ריצה
+  push:
+    branches: [main]
+    paths: ['.github/run-refresh']
 
 concurrency:
   group: deploy
