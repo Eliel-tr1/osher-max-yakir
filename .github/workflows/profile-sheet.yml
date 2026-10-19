@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['scripts/profile-sheet.py']
+    paths: ['scripts/profile-sheet.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -16,5 +16,16 @@ jobs:
         run: |
           OUT=$(python3 scripts/profile-sheet.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים' 2>&1) || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
           echo "$OUT"
-          NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\n'/%0A}"
-          echo "::notice title=פרופיל טבלה::$NOTE"
+          # הערה אחת מוגבלת בגודל, אז מפצלים לחלקים של עד 2500 בתים
+          python3 - "$OUT" <<'PY'
+          import sys
+          parts, cur = [], ''
+          for line in sys.argv[1].splitlines():
+              if len((cur + line).encode()) > 2500 and cur:
+                  parts.append(cur); cur = ''
+              cur += line + '\n'
+          parts.append(cur)
+          for i, p in enumerate(parts, 1):
+              p = p.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::notice title=פרופיל טבלה {i}/{len(parts)}::{p}')
+          PY
