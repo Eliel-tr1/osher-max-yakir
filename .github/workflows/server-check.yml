@@ -24,7 +24,7 @@ jobs:
           if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then
             echo "::error::חסרים סודות: SERVER_HOST, SERVER_USER, SERVER_PASSWORD (ו-SERVER_PORT)"; exit 1
           fi
-          OUT=$(sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$USER@$HOST" '
+          OUT=$(sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20 "$USER@$HOST" '
             echo "== מערכת"; (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -s
             echo "== משתמש"; whoami; echo "home: $HOME"
             echo "== Node"; command -v node >/dev/null && node -v || echo "אין Node"
@@ -39,4 +39,5 @@ jobs:
           ' 2>&1) || { echo "::error::החיבור נכשל, או שהמשתמש מורשה רק ל-SFTP בלי פקודות: $(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
           echo "$OUT"
           # גם כהערה על הריצה, כדי שאפשר יהיה לקרוא את התוצאה בלי הלוג המלא
-          echo "::notice title=בדיקת שרת::$(echo "$OUT" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
+          NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\r'/}"; NOTE="${NOTE//$'\n'/%0A}"
+          echo "::notice title=בדיקת שרת::$NOTE"
