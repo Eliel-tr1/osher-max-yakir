@@ -1,13 +1,26 @@
 name: פריסה לשרת
 
-# הפריסה האוטומטית כבויה עד שיוגדר שרת היעד.
-# מחזירים את push רק אחרי שהמנהל אישר שהשרת בסודות הוא השרת הנכון. ראו docs/ENVIRONMENTS.md.
+# בונה את הדשבורד כאתר סטטי ומעלה אותו לתיקייה oshermax באתר ai.vitrue.co.il.
+# רץ בכל דחיפה ל-main שמשנה קוד, או ידנית (Actions > פריסה לשרת > Run workflow).
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.claude/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/run-server-check'
+      - '.github/workflows/server-check.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
   group: deploy
   cancel-in-progress: false
+
+env:
+  SITE_URL: https://ai.vitrue.co.il/oshermax/
 
 jobs:
   deploy:
@@ -22,48 +35,52 @@ jobs:
         id: gate
         run: |
           if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then
-            echo "::warning::אין עדיין סודות של השרת, הפריסה מדולגת. ראו docs/ENVIRONMENTS.md"
+            echo "::warning::אין סודות של השרת, הפריסה מדולגת. ראו docs/ENVIRONMENTS.md"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: יש Node בשרת?
-        id: node
-        if: steps.gate.outputs.ready == 'true'
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-          if sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20 "$USER@$HOST" \
-               '[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null; command -v node >/dev/null'; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::אין Node 20 ומעלה אצל המשתמש בשרת, הפריסה מדולגת. ראו docs/ENVIRONMENTS.md"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
-        if: steps.node.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true'
       - uses: actions/setup-node@v4
-        if: steps.node.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true'
         with:
           node-version: 22
           cache: npm
       - name: בנייה ובדיקה
-        if: steps.node.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true'
         run: |
           npm ci
           npm run check
       - name: אריזה
-        if: steps.node.outputs.ready == 'true'
-        run: |
-          cp -r .next/static .next/standalone/.next/static
-          [ -d public ] && cp -r public .next/standalone/public || true
-          cp deploy/remote-deploy.sh .next/standalone/
-          tar -czf release.tgz -C .next/standalone .
-      - name: העלאה והפעלה
-        if: steps.node.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true'
         run: |
           REL="${GITHUB_SHA::7}"
+          echo "{\"app\":\"osher-max-dashboard\",\"sha\":\"$REL\",\"builtAt\":\"$(date -u +%FT%TZ)\"}" > out/version.json
+          touch out/.osher-max-dashboard
+          tar -czf release.tgz -C out .
+      - name: העלאה והחלפה
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          REL="${GITHUB_SHA::7}"
           OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
-          sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "mkdir -p ~/apps/osher-max-dashboard/incoming"
-          sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:apps/osher-max-dashboard/incoming/$REL.tgz"
-          sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" \
-            "mkdir -p ~/apps/osher-max-dashboard/releases/$REL && tar -xzf ~/apps/osher-max-dashboard/incoming/$REL.tgz -C ~/apps/osher-max-dashboard/releases/$REL && rm ~/apps/osher-max-dashboard/incoming/$REL.tgz && bash ~/apps/osher-max-dashboard/releases/$REL/remote-deploy.sh $REL"
+          STATE=.cache/osher-max-dashboard
+          sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "mkdir -p ~/$STATE"
+          sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:$STATE/release-$REL.tgz"
+          sshpass -e scp -P "${PORT:-22}" $OPTS deploy/static-deploy.sh "$USER@$HOST:$STATE/static-deploy.sh"
+          sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "bash ~/$STATE/static-deploy.sh $REL ~/$STATE/release-$REL.tgz"
+      - name: הכתובת מציגה את הגרסה החדשה?
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          REL="${GITHUB_SHA::7}"
+          for i in $(seq 1 12); do
+            if curl -fsS "${SITE_URL}version.json?t=$(date +%s)" | grep -q "\"sha\":\"$REL\""; then
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL")
+              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::הקבצים עלו לשרת, אבל $SITE_URL לא מציג את הגרסה החדשה"
+          exit 1

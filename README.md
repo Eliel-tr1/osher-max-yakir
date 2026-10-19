@@ -28,11 +28,12 @@
 
 ```bash
 npm install
-npm run dev      # http://localhost:3000
+npm run dev      # http://localhost:3000/oshermax/
 npm run check    # טיפוסים, בדיקות ובנייה. חייב לעבור לפני כל קומיט
+npm run preview  # אחרי בנייה: האתר הסטטי כמו בשרת, http://localhost:4173/oshermax/
 ```
 
 כרגע הדשבורד מציג נתוני הדגמה מומצאים. הקריאה מהטבלה האמיתית תיכנס ב-#9.
 
 ## פריסה
-כשיוגדר שרת היעד, כל דחיפה ל-main תיבנה, תיבדק ותעלה לשרת לבד. עד אז הפריסה כבויה. הפירוט ב-[docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
+הדשבורד באוויר ב-**https://ai.vitrue.co.il/oshermax/**. כל דחיפה ל-main שמשנה קוד נבנית, נבדקת ועולה לשם לבד. הפירוט ב-[docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).

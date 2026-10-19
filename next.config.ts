@@ -1,9 +1,11 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // קובץ הרצה עצמאי: על השרת צריך רק Node, בלי להתקין תלויות.
-  output: 'standalone',
-  poweredByHeader: false,
+  // אתר סטטי: נבנה בגיטהאב ועולה כקבצים לתיקייה oshermax באתר ai.vitrue.co.il,
+  // כמו שאר הפרויקטים שם. בשרת לא צריך Node.
+  output: 'export',
+  basePath: '/oshermax',
+  trailingSlash: true,
 };
 
 export default nextConfig;

@@ -1,8 +1,6 @@
 import { getLeads } from '@/lib/leads/source';
 import { inRange, summarize } from '@/lib/metrics';
 
-export const revalidate = 300;
-
 const nf = new Intl.NumberFormat('he-IL');
 const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 });
 const pct = new Intl.NumberFormat('he-IL', { style: 'percent', maximumFractionDigits: 0 });
