@@ -122,3 +122,20 @@ for v in groups.values():
             judge(cl); cl = [b]
     judge(cl)
 print('כפילויות לפי הכלל (10 שניות): ' + '; '.join(f'{k} ({c})' for k, c in cmp.most_common(12)))
+
+# חריגים: ערכים נדירים בעמודות של קטגוריות, עם מספר השורה בגיליון (בלי פרטים אישיים)
+rownum = [i + 2 for i, r in enumerate(rows[1:]) if any(c.strip() for c in r)]
+rare_out = []
+for name in ['מקור הגעה', 'סטטוס', 'סטטוס שאלון', 'שם תהליך', 'התחיל שיחה', 'אופן שיחה', "ענה לצ'אטבוט?"]:
+    if name not in h:
+        continue
+    vals = col(name)
+    for v, k in collections.Counter(vals).items():
+        if v and k <= 3:
+            where = [rownum[i] for i, x in enumerate(vals) if x == v][:5]
+            rare_out.append(f'{name} = "{v[:40]}" ({k}): שורות {", ".join(map(str, where))}')
+old = [(rownum[i], d) for i, (d, p) in enumerate(zip(dates, pd)) if p and p.year < 2026]
+rare_out.append('שורות לפני 2026: ' + ('; '.join(f'שורה {r} ({d[:10]})' for r, d in old) or 'אין'))
+filled_new = {name: sum(1 for v in col(name) if v) for name in ['התחיל שיחה', 'אופן שיחה'] if name in h}
+rare_out.append('עמודות הסוכן, כמה מלאות: ' + ', '.join(f'{k}: {v}' for k, v in filled_new.items()))
+print('\n'.join(['חריגים:'] + rare_out))
