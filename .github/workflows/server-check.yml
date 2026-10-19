@@ -1,9 +1,12 @@
 name: בדיקת שרת
 
-# מריצים ידנית (Actions > בדיקת שרת > Run workflow) כדי לראות מה מותקן על השרת.
-# לא משנה כלום בשרת: רק קורא.
+# רץ ידנית (Actions > בדיקת שרת > Run workflow), או כשהקובץ הזה משתנה.
+# מראה מה מותקן על השרת. לא משנה כלום בשרת: רק קורא.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/server-check.yml']
 
 jobs:
   inspect:
