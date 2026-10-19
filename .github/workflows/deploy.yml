@@ -1,9 +1,8 @@
 name: פריסה לשרת
 
+# הפריסה האוטומטית כבויה: הסודות הצביעו על שרת לא נכון (2026-10-19).
+# מחזירים את push רק אחרי שהמנהל אישר שהשרת בסודות הוא השרת הנכון. ראו docs/ENVIRONMENTS.md.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/**', '**.md', '.claude/**', '.github/ISSUE_TEMPLATE/**']
   workflow_dispatch:
 
 concurrency:
