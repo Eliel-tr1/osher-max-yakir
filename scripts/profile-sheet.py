@@ -139,3 +139,16 @@ rare_out.append('שורות לפני 2026: ' + ('; '.join(f'שורה {r} ({d[:10
 filled_new = {name: sum(1 for v in col(name) if v) for name in ['התחיל שיחה', 'אופן שיחה'] if name in h}
 rare_out.append('עמודות הסוכן, כמה מלאות: ' + ', '.join(f'{k}: {v}' for k, v in filled_new.items()))
 print('\n'.join(['חריגים:'] + rare_out))
+
+# שורות חשודות: אילו עמודות מלאות (שמות בלבד), וערכים לא אישיים
+PII = {'שם לקוח', 'טלפון', 'מייל', 'לינק לשיחה', 'הערות', 'קוד מזהה', 'הערות ממליץ'}
+susp = sorted({rownum[i] for i, v in enumerate(col('מקור הגעה')) if v and v not in ("אורגני - צ'אטבוט וואטסאפ", 'צאטבוט')})
+for rn in susp[:5]:
+    r = rows[rn - 1]
+    cells = [(h[j] if j < len(h) else f'#{j}', v.strip()) for j, v in enumerate(r) if v.strip()]
+    shown = [f'{k}={v[:30]}' if k not in PII else f'{k}=(מלא)' for k, v in cells]
+    print(f'שורה {rn}: {len(r)} תאים; מלאות: ' + ' | '.join(shown))
+# שורה תקינה אחרונה להשוואה
+last_ok = max(rownum[i] for i, v in enumerate(col('מקור הגעה')) if v == "אורגני - צ'אטבוט וואטסאפ")
+r = rows[last_ok - 1]
+print(f'להשוואה, שורה תקינה {last_ok}: מלאות: ' + ' | '.join((h[j] if j < len(h) else f'#{j}') + ('=(מלא)' if h[j] in PII else '=' + v.strip()[:20]) for j, v in enumerate(r) if v.strip() and j < len(h)))
