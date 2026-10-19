@@ -42,3 +42,19 @@ jobs:
           # גם כהערה על הריצה, כדי שאפשר יהיה לקרוא את התוצאה בלי הלוג המלא
           NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\r'/}"; NOTE="${NOTE//$'\n'/%0A}"
           echo "::notice title=בדיקת שרת::$NOTE"
+      - name: הכתובת מבחוץ
+        if: always()
+        run: |
+          OUT=""
+          for u in https://ai.vitrue.co.il/oshermax https://ai.vitrue.co.il/oshermax/ https://ai.vitrue.co.il/oshermax/index.html https://ai.vitrue.co.il/; do
+            H=$(curl -sS -o /dev/null -D - --max-time 20 -A "Mozilla/5.0" "$u" 2>&1 | tr -d '\r')
+            CODE=$(echo "$H" | awk 'toupper($1) ~ /^HTTP/ {c=$2} END {print c}')
+            LOC=$(echo "$H" | awk 'tolower($1)=="location:" {print $2}')
+            TYPE=$(echo "$H" | awk 'tolower($1)=="content-type:" {print $2}')
+            OUT="$OUT$u -> $CODE ${LOC:+(אל $LOC) }${TYPE}"$'\n'
+          done
+          FINAL=$(curl -sS -L -o /dev/null -w "%{http_code} %{url_effective} hops=%{num_redirects}" --max-time 20 -A "Mozilla/5.0" https://ai.vitrue.co.il/oshermax 2>&1)
+          OUT="${OUT}בלי לוכסן, עם מעקב הפניות: $FINAL"
+          echo "$OUT"
+          NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\n'/%0A}"
+          echo "::notice title=הכתובת מבחוץ::$NOTE"
