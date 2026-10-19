@@ -160,3 +160,40 @@ describe('breakdowns', () => {
     expect(days).toEqual([{ key: '2026-10-01', passed: 1, failed: 0 }, { key: '2026-10-02', passed: 0, failed: 0 }, { key: '2026-10-03', passed: 0, failed: 1 }]);
   });
 });
+
+describe('time buckets', () => {
+  it('starts weeks on Sunday, in Israel time, and rolls months over the year', async () => {
+    const { bucketOf, timeSeries } = await import('../lib/metrics');
+    // יום שני 19/10/2026 -> השבוע של יום ראשון 18/10
+    expect(bucketOf('2026-10-19T09:00:00.000Z', 'week')).toBe('2026-10-18');
+    // שבת 24/10 בלילה, 23:30 בישראל, עדיין באותו שבוע
+    expect(bucketOf('2026-10-24T20:30:00.000Z', 'week')).toBe('2026-10-18');
+    expect(bucketOf('2026-10-24T20:30:00.000Z', 'month')).toBe('2026-10');
+    const s = timeSeries(['2025-12-10T10:00:00.000Z', '2026-02-01T10:00:00.000Z'], (x) => x, 'month', 1, () => [1]);
+    expect(s).toEqual([{ key: '2025-12', values: [1] }, { key: '2026-01', values: [0] }, { key: '2026-02', values: [1] }]);
+  });
+
+  it('picks day up to two months, week up to half a year, then month', async () => {
+    const { autoBucket } = await import('../lib/metrics');
+    const span = (days: number) => [lead({ at: '2026-01-01T10:00:00.000Z' }), lead({ at: new Date(Date.parse('2026-01-01T10:00:00.000Z') + (days - 1) * 86_400_000).toISOString() })];
+    expect(autoBucket(span(62))).toBe('day');
+    expect(autoBucket(span(63))).toBe('week');
+    expect(autoBucket(span(182))).toBe('week');
+    expect(autoBucket(span(183))).toBe('month');
+    expect(autoBucket([])).toBe('day');
+  });
+});
+
+describe('conversation mode spelling', () => {
+  it('merges spelling variants into the four values, and keeps anything else as its own column', async () => {
+    const { normalizeMode, breakdown } = await import('../lib/metrics');
+    expect(normalizeMode('מכירתי')).toBe('מכירותי');
+    expect(normalizeMode(' גם-וגם ')).toBe('גם וגם');
+    expect(normalizeMode('שרות')).toBe('שירות');
+    expect(normalizeMode('תמיכה')).toBe('תמיכה');
+    expect(normalizeMode(null)).toBeNull();
+    const b = breakdown([lead({ mode: 'מכירתי' }), lead({ mode: 'מכירותי' }), lead({ mode: 'תמיכה' })], () => 'x');
+    expect(b.modes).toEqual(['שירות', 'מכירותי', 'גם וגם', 'אין שיחה', 'תמיכה', 'לא סווג']);
+    expect(b.total.byMode).toEqual([0, 2, 0, 0, 1, 0]);
+  });
+});

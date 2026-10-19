@@ -5,11 +5,37 @@ import { BASE_PATH, REFRESH_MS } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
 import type { Lead, LeadsFile } from '@/lib/leads/types';
 import {
-  breakdown, countBy, inRange, matrixByMonth, monthKey, passFailOverTime, perDay, productStats, purchases,
+  autoBucket, breakdown, countBy, inRange, matrixByMonth, monthKey, normalizeMode, passFailOverTime, productStats, purchases, timeSeries,
+  type Bucket,
   MODES, removedIn, resultOf, RESULT_ORDER, summarize, testStats, UNSET,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
 import { BarList, BreakdownTable, Columns, HeatTable, TestTable, fmtDay, fmtMonth, money, nf, pct } from './charts';
+
+const BUCKETS: { id: Bucket; label: string }[] = [
+  { id: 'day', label: 'יום' },
+  { id: 'week', label: 'שבוע' },
+  { id: 'month', label: 'חודש' },
+];
+const BUCKET_WORD: Record<Bucket, string> = { day: 'יום', week: 'שבוע', month: 'חודש' };
+
+function fmtBucket(key: string, b: Bucket): string {
+  return b === 'month' ? fmtMonth(key) : b === 'week' ? `שבוע ${fmtDay(key)}` : fmtDay(key);
+}
+
+/** בחירת יחידת זמן. null = אוטומטי לפי הטווח */
+function BucketChips({ value, auto, onChange }: { value: Bucket | null; auto: Bucket; onChange: (b: Bucket | null) => void }) {
+  const current = value ?? auto;
+  return (
+    <div className="chips small" role="group" aria-label="לפי">
+      {BUCKETS.map((b) => (
+        <button key={b.id} type="button" className={current === b.id ? 'on' : ''} aria-pressed={current === b.id} onClick={() => onChange(b.id === auto ? null : b.id)}>
+          {b.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const ALL = '';
 const timeFmt = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
@@ -20,7 +46,7 @@ type Group = 'result' | 'mode' | 'process';
 
 const GROUPS: { id: Group; label: string; of: (l: Lead) => string; order?: string[] }[] = [
   { id: 'result', label: 'תוצאת מבחן', of: resultOf, order: RESULT_ORDER },
-  { id: 'mode', label: 'אופן שיחה', of: (l) => l.mode ?? UNSET, order: [...MODES, UNSET] },
+  { id: 'mode', label: 'אופן שיחה', of: (l) => normalizeMode(l.mode) ?? UNSET, order: [...MODES, UNSET] },
   { id: 'process', label: 'תהליך', of: (l) => l.process ?? 'לא צוין' },
 ];
 
@@ -35,6 +61,14 @@ export default function Dashboard() {
   const [group, setGroup] = useState<Group>('result');
   const [product, setProduct] = useState<string | null>(null);
   const [test, setTest] = useState<string | null>(null);
+  const [leadsBy, setLeadsBy] = useState<Bucket | null>(null);
+  const [testsBy, setTestsBy] = useState<Bucket | null>(null);
+  /** טווח חדש מחזיר את יחידת הזמן לאוטומטי, כדי ש"7 ימים" לא יוצג כעמודה אחת של חודש */
+  const choosePreset = (p: Preset) => {
+    setPreset(p);
+    setLeadsBy(null);
+    setTestsBy(null);
+  };
 
   const fetchData = useCallback(async (): Promise<LeadsFile | null> => {
     try {
@@ -81,15 +115,18 @@ export default function Dashboard() {
     const leads = inRange(scoped, range);
     const allPurchases = purchases(leads);
     const ps = allPurchases.filter((p) => channel === 'all' || p.channel === 'bot');
-    const days = perDay(leads);
+    const auto = autoBucket(leads);
+    const lb = leadsBy ?? auto;
+    const tb = testsBy ?? auto;
     const monthsAll = [...new Set(allPurchases.map((p) => monthKey(p.at)))].sort();
     const g = GROUPS.find((x) => x.id === group)!;
     const withTest = leads.filter((l) => l.test && (!test || l.test === test));
-    const by: 'day' | 'month' = days.length > 62 ? 'month' : 'day';
     return {
       summary: summarize(leads),
       removed: removedIn(scoped, range),
-      days,
+      auto,
+      leadsBy: lb,
+      leadsSeries: timeSeries(leads, (l) => l.at, lb, 1, () => [1]),
       monthsAll,
       byMonth: monthsAll.map((m) => {
         const inM = allPurchases.filter((p) => monthKey(p.at) === m);
@@ -100,11 +137,11 @@ export default function Dashboard() {
       table: breakdown(leads, g.of, g.order),
       bySource: breakdown(leads, (l) => l.source ?? 'לא צוין'),
       tests: testStats(leads),
-      passFail: passFailOverTime(test ? withTest : leads.filter((l) => l.test), by),
-      passFailBy: by,
+      passFail: passFailOverTime(test ? withTest : leads.filter((l) => l.test), tb),
+      passFailBy: tb,
       testMatrix: matrixByMonth(leads.filter((l) => l.test), (l) => l.test, (l) => l.at),
     };
-  }, [file, preset, custom, source, proc, channel, group, test]);
+  }, [file, preset, custom, source, proc, channel, group, test, leadsBy, testsBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
   if (load.state === 'error' || !file || !view) {
@@ -144,9 +181,9 @@ export default function Dashboard() {
       <section className="filters" aria-label="סינון">
         <div className="chips" role="group" aria-label="טווח תאריכים">
           {PRESETS.map((p) => (
-            <button key={p.id} type="button" className={preset === p.id ? 'on' : ''} aria-pressed={preset === p.id} onClick={() => setPreset(p.id)}>{p.label}</button>
+            <button key={p.id} type="button" className={preset === p.id ? 'on' : ''} aria-pressed={preset === p.id} onClick={() => choosePreset(p.id)}>{p.label}</button>
           ))}
-          <button type="button" className={preset === 'custom' ? 'on' : ''} aria-pressed={preset === 'custom'} onClick={() => setPreset('custom')}>תאריכים אחרים</button>
+          <button type="button" className={preset === 'custom' ? 'on' : ''} aria-pressed={preset === 'custom'} onClick={() => choosePreset('custom')}>תאריכים אחרים</button>
         </div>
         {preset === 'custom' && (
           <div className="dates">
@@ -195,10 +232,13 @@ export default function Dashboard() {
       </section>
 
       <section className="card">
-        <h2>מבחנים: עברו ונכשלו</h2>
-        <p className="hint">{test ? <>מוצג: <bdi>{test}</bdi>. </> : 'כל המבחנים. '}לחיצה על מבחן בטבלה מציגה רק אותו{test ? ', ולחיצה נוספת מחזירה לכולם' : ''}. {view.passFailBy === 'month' ? 'לפי חודש.' : 'לפי יום.'}</p>
+        <div className="cardhead">
+          <h2>מבחנים: עברו ונכשלו, לפי {BUCKET_WORD[view.passFailBy]}</h2>
+          <BucketChips value={testsBy} auto={view.auto} onChange={setTestsBy} />
+        </div>
+        <p className="hint">{test ? <>מוצג: <bdi>{test}</bdi>. </> : 'כל המבחנים. '}לחיצה על מבחן בטבלה מציגה רק אותו{test ? ', ולחיצה נוספת מחזירה לכולם' : ''}.</p>
         <Columns
-          labels={view.passFail.map((d) => (view.passFailBy === 'month' ? fmtMonth(d.key) : fmtDay(d.key)))}
+          labels={view.passFail.map((d) => fmtBucket(d.key, view.passFailBy))}
           values={view.passFail.map((d) => [d.passed, d.failed])}
           series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--series-2' }]}
           height={200}
@@ -209,8 +249,11 @@ export default function Dashboard() {
       </section>
 
       <section className="card">
-        <h2>לידים לפי יום</h2>
-        <Columns labels={view.days.map((d) => fmtDay(d.day))} values={view.days.map((d) => [d.count])} series={[{ key: 'leads', label: 'לידים', color: '--series-1' }]} />
+        <div className="cardhead">
+          <h2>לידים לפי {BUCKET_WORD[view.leadsBy]}</h2>
+          <BucketChips value={leadsBy} auto={view.auto} onChange={setLeadsBy} />
+        </div>
+        <Columns labels={view.leadsSeries.map((d) => fmtBucket(d.key, view.leadsBy))} values={view.leadsSeries.map((d) => d.values)} series={[{ key: 'leads', label: 'לידים', color: '--series-1' }]} />
       </section>
 
       <section className="card">

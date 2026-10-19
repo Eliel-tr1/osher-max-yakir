@@ -1,4 +1,6 @@
-import { dayKey, type Range } from './metrics';
+import { addDays, dayKey, type Range } from './metrics';
+
+export { addDays };
 import { israelDayStart } from './sheet/parse';
 
 export type Preset = 'all' | '7d' | '30d' | 'month' | 'prevMonth' | 'custom';
@@ -10,13 +12,6 @@ export const PRESETS: { id: Exclude<Preset, 'custom'>; label: string }[] = [
   { id: 'prevMonth', label: 'החודש הקודם' },
   { id: 'all', label: 'הכול' },
 ];
-
-/** "2026-10-19" + n ימים */
-export function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 /** טווח לפי בחירה. ימים לפי שעון ישראל. custom: from ו-to כוללים, בפורמט 2026-10-19. */
 export function rangeFor(preset: Preset, now: Date, custom?: { from: string; to: string }): Range {

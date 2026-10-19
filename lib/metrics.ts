@@ -117,6 +117,16 @@ export function summarize(leads: Lead[]): Summary {
 export const MODES = ['שירות', 'מכירותי', 'גם וגם', 'אין שיחה'];
 export const UNSET = 'לא סווג';
 
+/** השלד של מילה: בלי רווחים, סימני פיסוק, ו-ו' ו-י' (אמות קריאה), כדי שאיות שונה ייחשב אותו ערך. */
+const skeleton = (s: string) => s.replace(/[\s\u05D5\u05D9'"\u05F3\u05F4.,\-]/g, '');
+const CANON_MODE = new Map(MODES.map((m) => [skeleton(m), m]));
+
+/** "מכירתי" -> "מכירותי". ערך שלא דומה לאף אחד מהארבעה נשאר כמו שהוא, ומופיע בעמודה משלו. */
+export function normalizeMode(m: string | null): string | null {
+  if (!m) return null;
+  return CANON_MODE.get(skeleton(m)) ?? m.trim();
+}
+
 export interface BreakdownRow {
   name: string;
   leads: number;
@@ -140,7 +150,7 @@ export interface Breakdown {
 
 /** טבלת פילוח: לכל קבוצה כמה לידים, שאלון, רכישות, תשלום, עברו ונכשלו, ואופן שיחה. */
 export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: string[]): Breakdown {
-  const extra = [...new Set(leads.map((l) => l.mode).filter((m): m is string => !!m && !MODES.includes(m)))].sort();
+  const extra = [...new Set(leads.map((l) => normalizeMode(l.mode)).filter((m): m is string => !!m && !MODES.includes(m)))].sort();
   const modes = [...MODES, ...extra, UNSET];
   const empty = (name: string): BreakdownRow => ({
     name, leads: 0, startedQ: 0, finishedQ: 0, purchased: 0, paidBot: 0, paidOther: 0, totalPaid: 0, passed: 0, failed: 0,
@@ -158,7 +168,8 @@ export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: s
     if (paidOther(l)) r.paidOther++;
     if (l.status === PASSED) r.passed++;
     if (l.status === FAILED) r.failed++;
-    r.byMode[modes.indexOf(l.mode && modes.includes(l.mode) ? l.mode : UNSET)]++;
+    const mode = normalizeMode(l.mode);
+    r.byMode[modes.indexOf(mode && modes.includes(mode) ? mode : UNSET)]++;
   };
   const groups = new Map<string, BreakdownRow>();
   for (const name of order ?? []) groups.set(name, empty(name));
@@ -204,18 +215,64 @@ export function testStats(leads: Lead[]): TestStat[] {
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
 
-/** עברו ונכשלו לאורך זמן: לפי יום, או לפי חודש כשהטווח ארוך. */
-export function passFailOverTime(leads: Lead[], by: 'day' | 'month'): { key: string; passed: number; failed: number }[] {
-  const keyOf = by === 'day' ? (l: Lead) => dayKey(l.at) : (l: Lead) => monthKey(l.at);
-  const keys = by === 'day' ? perDay(leads).map((d) => d.day) : [...new Set(leads.map(keyOf))].sort();
-  const m = new Map(keys.map((k) => [k, { key: k, passed: 0, failed: 0 }]));
-  for (const l of leads) {
-    const r = m.get(keyOf(l));
-    if (!r) continue;
-    if (l.status === PASSED) r.passed++;
-    if (l.status === FAILED) r.failed++;
+export type Bucket = 'day' | 'week' | 'month';
+
+/** "2026-10-19" + n ימים */
+export function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** המפתח של התקופה: יום "2026-10-19", שבוע לפי יום ראשון שלו "2026-10-18", חודש "2026-10". שעון ישראל. */
+export function bucketOf(iso: string, b: Bucket): string {
+  const d = dayKey(iso);
+  if (b === 'day') return d;
+  if (b === 'month') return d.slice(0, 7);
+  return addDays(d, -new Date(`${d}T12:00:00Z`).getUTCDay());
+}
+
+function nextBucket(key: string, b: Bucket): string {
+  if (b === 'day') return addDays(key, 1);
+  if (b === 'week') return addDays(key, 7);
+  const [y, m] = key.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** יחידת הזמן שמתאימה לטווח: עד חודשיים לפי יום, עד חצי שנה לפי שבוע, מעבר לזה לפי חודש. */
+export function autoBucket(leads: Lead[]): Bucket {
+  if (!leads.length) return 'day';
+  const days = leads.map((l) => dayKey(l.at)).sort();
+  const span = (new Date(`${days[days.length - 1]}T12:00:00Z`).getTime() - new Date(`${days[0]}T12:00:00Z`).getTime()) / 86_400_000 + 1;
+  return span <= 62 ? 'day' : span <= 182 ? 'week' : 'month';
+}
+
+/**
+ * סדרה לאורך זמן, כולל תקופות בלי נתונים (באפס), מהראשונה לאחרונה.
+ * values מחזיר מערך באורך width: כמה להוסיף לכל סדרה עבור הפריט.
+ */
+export function timeSeries<T>(items: T[], at: (x: T) => string, b: Bucket, width: number, values: (x: T) => number[]): { key: string; values: number[] }[] {
+  if (!items.length) return [];
+  const m = new Map<string, number[]>();
+  for (const x of items) {
+    const k = bucketOf(at(x), b);
+    const v = m.get(k) ?? new Array<number>(width).fill(0);
+    values(x).forEach((n, i) => (v[i] += n));
+    m.set(k, v);
   }
-  return [...m.values()];
+  const keys = [...m.keys()].sort();
+  const out: { key: string; values: number[] }[] = [];
+  for (let k = keys[0]; ; k = nextBucket(k, b)) {
+    out.push({ key: k, values: m.get(k) ?? new Array<number>(width).fill(0) });
+    if (k >= keys[keys.length - 1]) break;
+  }
+  return out;
+}
+
+/** עברו ונכשלו לאורך זמן */
+export function passFailOverTime(leads: Lead[], b: Bucket): { key: string; passed: number; failed: number }[] {
+  return timeSeries(leads, (l) => l.at, b, 2, (l) => [l.status === PASSED ? 1 : 0, l.status === FAILED ? 1 : 0])
+    .map(({ key, values: [passed, failed] }) => ({ key, passed, failed }));
 }
 
 /** כמה הסירו את עצמם, לפי תאריך ההסרה (ולא לפי תאריך הכניסה). */
