@@ -68,4 +68,28 @@ for v in groups.values():
         gaps['0 שניות' if s == 0 else 'עד 10 שניות' if s <= 10 else 'עד 60 שניות' if s <= 60 else 'עד 10 דקות' if s <= 600 else 'מעל 10 דקות'] += 1
 out.append(f'משתמשים ייחודיים: {len(groups)}; עם יותר משורה: {multi}; פערים בין שורות של אותו משתמש: ' + ', '.join(f'{k}: {v}' for k, v in gaps.items()))
 out.append(f'יש שניות בתאריך הכניסה: {"כן" if any(d.count(":") == 2 for d in dates) else "לא, רק דקות"}')
+
+# הצלבה: סטטוס שאלון מול מוצר וסכום
+def num(a):
+    a = re.sub(r'[^\d.]', '', a)
+    try:
+        return float(a) if a else None
+    except ValueError:
+        return None
+cross = collections.defaultdict(lambda: collections.Counter())
+sums = collections.defaultdict(list)
+for q, a, p in zip(qs, amts, prods):
+    q = q.lower() or '(ריק)'
+    n = num(a)
+    prod = 'מוצר אמיתי' if p and p != '-' else ('מוצר "-"' if p == '-' else 'בלי מוצר')
+    cross[q][prod + (', סכום>0' if n and n > 0 else ', סכום 0' if n == 0 else ', בלי סכום')] += 1
+    if n:
+        sums[q].append(n)
+for q, c in cross.items():
+    s = sums.get(q, [])
+    out.append(f'סטטוס שאלון {q}: ' + '; '.join(f'{k} ({v})' for k, v in c.most_common()) + (f' | סכומים: ממוצע {sum(s)/len(s):.0f}, מינ {min(s):.0f}, מקס {max(s):.0f}' if s else ''))
+st = col('סטטוס')
+x = collections.Counter((s or '(ריק)', (q.lower() or '(ריק)')) for s, q in zip(st, qs))
+out.append('סטטוס מול סטטוס שאלון: ' + '; '.join(f'{a}/{b} ({v})' for (a, b), v in x.most_common(12)))
+
 print('\n'.join(out))
