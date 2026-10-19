@@ -13,6 +13,8 @@ on:
       - '.github/run-server-check'
       - '.github/workflows/server-check.yml'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/profile-sheet.yml'
+      - 'scripts/profile-sheet.py'
   workflow_dispatch:
 
 concurrency:

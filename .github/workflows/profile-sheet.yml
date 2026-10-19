@@ -1,0 +1,20 @@
+name: פרופיל טבלה
+
+# ספירות בלבד, בלי פרטים אישיים. רץ ידנית או כשהסקריפט משתנה.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['scripts/profile-sheet.py']
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: פרופיל
+        run: |
+          OUT=$(python3 scripts/profile-sheet.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים' 2>&1) || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          echo "$OUT"
+          NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\n'/%0A}"
+          echo "::notice title=פרופיל טבלה::$NOTE"
