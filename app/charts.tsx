@@ -232,23 +232,34 @@ function Cell({ v, of }: { v: number; of?: number }) {
 }
 
 export interface BreakdownView {
-  rows: { name: string; leads: number; startedQ: number; finishedQ: number; purchased: number; paidBot: number; paidOther: number; totalPaid: number; passed: number; failed: number; byMode: number[] }[];
+  rows: { name: string; leads: number; started: number; analyzed: number; real: number; startedQ: number; finishedQ: number; purchased: number; paidBot: number; paidOther: number; totalPaid: number; passed: number; failed: number; byMode: number[] }[];
   total: BreakdownView['rows'][number];
   modes: string[];
 }
 
 /** טבלת פילוח: שורה לכל קבוצה, ועמודות של המסע מהליד ועד התשלום. */
-export function BreakdownTable({ data, groupHeader, showResult, showModes }: {
+export function BreakdownTable({ data, groupHeader, showResult, showModes: wantModes, showAi }: {
   data: BreakdownView;
   groupHeader: string;
   showResult: boolean;
   showModes: boolean;
+  /** עמודת "שיחה אמיתית": רק כשהסוכן כבר קרא שיחות */
+  showAi: boolean;
 }) {
   if (!data.total.leads) return <p className="empty">אין נתונים בטווח הזה</p>;
+  // כשאין עדיין אף סיווג, עמודה אחת של "לא סווג" לא מוסיפה מידע
+  const showModes = wantModes && data.modes.length > 1;
   const line = (r: BreakdownView['rows'][number]) => (
       <tr key={r.name}>
         <th scope="row" dir="auto">{r.name}</th>
         <td>{nf.format(r.leads)}</td>
+        <Cell v={r.started} of={r.leads} />
+        {showAi && (
+          <td>
+            {nf.format(r.real)}
+            {r.analyzed > 0 && <small>{pct(r.real, r.analyzed)} מ-{nf.format(r.analyzed)} שנקראו</small>}
+          </td>
+        )}
         <Cell v={r.startedQ} of={r.leads} />
         <Cell v={r.finishedQ} of={r.leads} />
         <td>
@@ -270,6 +281,8 @@ export function BreakdownTable({ data, groupHeader, showResult, showModes }: {
             <tr>
               <th scope="col">{groupHeader}</th>
               <th scope="col">לידים</th>
+              <th scope="col">התחילו שיחה</th>
+              {showAi && <th scope="col">שיחה אמיתית</th>}
               <th scope="col">התחילו שאלון</th>
               <th scope="col">סיימו שאלון</th>
               <th scope="col">רכשו</th>
@@ -280,7 +293,7 @@ export function BreakdownTable({ data, groupHeader, showResult, showModes }: {
             </tr>
             {showModes && (
               <tr className="group-note">
-                <th colSpan={showResult ? 8 : 6} />
+                <th colSpan={(showResult ? 8 : 6) + 1 + (showAi ? 1 : 0)} />
                 <th colSpan={data.modes.length} scope="colgroup">אופן שיחה</th>
               </tr>
             )}

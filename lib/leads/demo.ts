@@ -20,7 +20,7 @@ const PRODUCTS: [string, number[]][] = [
 ];
 const TESTS = ['Demo Test 20K', 'Demo Test 100K', 'Demo Test 200K', 'Demo Access 50K', 'Demo Instant 20K'];
 const PROCESSES = ['תהליך ראשי', 'תהליך ראשי', 'תהליך ראשי', 'הרשמה לאתגר'];
-const MODES = ['שירות', 'מכירותי', 'מכירותי', 'גם וגם', 'אין שיחה', null, null];
+const MODES = ['שירותי', 'מכירתי', 'מכירתי', 'טכני', 'פניית שירות', null];
 const SOURCES = ["אורגני - צ'אטבוט וואטסאפ", "אורגני - צ'אטבוט וואטסאפ", "אורגני - צ'אטבוט וואטסאפ", 'Demo Source'];
 
 export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00+03:00')): LeadsFile {
@@ -46,14 +46,15 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
       status: answered ? (rnd() < (converted ? 0.45 : 0.15) ? 'עבר' : 'לא עבר') : null,
       qStatus,
       answered,
-      started: answered || rnd() < 0.3,
+      // כאילו הסוכן כבר קרא את השיחות של רוב הלידים, חוץ מהאחרונים
+      aiConversation: at.getTime() > until.getTime() - 2 * 86_400_000 ? null : answered && rnd() < 0.7 ? 'yes' : 'no',
       step,
       score: answered ? Math.round(rnd() * 70) : null,
       test: converted || (payment && rnd() < 0.3) ? pick(TESTS) : null,
       product: payment ? name : null,
       amount: converted || payment ? pick(prices) : null,
       removedAt: rnd() < 0.01 ? new Date(at.getTime() + 3600_000).toISOString() : null,
-      mode: answered ? pick(MODES) : null,
+      mode: answered && at.getTime() <= until.getTime() - 2 * 86_400_000 ? pick(MODES) : null,
     });
   }
   leads.sort((a, b) => a.at.localeCompare(b.at));

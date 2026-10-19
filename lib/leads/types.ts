@@ -13,8 +13,11 @@ export interface Lead {
   qStatus: string | null;
   /** "ענה לצ'אטבוט?" (עמודה I) */
   answered: boolean;
-  /** "התחיל שיחה" (עמודה BD, ימולא על ידי סוכן AI): התחיל את המסע */
-  started: boolean;
+  /**
+   * "התחיל שיחה" (עמודה BD), ממולא על ידי סוכן AI שקורא את השיחות: האם הייתה שיחה אמיתית עם הסוכן,
+   * מעבר ל"היי" או הודעה כללית. null = הסוכן עוד לא קרא את השיחה.
+   */
+  aiConversation: 'yes' | 'no' | null;
   step: number | null;
   score: number | null;
   /** "מבחן" */
@@ -24,7 +27,7 @@ export interface Lead {
   amount: number | null;
   /** "הסיר את עצמו?": בטבלה כתוב שם תאריך ההסרה */
   removedAt: string | null;
-  /** "אופן שיחה" (עמודה BE, ימולא על ידי סוכן AI): שירות / מכירותי / גם וגם / אין שיחה */
+  /** "אופן שיחה" (עמודה BE), ממולא על ידי סוכן AI: שירותי, מכירתי, טכני, פניית שירות... (רשימה פתוחה) */
   mode: string | null;
 }
 

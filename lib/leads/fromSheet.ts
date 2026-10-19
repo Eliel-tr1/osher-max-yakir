@@ -13,9 +13,11 @@ export const REQUIRED_COLUMNS = [
  */
 export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה'] as const;
 
-/** ערך "כן" בעמודה של סימון: כל ערך שאינו ריק ואינו שלילה מפורשת. */
-export function isYes(v: string): boolean {
-  return v.trim() !== '' && !/^(לא|no|false|0)$/i.test(v.trim());
+/** עמודה של כן/לא שסוכן ממלא: ריק = עוד לא נבדק; "לא", "no", "false", "0" = לא; כל ערך אחר = כן. */
+export function yesNo(v: string): 'yes' | 'no' | null {
+  const t = v.trim();
+  if (t === '') return null;
+  return /^(לא|no|false|0)$/i.test(t) ? 'no' : 'yes';
 }
 
 type Column = (typeof REQUIRED_COLUMNS)[number] | (typeof OPTIONAL_COLUMNS)[number];
@@ -122,7 +124,7 @@ function toLead(r: Raw, col: (r: string[], name: Column) => string): Lead {
     status: cleanText(c('סטטוס')),
     qStatus: cleanText(c('סטטוס שאלון'))?.toLowerCase() ?? null,
     answered: c("ענה לצ'אטבוט?") === 'כן',
-    started: isYes(c('התחיל שיחה')),
+    aiConversation: yesNo(c('התחיל שיחה')),
     step: num(c('שלב בשאלון')),
     score: num(c('ניקוד לקוח')),
     test: cleanText(c('מבחן')),

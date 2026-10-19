@@ -5,7 +5,7 @@ import { countBy, inRange, matrixByMonth, perDay, productStats, purchases, remov
 
 function lead(p: Partial<Lead>): Lead {
   return {
-    at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false, started: false,
+    at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
     step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null, ...p,
   };
 }
@@ -22,18 +22,28 @@ const sample = [
 describe('summarize', () => {
   it('counts converted as paid by the bot and payment as paid not necessarily by the bot', () => {
     expect(summarize(sample)).toEqual({
-      leads: 6, startedJourney: 0, passed: 0, failed: 0, purchased: 5, purchasedOfStarted: 0,
+      leads: 6, startedJourney: 0, aiAnalyzed: 0, realConversations: 0, passed: 0, failed: 0, purchased: 5, purchasedOfStarted: 0,
       paidBot: 3, paidOther: 2, totalPaid: 450, revenueBot: 400, revenueOther: 50, avgDealBot: 200, avgDealAll: 150,
     });
   });
 
-  it('counts passed, failed, conversation starts, and purchases among those who started', () => {
+  it('counts passed, failed, conversation starts (column I), and purchases among those who started', () => {
     const s = summarize([
-      lead({ status: 'עבר', started: true, qStatus: 'converted', amount: 10 }),
-      lead({ status: 'לא עבר', started: true }),
+      lead({ status: 'עבר', answered: true, qStatus: 'converted', amount: 10 }),
+      lead({ status: 'לא עבר', answered: true }),
       lead({ status: 'לא עבר', qStatus: 'payment', amount: 5 }),
     ]);
     expect([s.passed, s.failed, s.startedJourney, s.purchased, s.purchasedOfStarted]).toEqual([1, 2, 2, 2, 1]);
+  });
+
+  it('keeps the agent verdict (column BD) apart from the technical start: real, not real, not read yet', () => {
+    const s = summarize([
+      lead({ answered: true, aiConversation: 'yes' }),
+      lead({ answered: true, aiConversation: 'no' }),
+      lead({ answered: true }),
+      lead({ aiConversation: 'no' }),
+    ]);
+    expect([s.startedJourney, s.aiAnalyzed, s.realConversations]).toEqual([3, 3, 1]);
   });
 
   it('has no averages when nothing was paid', () => {
@@ -129,14 +139,14 @@ describe('breakdowns', () => {
   it('groups by test result in a fixed order, with questionnaire, purchases, paid total and conversation mode', async () => {
     const { breakdown, resultOf, RESULT_ORDER } = await import('../lib/metrics');
     const b = breakdown(ls, resultOf, RESULT_ORDER);
-    expect(b.modes).toEqual(['שירות', 'מכירותי', 'גם וגם', 'אין שיחה', 'משהו חדש', 'לא סווג']);
+    expect(b.modes).toEqual(['מכירותי', 'משהו חדש', 'שירות', 'לא סווג']);
     expect(b.rows.map((r) => [r.name, r.leads, r.startedQ, r.finishedQ, r.purchased, r.totalPaid])).toEqual([
       ['עבר', 2, 2, 2, 1, 100],
       ['לא עבר', 2, 1, 0, 1, 50],
       ['בלי סטטוס', 1, 0, 0, 0, 0],
     ]);
-    expect(b.rows[0].byMode).toEqual([1, 1, 0, 0, 0, 0]);
-    expect(b.rows[1].byMode).toEqual([0, 0, 0, 0, 1, 1]);
+    expect(b.rows[0].byMode).toEqual([1, 0, 1, 0]);
+    expect(b.rows[1].byMode).toEqual([0, 1, 0, 1]);
     expect(b.total).toMatchObject({ leads: 5, passed: 2, failed: 2, purchased: 2, totalPaid: 150 });
   });
 
@@ -184,16 +194,17 @@ describe('time buckets', () => {
   });
 });
 
-describe('conversation mode spelling', () => {
-  it('merges spelling variants into the four values, and keeps anything else as its own column', async () => {
-    const { normalizeMode, breakdown } = await import('../lib/metrics');
-    expect(normalizeMode('מכירתי')).toBe('מכירותי');
-    expect(normalizeMode(' גם-וגם ')).toBe('גם וגם');
-    expect(normalizeMode('שרות')).toBe('שירות');
-    expect(normalizeMode('תמיכה')).toBe('תמיכה');
-    expect(normalizeMode(null)).toBeNull();
-    const b = breakdown([lead({ mode: 'מכירתי' }), lead({ mode: 'מכירותי' }), lead({ mode: 'תמיכה' })], () => 'x');
-    expect(b.modes).toEqual(['שירות', 'מכירותי', 'גם וגם', 'אין שיחה', 'תמיכה', 'לא סווג']);
-    expect(b.total.byMode).toEqual([0, 2, 0, 0, 1, 0]);
+describe('conversation mode (written by the agent)', () => {
+  it('shows every category as written, most common first, with only spaces unified, and unclassified last', async () => {
+    const { modesOf, breakdown } = await import('../lib/metrics');
+    const ls = [lead({ mode: 'מכירתי' }), lead({ mode: ' מכירתי ' }), lead({ mode: 'פניית  שירות' }), lead({ mode: 'טכני' }), lead({ mode: 'טכני' }), lead({ mode: 'טכני' }), lead({})];
+    expect(modesOf(ls)).toEqual(['טכני', 'מכירתי', 'פניית שירות', 'לא סווג']);
+    expect(breakdown(ls, () => 'x').total.byMode).toEqual([3, 2, 1, 1]);
+  });
+
+  it('counts conversation starts, agent reads and real conversations per group', async () => {
+    const { breakdown } = await import('../lib/metrics');
+    const b = breakdown([lead({ answered: true, aiConversation: 'yes' }), lead({ answered: true, aiConversation: 'no' }), lead({})], () => 'x');
+    expect([b.total.started, b.total.analyzed, b.total.real]).toEqual([2, 2, 1]);
   });
 });

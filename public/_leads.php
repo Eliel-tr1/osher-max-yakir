@@ -82,9 +82,11 @@ function osher_clean(?string $v): ?string {
     return $t === '' || $t === '-' ? null : $t;
 }
 
-function osher_is_yes(string $v): bool {
+/** כמו yesNo: ריק -> null, שלילה -> 'no', אחרת 'yes' */
+function osher_yes_no(string $v): ?string {
     $t = osher_trim($v);
-    return $t !== '' && !preg_match('/^(לא|no|false|0)$/iu', $t);
+    if ($t === '') return null;
+    return preg_match('/^(לא|no|false|0)$/iu', $t) ? 'no' : 'yes';
 }
 
 /** כמו leadsFromRows. זורק RuntimeException כשחסרה עמודה. */
@@ -175,7 +177,7 @@ function osher_to_lead(array $r, callable $col): array {
         'status' => osher_clean($c('סטטוס')),
         'qStatus' => $q === null ? null : mb_strtolower($q),
         'answered' => $c("ענה לצ'אטבוט?") === 'כן',
-        'started' => osher_is_yes($c('התחיל שיחה')),
+        'aiConversation' => osher_yes_no($c('התחיל שיחה')),
         'step' => osher_number($c('שלב בשאלון')),
         'score' => osher_number($c('ניקוד לקוח')),
         'test' => osher_clean($c('מבחן')),

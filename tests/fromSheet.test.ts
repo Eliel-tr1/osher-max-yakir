@@ -70,12 +70,14 @@ describe('leadsFromRows', () => {
     const header = [...HEADER, 'עמודה עתידית', 'התחיל שיחה', 'אופן שיחה'];
     const r = (started: string) => [...row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' }), 'x', started, 'מכירותי'];
     const withCols = leadsFromRows([header, r('כן')]);
-    expect(withCols.leads[0]).toMatchObject({ started: true, mode: 'מכירותי' });
-    expect(leadsFromRows([header, r('TRUE')]).leads[0].started).toBe(true);
-    expect(leadsFromRows([header, r('לא')]).leads[0].started).toBe(false);
-    expect(leadsFromRows([header, r('')]).leads[0].started).toBe(false);
+    expect(withCols.leads[0]).toMatchObject({ aiConversation: 'yes', mode: 'מכירותי' });
+    expect(leadsFromRows([header, r('TRUE')]).leads[0].aiConversation).toBe('yes');
+    expect(leadsFromRows([header, r('לא')]).leads[0].aiConversation).toBe('no');
+    expect(leadsFromRows([header, r('FALSE')]).leads[0].aiConversation).toBe('no');
+    // ריק = הסוכן עוד לא קרא את השיחה
+    expect(leadsFromRows([header, r('')]).leads[0].aiConversation).toBeNull();
     const without = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })]);
-    expect(without.leads[0]).toMatchObject({ started: false, mode: null });
+    expect(without.leads[0]).toMatchObject({ aiConversation: null, mode: null });
   });
 
   it('fails loudly when a needed column is renamed', () => {

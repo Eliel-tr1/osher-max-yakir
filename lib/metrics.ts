@@ -43,9 +43,19 @@ export function purchased(l: Lead): boolean {
   return paidByBot(l) || paidOther(l);
 }
 
-/** התחיל את המסע (התחלת שיחה): עמודה BD, "התחיל שיחה" (החלטת המנהל, #16). */
+/** התחיל את המסע (התחלת שיחה), טכנית: ענה לצ'אטבוט, עמודה I (החלטת המנהל, #16). */
 export function startedJourney(l: Lead): boolean {
-  return l.started;
+  return l.answered;
+}
+
+/** שיחה אמיתית, לפי סוכן ה-AI שקורא את השיחות: עמודה BD "התחיל שיחה" = כן (#20). */
+export function realConversation(l: Lead): boolean {
+  return l.aiConversation === 'yes';
+}
+
+/** הסוכן כבר קרא את השיחה: עמודה BD מלאה, כן או לא (#20). */
+export function aiAnalyzed(l: Lead): boolean {
+  return l.aiConversation !== null;
 }
 
 /**
@@ -73,6 +83,10 @@ export function productOf(l: Lead): string {
 export interface Summary {
   leads: number;
   startedJourney: number;
+  /** כמה שיחות הסוכן כבר קרא */
+  aiAnalyzed: number;
+  /** מתוכן, שיחה אמיתית */
+  realConversations: number;
   passed: number;
   failed: number;
   purchased: number;
@@ -99,6 +113,8 @@ export function summarize(leads: Lead[]): Summary {
   return {
     leads: leads.length,
     startedJourney: leads.filter(startedJourney).length,
+    aiAnalyzed: leads.filter(aiAnalyzed).length,
+    realConversations: leads.filter(realConversation).length,
     passed: leads.filter((l) => l.status === PASSED).length,
     failed: leads.filter((l) => l.status === FAILED).length,
     purchased: all.length,
@@ -113,23 +129,40 @@ export function summarize(leads: Lead[]): Summary {
   };
 }
 
-/** ערכי "אופן שיחה" בסדר קבוע. ערך אחר שיופיע בטבלה יתווסף בסוף. */
-export const MODES = ['שירות', 'מכירותי', 'גם וגם', 'אין שיחה'];
 export const UNSET = 'לא סווג';
 
-/** השלד של מילה: בלי רווחים, סימני פיסוק, ו-ו' ו-י' (אמות קריאה), כדי שאיות שונה ייחשב אותו ערך. */
-const skeleton = (s: string) => s.replace(/[\s\u05D5\u05D9'"\u05F3\u05F4.,\-]/g, '');
-const CANON_MODE = new Map(MODES.map((m) => [skeleton(m), m]));
+/**
+ * "אופן שיחה" (עמודה BE) נכתב על ידי סוכן ה-AI, והקטגוריות שלו פתוחות (שירותי, מכירתי, טכני, פניית שירות...).
+ * הדשבורד מציג כל ערך כמו שהוא, ומאחד רק רווחים. כשתיקבע רשימה סגורה לסוכן, היא תיכנס ל-MODE_ORDER.
+ */
+export const MODE_ORDER: string[] = [];
 
-/** "מכירתי" -> "מכירותי". ערך שלא דומה לאף אחד מהארבעה נשאר כמו שהוא, ומופיע בעמודה משלו. */
 export function normalizeMode(m: string | null): string | null {
   if (!m) return null;
-  return CANON_MODE.get(skeleton(m)) ?? m.trim();
+  const t = m.replace(/\s+/g, ' ').trim();
+  return t === '' ? null : t;
+}
+
+/** הקטגוריות של אופן שיחה: קודם לפי MODE_ORDER, אחר כך מהנפוצה לנדירה, ו"לא סווג" בסוף. */
+export function modesOf(leads: Lead[]): string[] {
+  const counts = new Map<string, number>();
+  for (const l of leads) {
+    const m = normalizeMode(l.mode);
+    if (m) counts.set(m, (counts.get(m) ?? 0) + 1);
+  }
+  const rest = [...counts.keys()].filter((m) => !MODE_ORDER.includes(m)).sort((a, b) => counts.get(b)! - counts.get(a)! || a.localeCompare(b));
+  return [...MODE_ORDER.filter((m) => counts.has(m)), ...rest, UNSET];
 }
 
 export interface BreakdownRow {
   name: string;
   leads: number;
+  /** התחילו שיחה: ענו לצ'אטבוט */
+  started: number;
+  /** הסוכן קרא את השיחה */
+  analyzed: number;
+  /** שיחה אמיתית לפי הסוכן */
+  real: number;
   startedQ: number;
   finishedQ: number;
   purchased: number;
@@ -150,14 +183,16 @@ export interface Breakdown {
 
 /** טבלת פילוח: לכל קבוצה כמה לידים, שאלון, רכישות, תשלום, עברו ונכשלו, ואופן שיחה. */
 export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: string[]): Breakdown {
-  const extra = [...new Set(leads.map((l) => normalizeMode(l.mode)).filter((m): m is string => !!m && !MODES.includes(m)))].sort();
-  const modes = [...MODES, ...extra, UNSET];
+  const modes = modesOf(leads);
   const empty = (name: string): BreakdownRow => ({
-    name, leads: 0, startedQ: 0, finishedQ: 0, purchased: 0, paidBot: 0, paidOther: 0, totalPaid: 0, passed: 0, failed: 0,
+    name, leads: 0, started: 0, analyzed: 0, real: 0, startedQ: 0, finishedQ: 0, purchased: 0, paidBot: 0, paidOther: 0, totalPaid: 0, passed: 0, failed: 0,
     byMode: modes.map(() => 0),
   });
   const add = (r: BreakdownRow, l: Lead) => {
     r.leads++;
+    if (startedJourney(l)) r.started++;
+    if (aiAnalyzed(l)) r.analyzed++;
+    if (realConversation(l)) r.real++;
     if (startedQuestionnaire(l)) r.startedQ++;
     if (finishedQuestionnaire(l)) r.finishedQ++;
     if (purchased(l)) {
@@ -168,8 +203,7 @@ export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: s
     if (paidOther(l)) r.paidOther++;
     if (l.status === PASSED) r.passed++;
     if (l.status === FAILED) r.failed++;
-    const mode = normalizeMode(l.mode);
-    r.byMode[modes.indexOf(mode && modes.includes(mode) ? mode : UNSET)]++;
+    r.byMode[modes.indexOf(normalizeMode(l.mode) ?? UNSET)]++;
   };
   const groups = new Map<string, BreakdownRow>();
   for (const name of order ?? []) groups.set(name, empty(name));

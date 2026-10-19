@@ -7,7 +7,7 @@ import type { Lead, LeadsFile } from '@/lib/leads/types';
 import {
   autoBucket, breakdown, countBy, inRange, matrixByMonth, monthKey, normalizeMode, passFailOverTime, productStats, purchases, timeSeries,
   type Bucket,
-  MODES, removedIn, resultOf, RESULT_ORDER, summarize, testStats, UNSET,
+  modesOf, removedIn, resultOf, RESULT_ORDER, summarize, testStats, UNSET,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
 import { BarList, BreakdownTable, Columns, HeatTable, TestTable, fmtDay, fmtMonth, money, nf, pct } from './charts';
@@ -44,9 +44,9 @@ type Load = { state: 'loading' } | { state: 'error'; message: string } | { state
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
 type Group = 'result' | 'mode' | 'process';
 
-const GROUPS: { id: Group; label: string; of: (l: Lead) => string; order?: string[] }[] = [
+const GROUPS: { id: Group; label: string; of: (l: Lead) => string; order?: string[]; orderOf?: (leads: Lead[]) => string[] }[] = [
   { id: 'result', label: 'תוצאת מבחן', of: resultOf, order: RESULT_ORDER },
-  { id: 'mode', label: 'אופן שיחה', of: (l) => normalizeMode(l.mode) ?? UNSET, order: [...MODES, UNSET] },
+  { id: 'mode', label: 'אופן שיחה', of: (l) => normalizeMode(l.mode) ?? UNSET, orderOf: modesOf },
   { id: 'process', label: 'תהליך', of: (l) => l.process ?? 'לא צוין' },
 ];
 
@@ -134,7 +134,7 @@ export default function Dashboard() {
       }),
       productMatrix: matrixByMonth(ps, (p) => p.product, (p) => p.at),
       products: productStats(ps),
-      table: breakdown(leads, g.of, g.order),
+      table: breakdown(leads, g.of, g.orderOf ? g.orderOf(leads) : g.order),
       bySource: breakdown(leads, (l) => l.source ?? 'לא צוין'),
       tests: testStats(leads),
       passFail: passFailOverTime(test ? withTest : leads.filter((l) => l.test), tb),
@@ -209,7 +209,13 @@ export default function Dashboard() {
 
       <section className="tiles" aria-label="מספרי מפתח">
         <Tile label="סך הכול לידים" value={nf.format(s.leads)} sub={`${nf.format(file.duplicatesRemoved)} כפילויות הוסרו מהטבלה`} />
-        <Tile label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={file.leads.some((l) => l.started) ? `${pct(s.startedJourney, s.leads)} מהלידים · עמודה BD` : 'עמודה BD עוד לא מולאה'} />
+        <Tile
+          label="התחילו שיחה"
+          value={nf.format(s.startedJourney)}
+          sub={`${pct(s.startedJourney, s.leads)} מהלידים · ענו לצ'אטבוט. ${
+            s.aiAnalyzed ? `שיחה אמיתית: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שהסוכן קרא` : 'סוכן הניתוח עוד לא קרא שיחות'
+          }`}
+        />
         <Tile label="עברו" value={nf.format(s.passed)} sub={`${pct(s.passed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
         <Tile label="נכשלו" value={nf.format(s.failed)} sub={`${pct(s.failed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
         <Tile label="רכשו" value={nf.format(s.purchased)} sub={s.startedJourney ? `${nf.format(s.purchasedOfStarted)} מתוך מי שהתחיל שיחה (${pct(s.purchasedOfStarted, s.startedJourney)})` : `${pct(s.purchased, s.leads)} מהלידים`} />
@@ -227,8 +233,11 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-        <p className="hint">התחילו שאלון: עמודה K מלאה. סיימו: finished או converted. רכשו: converted (דרך הבוט) או payment (לא בהכרח דרך הבוט). האחוזים מתוך הלידים בשורה.</p>
-        <BreakdownTable data={view.table} groupHeader={g.label} showResult={group !== 'result'} showModes={group !== 'mode'} />
+        <p className="hint">
+          התחילו שיחה: ענו לצ&apos;אטבוט (עמודה I). שיחה אמיתית: לפי סוכן הניתוח (עמודה BD), מתוך השיחות שהוא כבר קרא. התחילו שאלון: עמודה K מלאה. סיימו: finished או converted.
+          רכשו: converted (דרך הבוט) או payment (לא בהכרח דרך הבוט). האחוזים מתוך הלידים בשורה.
+        </p>
+        <BreakdownTable data={view.table} groupHeader={g.label} showResult={group !== 'result'} showModes={group !== 'mode'} showAi={file.leads.some((l) => l.aiConversation !== null)} />
       </section>
 
       <section className="card">
@@ -299,7 +308,7 @@ export default function Dashboard() {
       <section className="card">
         <h2>מקור הגעה</h2>
         <p className="hint">לפי עמודת &quot;מקור הגעה&quot;. קמפיינים יתווספו כשהטבלה תכלול עמודת קמפיין (utm_campaign).</p>
-        <BreakdownTable data={view.bySource} groupHeader="מקור הגעה" showResult showModes={false} />
+        <BreakdownTable data={view.bySource} groupHeader="מקור הגעה" showResult showModes={false} showAi={file.leads.some((l) => l.aiConversation !== null)} />
       </section>
 
       <footer className="foot">
