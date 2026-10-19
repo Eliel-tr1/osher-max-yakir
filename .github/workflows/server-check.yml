@@ -28,6 +28,10 @@ jobs:
             echo "== מערכת"; (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -s
             echo "== כלים"; for c in tar curl; do command -v $c >/dev/null && echo "$c: יש" || echo "$c: אין"; done
             echo "== מקום פנוי"; df -h "$HOME" | tail -1 | awk "{print \$4}"
+            echo "== PHP"; command -v php >/dev/null && php -v | head -1 || echo "אין php בשורת הפקודה"
+            command -v php >/dev/null && php -m 2>/dev/null | grep -ixE "curl|openssl|json" | tr "\n" " "; echo
+            echo "== קבצי php באתר"; find "$HOME/htdocs/ai.vitrue.co.il" -maxdepth 2 -name "*.php" 2>/dev/null | wc -l
+            echo "== יציאה ל-api.github.com"; curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.github.com/zen; echo
             D="$HOME/htdocs/ai.vitrue.co.il"
             echo "== האתר ai.vitrue.co.il"
             if [ -d "$D" ]; then
