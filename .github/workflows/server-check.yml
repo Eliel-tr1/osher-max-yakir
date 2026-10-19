@@ -36,6 +36,11 @@ jobs:
             echo "== מקום פנוי"; df -h "$HOME" | tail -1
             echo "== פורטים פתוחים (80, 443, 3100)"; (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -E ":(80|443|3100) " || echo "אף אחד מהם"
             echo "== תיקיות בבית"; ls -1 "$HOME" | head -15
+            echo "== htdocs"; ls -1 "$HOME/htdocs" 2>/dev/null | head -10
+            echo "== apps"; ls -1 "$HOME/apps" 2>/dev/null | head -10
+            echo "== לוח ניהול"; [ -d /home/clp ] && echo "CloudPanel" || ([ -d /usr/local/cpanel ] && echo "cPanel") || ([ -d /etc/runcloud ] && echo "RunCloud") || echo "לא זוהה"
+            echo "== nvm"; [ -s "$HOME/.nvm/nvm.sh" ] && echo "יש nvm" || echo "אין nvm"
+            echo "== אתרים ב-nginx"; ls -1 /etc/nginx/sites-enabled 2>/dev/null | head -10 || echo "אין גישה"
           ' 2>&1) || { echo "::error::החיבור נכשל, או שהמשתמש מורשה רק ל-SFTP בלי פקודות: $(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
           echo "$OUT"
           # גם כהערה על הריצה, כדי שאפשר יהיה לקרוא את התוצאה בלי הלוג המלא
