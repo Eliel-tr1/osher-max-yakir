@@ -18,6 +18,9 @@ on:
       - 'scripts/summary.ts'
       - 'scripts/parity-real.ts'
       - '.github/workflows/refresh-data.yml'
+      - '.github/run-agent-probe'
+      - '.github/workflows/agent-probe.yml'
+      - 'scripts/agent-probe.py'
       - '.github/run-refresh'
   workflow_dispatch:
 

@@ -1,6 +1,7 @@
 """מחקר לסוכן ניתוח השיחות (#20). קריאה בלבד, בלי מפתחות ובלי פרטים אישיים.
 
   python3 scripts/agent-probe.py api BASE             מה ה-API של הבוט מציע: נקודות קצה, שיחות, מגבלת קריאות
+  python3 scripts/agent-probe.py ops SPEC PATH...     פירוט מלא של נקודות קצה מסוימות (פרמטרים, גוף, תשובה)
   python3 scripts/agent-probe.py sheet ID TAB         מבנה הטבלה: עמודות לפי אות, ותבנית מוסתרת של הקישור לשיחה
   ... | python3 scripts/agent-probe.py notice TITLE   מדפיס את הקלט כהערות על הריצה, בחלקים של עד 2500 בתים
 
@@ -180,6 +181,67 @@ def describe_ref(ref, spec):
     return node if isinstance(node, dict) else {}
 
 
+def schema_tree(schema, spec, indent='    ', depth=0):
+    """שדות של תשובה או גוף, עם סוג ותיאור, עד שלוש רמות."""
+    lines = []
+    if not isinstance(schema, dict) or depth > 3:
+        return lines
+    if '$ref' in schema:
+        return schema_tree(describe_ref(schema['$ref'], spec), spec, indent, depth)
+    if schema.get('type') == 'array' or 'items' in schema:
+        return schema_tree(schema.get('items', {}), spec, indent, depth)
+    for k, v in (schema.get('properties') or {}).items():
+        if isinstance(v, dict) and '$ref' in v:
+            v = describe_ref(v['$ref'], spec)
+        t = v.get('type', '') if isinstance(v, dict) else ''
+        d = re.sub(r'\s+', ' ', (v.get('description') or '') if isinstance(v, dict) else '')[:120]
+        ex = v.get('example') if isinstance(v, dict) else None
+        lines.append(f'{indent * (depth + 1)}{k}: {t}{" - " + d if d else ""}{" (למשל " + str(ex)[:60] + ")" if ex not in (None, "") else ""}')
+        lines += schema_tree(v, spec, indent, depth + 1)
+    return lines
+
+
+def ops(spec_url, paths):
+    """פירוט מלא של נקודות קצה מסוימות, ומה המפרט אומר על מגבלת קריאות."""
+    _, _, _, raw = fetch(spec_url)
+    spec = load_spec(raw)
+    out = [f'== {spec_url}']
+    if not spec:
+        out.append('המפרט לא נטען')
+    else:
+        for want in paths:
+            item = spec['paths'].get(want)
+            if not item:
+                out.append(f'## {want}: לא קיים')
+                continue
+            for method, op in item.items():
+                if not isinstance(op, dict):
+                    continue
+                out.append(f'## {method.upper()} {want} ({op.get("operationId")})')
+                out.append('תיאור: ' + re.sub(r'<[^>]+>', ' ', re.sub(r'\s+', ' ', op.get('description') or op.get('summary') or ''))[:600])
+                for prm in op.get('parameters', []) or []:
+                    if '$ref' in prm:
+                        prm = describe_ref(prm['$ref'], spec)
+                    sch = prm.get('schema', {}) if isinstance(prm.get('schema'), dict) else {}
+                    out.append(f'  פרמטר {prm.get("name")} ({prm.get("in")}, {sch.get("type", "")}{", חובה" if prm.get("required") else ""}): {re.sub(r"\s+", " ", prm.get("description") or "")[:200]}')
+                rb = op.get('requestBody', {}) if isinstance(op.get('requestBody'), dict) else {}
+                for ct, v in (rb.get('content') or {}).items():
+                    out.append(f'  גוף ({ct}):')
+                    out += schema_tree(v.get('schema', {}), spec)
+                for code, resp in (op.get('responses') or {}).items():
+                    if not isinstance(resp, dict):
+                        continue
+                    out.append(f'  תשובה {code}: {re.sub(r"\s+", " ", resp.get("description") or "")[:100]}')
+                    for ct, v in (resp.get('content') or {}).items():
+                        out += schema_tree(v.get('schema', {}), spec)
+    text = json.dumps(spec or {}, ensure_ascii=False)
+    hits = [text[max(0, m.start() - 150):m.end() + 150] for m in re.finditer(r'rate.?limit|\b429\b|too many requests|requests per|throttl', text, re.I)]
+    out.append('## מגבלת קריאות במפרט: ' + ('לא מוזכרת' if not hits else f'{len(hits)} אזכורים'))
+    out += [re.sub(r'\s+', ' ', h) for h in hits[:8]]
+    print('\n'.join(out))
+    notices('פירוט API', '\n'.join(out))
+
+
 # ---------- sheet ----------
 def letters(i):
     s, i = '', i + 1
@@ -236,6 +298,31 @@ def sheet(sheet_id, tab):
         per_day = collections.Counter(dates[i].strftime('%d/%m') for i in idx if dates[i] and dates[i] > last - timedelta(days=14))
         all_day = collections.Counter(d.strftime('%d/%m') for d in dates if d and d > last - timedelta(days=14))
         out.append('ענו לפי יום, 14 הימים האחרונים (ענו/כל השורות): ' + ', '.join(f'{k}: {per_day.get(k, 0)}/{all_day[k]}' for k in sorted(all_day, key=lambda s: (s[3:], s[:2]))))
+    if 'קוד מזהה' in h:
+        ns = col('קוד מזהה')
+        link = col('לינק לשיחה') if 'לינק לשיחה' in h else [''] * len(data)
+        flows = collections.Counter(m.group(1) for v in ns for m in [re.match(r'^f(\d+)u\d+$', v)] if m)
+        out.append(f'קוד מזהה = user_ns: {sum(flows.values())} שורות בתבנית f..u..; בוטים (flow) שונים: {len(flows)}; שורות לכל בוט: ' + ', '.join(str(n) for _, n in flows.most_common()))
+        out.append(f'הלינק לשיחה מסתיים בקוד המזהה: {sum(1 for a, b in zip(ns, link) if a and b.endswith("/" + a))} מתוך {sum(1 for a in ns if a)}')
+        dates = [parse_date(d) for d in col('תאריך כניסה')]
+        rows_of = collections.defaultdict(list)
+        for i, v in enumerate(ns):
+            if v:
+                rows_of[v].append(i)
+        multi = {k: v for k, v in rows_of.items() if len(v) > 1}
+        spread = collections.Counter()
+        for k, v in multi.items():
+            ds = sorted(dates[i] for i in v if dates[i])
+            s = (ds[-1] - ds[0]).total_seconds() if len(ds) > 1 else 0
+            spread['עד 10 שניות' if s <= 10 else 'עד שעה' if s <= 3600 else 'עד יום' if s <= 86400 else 'יותר מיום'] += 1
+        out.append(f'user_ns עם יותר משורה: {len(multi)}; הפער בין השורה הראשונה לאחרונה: ' + ', '.join(f'{k}: {n}' for k, n in spread.most_common()))
+        phone = col('טלפון') if 'טלפון' in h else [''] * len(data)
+        ns_per_phone = collections.defaultdict(set)
+        for p, v in zip(phone, ns):
+            key = re.sub(r'\D', '', p)[-9:]
+            if key and v:
+                ns_per_phone[key].add(v)
+        out.append(f'טלפונים: {len(ns_per_phone)}; טלפונים עם יותר מ-user_ns אחד: {sum(1 for s in ns_per_phone.values() if len(s) > 1)}; שורות בלי טלפון: {sum(1 for p in phone if not re.sub(r"[^0-9]", "", p))}')
     for name in ('התחיל שיחה', 'אופן שיחה', 'נימוק', 'נקרא ב'):
         if name in h:
             vals = collections.Counter(v for v in col(name) if v)
@@ -250,6 +337,8 @@ if __name__ == '__main__':
     cmd = sys.argv[1]
     if cmd == 'api':
         api(sys.argv[2])
+    elif cmd == 'ops':
+        ops(sys.argv[2], sys.argv[3:])
     elif cmd == 'sheet':
         sheet(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else 'לידים')
     elif cmd == 'notice':

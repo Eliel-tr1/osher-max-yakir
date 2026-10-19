@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: מסמכי ה-API של UChat
+      - name: פירוט נקודות הקצה של השיחות
         continue-on-error: true
-        run: python3 scripts/agent-probe.py api https://www.uchat.com.au/api
-      - name: מסמכי ה-API של CloudChat
-        continue-on-error: true
-        run: python3 scripts/agent-probe.py api https://console.thecloud.chat/api
+        run: >-
+          python3 scripts/agent-probe.py ops https://console.thecloud.chat/api-docs
+          /subscriber/chat-messages /subscriber/chat-messages-by-mids /flow/conversations/data
+          /flow/agent-activity-log/data /subscriber/get-info /flow/agents
       - name: מבנה הטבלה
         continue-on-error: true
         run: python3 scripts/agent-probe.py sheet 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים'
