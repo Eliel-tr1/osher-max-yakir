@@ -1,12 +1,12 @@
 name: בדיקת שרת
 
-# רץ ידנית (Actions > בדיקת שרת > Run workflow), או כשהקובץ הזה משתנה.
-# מראה מה מותקן על השרת. לא משנה כלום בשרת: רק קורא.
+# מראה מה יש על השרת שבסודות. לא משנה כלום בשרת: רק קורא.
+# רץ ידנית (Actions > בדיקת שרת > Run workflow), או כשהקובץ .github/run-server-check משתנה.
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/server-check.yml']
+    paths: ['.github/run-server-check']
 
 jobs:
   inspect:
@@ -22,25 +22,25 @@ jobs:
           PORT: ${{ secrets.SERVER_PORT }}
         run: |
           if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then
-            echo "::error::חסרים סודות: SERVER_HOST, SERVER_USER, SERVER_PASSWORD (ו-SERVER_PORT)"; exit 1
+            echo "::error::חסרים סודות: SERVER_HOST, SERVER_USER, SERVER_PASSWORD"; exit 1
           fi
           OUT=$(sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20 "$USER@$HOST" '
+            [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+            export PATH="$HOME/.local/bin:$PATH"
             echo "== מערכת"; (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -s
             echo "== משתמש"; whoami; echo "home: $HOME"
+            echo "== לוח ניהול"; [ -d /home/clp ] && echo "CloudPanel" || ([ -d /usr/local/cpanel ] && echo "cPanel") || echo "לא זוהה"
             echo "== Node"; command -v node >/dev/null && node -v || echo "אין Node"
-            echo "== npm"; command -v npm >/dev/null && npm -v || echo "אין npm"
-            echo "== pm2"; command -v pm2 >/dev/null && pm2 -v || echo "אין pm2"
-            echo "== nginx"; command -v nginx >/dev/null && echo "יש nginx" || echo "אין nginx (או אין גישה)"
-            echo "== docker"; command -v docker >/dev/null && echo "יש docker" || echo "אין docker"
+            echo "== nvm"; [ -s "$HOME/.nvm/nvm.sh" ] && echo "יש nvm" || echo "אין nvm"
+            echo "== pm2"; if command -v pm2 >/dev/null; then pm2 -v; echo "תהליכים: $(pm2 jlist 2>/dev/null | grep -o "\"name\":\"[^\"]*\"" | cut -d\" -f4 | sort -u | tr "\n" " ")"; else echo "אין pm2"; fi
             echo "== sudo"; sudo -n true 2>/dev/null && echo "יש sudo בלי סיסמה" || echo "אין sudo בלי סיסמה"
             echo "== מקום פנוי"; df -h "$HOME" | tail -1
-            echo "== פורטים פתוחים (80, 443, 3100)"; (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -E ":(80|443|3100) " || echo "אף אחד מהם"
+            PORTS=$(ss -ltnH 2>/dev/null | awk "{print \$4}" | sed -E "s/.*[:.]([0-9]+)\$/\1/" | sort -n | uniq | tr "\n" " ")
+            echo "== פורטים פתוחים"; echo "$PORTS"
+            echo "== מי עונה בפורטים 3000-9999"; for p in $PORTS; do if [ "$p" -ge 3000 ] && [ "$p" -le 9999 ]; then echo "$p: $(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://127.0.0.1:$p/)"; fi; done
             echo "== תיקיות בבית"; ls -1 "$HOME" | head -15
-            echo "== htdocs"; ls -1 "$HOME/htdocs" 2>/dev/null | head -10
-            echo "== apps"; ls -1 "$HOME/apps" 2>/dev/null | head -10
-            echo "== לוח ניהול"; [ -d /home/clp ] && echo "CloudPanel" || ([ -d /usr/local/cpanel ] && echo "cPanel") || ([ -d /etc/runcloud ] && echo "RunCloud") || echo "לא זוהה"
-            echo "== nvm"; [ -s "$HOME/.nvm/nvm.sh" ] && echo "יש nvm" || echo "אין nvm"
-            echo "== אתרים ב-nginx"; ls -1 /etc/nginx/sites-enabled 2>/dev/null | head -10 || echo "אין גישה"
+            echo "== htdocs"; for d in "$HOME"/htdocs/*/; do [ -d "$d" ] || continue; echo "-- $(basename "$d")"; ls -1A "$d" | head -15 | tr "\n" " "; echo; done
+            echo "== apps"; ls -1 "$HOME/apps" 2>/dev/null | head -10 || true
           ' 2>&1) || { echo "::error::החיבור נכשל, או שהמשתמש מורשה רק ל-SFTP בלי פקודות: $(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
           echo "$OUT"
           # גם כהערה על הריצה, כדי שאפשר יהיה לקרוא את התוצאה בלי הלוג המלא
