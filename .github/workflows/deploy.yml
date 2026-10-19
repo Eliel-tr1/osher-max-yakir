@@ -15,6 +15,7 @@ on:
       - '.github/workflows/ci.yml'
       - '.github/workflows/profile-sheet.yml'
       - 'scripts/profile-sheet.py'
+      - 'scripts/summary.ts'
       - '.github/workflows/refresh-data.yml'
       - '.github/run-refresh'
   workflow_dispatch:

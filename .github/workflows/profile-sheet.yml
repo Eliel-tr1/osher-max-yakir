@@ -5,16 +5,23 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['scripts/profile-sheet.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/profile-sheet.py', 'scripts/summary.ts', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - name: פרופיל
         run: |
           OUT=$(python3 scripts/profile-sheet.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים' 2>&1) || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          npm ci --ignore-scripts --no-audit --no-fund >/dev/null
+          npx tsx scripts/build-data.ts --sheet 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU --tab 'לידים' --out /tmp/leads.json >/dev/null
+          OUT="$(npx tsx scripts/summary.ts /tmp/leads.json)"$'\n'"$OUT"
           echo "$OUT"
           # הערה אחת מוגבלת בגודל, אז מפצלים לחלקים של עד 2500 בתים
           python3 - "$OUT" <<'PY'
