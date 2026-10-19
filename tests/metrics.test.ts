@@ -140,6 +140,12 @@ describe('breakdowns', () => {
     expect(b.total).toMatchObject({ leads: 5, passed: 2, failed: 2, purchased: 2, totalPaid: 150 });
   });
 
+  it('counts everyone who finished the questionnaire as having started it, even when column K is empty', async () => {
+    const { breakdown } = await import('../lib/metrics');
+    const b = breakdown([lead({ qStatus: 'finished' }), lead({ qStatus: 'converted' }), lead({ qStatus: 'started' }), lead({ qStatus: 'payment' })], () => 'x');
+    expect([b.total.startedQ, b.total.finishedQ]).toEqual([3, 2]);
+  });
+
   it('gives each test its pass rate, and pass and fail over time', async () => {
     const { testStats, passFailOverTime } = await import('../lib/metrics');
     const t = testStats([

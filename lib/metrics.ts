@@ -48,9 +48,13 @@ export function startedJourney(l: Lead): boolean {
   return l.answered;
 }
 
-/** התחיל שאלון: עמודה K, "שלב בשאלון", מלאה (#16). */
+/**
+ * התחיל שאלון: עמודה K, "שלב בשאלון", מלאה (#16).
+ * בנתונים עמודה K ריקה אצל רוב מי שסיים את השאלון, ולכן נחשב גם מי שעמודה L שלו started, finished או converted:
+ * מי שסיים, התחיל.
+ */
 export function startedQuestionnaire(l: Lead): boolean {
-  return l.step !== null;
+  return l.step !== null || l.qStatus === 'started' || finishedQuestionnaire(l);
 }
 
 /** סיים שאלון: עמודה L, finished או converted (#16). */
