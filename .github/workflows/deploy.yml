@@ -28,31 +28,42 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: יש Node בשרת?
+        id: node
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          if sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20 "$USER@$HOST" \
+               '[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null; command -v node >/dev/null'; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::אין Node אצל המשתמש בשרת, הפריסה מדולגת. צריך אתר Node.js ב-CloudPanel, ראו docs/ENVIRONMENTS.md"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.node.outputs.ready == 'true'
       - uses: actions/setup-node@v4
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.node.outputs.ready == 'true'
         with:
           node-version: 22
           cache: npm
       - name: בנייה ובדיקה
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.node.outputs.ready == 'true'
         run: |
           npm ci
           npm run check
       - name: אריזה
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.node.outputs.ready == 'true'
         run: |
           cp -r .next/static .next/standalone/.next/static
           [ -d public ] && cp -r public .next/standalone/public || true
           cp deploy/remote-deploy.sh .next/standalone/
           tar -czf release.tgz -C .next/standalone .
       - name: העלאה והפעלה
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.node.outputs.ready == 'true'
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
           REL="${GITHUB_SHA::7}"
-          OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
           sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "mkdir -p ~/apps/osher-max-dashboard/incoming"
           sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:apps/osher-max-dashboard/incoming/$REL.tgz"
           sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" \

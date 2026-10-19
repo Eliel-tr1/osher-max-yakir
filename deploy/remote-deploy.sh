@@ -8,6 +8,9 @@ BASE="$HOME/apps/$APP"
 REL="$1"
 PORT_APP="${APP_PORT:-3100}"
 
+# CloudPanel מתקין Node לכל אתר Node.js דרך nvm של משתמש האתר
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null
+
 if ! command -v node >/dev/null; then
   echo "אין Node על השרת. צריך Node 20 ומעלה." >&2
   exit 1
