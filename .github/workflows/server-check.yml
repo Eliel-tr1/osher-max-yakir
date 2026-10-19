@@ -1,0 +1,34 @@
+name: בדיקת שרת
+
+# מריצים ידנית (Actions > בדיקת שרת > Run workflow) כדי לראות מה מותקן על השרת.
+# לא משנה כלום בשרת: רק קורא.
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: התקנת sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: חיבור וקריאה בלבד
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then
+            echo "::error::חסרים סודות: SERVER_HOST, SERVER_USER, SERVER_PASSWORD (ו-SERVER_PORT)"; exit 1
+          fi
+          sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 "$USER@$HOST" '
+            echo "== מערכת"; (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -s
+            echo "== משתמש"; whoami; echo "home: $HOME"
+            echo "== Node"; command -v node >/dev/null && node -v || echo "אין Node"
+            echo "== npm"; command -v npm >/dev/null && npm -v || echo "אין npm"
+            echo "== pm2"; command -v pm2 >/dev/null && pm2 -v || echo "אין pm2"
+            echo "== nginx"; command -v nginx >/dev/null && echo "יש nginx" || echo "אין nginx (או אין גישה)"
+            echo "== docker"; command -v docker >/dev/null && echo "יש docker" || echo "אין docker"
+            echo "== sudo"; sudo -n true 2>/dev/null && echo "יש sudo בלי סיסמה" || echo "אין sudo בלי סיסמה"
+            echo "== מקום פנוי"; df -h "$HOME" | tail -1
+          ' || echo "::error::החיבור נכשל, או שהמשתמש מורשה רק ל-SFTP בלי פקודות"
