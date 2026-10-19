@@ -32,6 +32,8 @@ jobs:
             command -v php >/dev/null && php -m 2>/dev/null | grep -ixE "curl|openssl|json" | tr "\n" " "; echo
             echo "== קבצי php באתר"; find "$HOME/htdocs/ai.vitrue.co.il" -maxdepth 2 -name "*.php" 2>/dev/null | wc -l
             echo "== יציאה ל-api.github.com"; curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.github.com/zen; echo
+            echo "== יציאה ל-Google Sheets"; curl -s -L -o /tmp/osher-probe.csv -w "%{http_code} %{content_type} %{time_total}s" --max-time 30 "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/gviz/tq?tqx=out:csv&sheet=%D7%9C%D7%99%D7%93%D7%99%D7%9D"; echo " $(wc -c < /tmp/osher-probe.csv 2>/dev/null) bytes"; rm -f /tmp/osher-probe.csv
+            echo "== PHP-FPM"; php -r "echo ini_get(\"max_execution_time\"), \"s, memory \", ini_get(\"memory_limit\");"; echo
             D="$HOME/htdocs/ai.vitrue.co.il"
             echo "== האתר ai.vitrue.co.il"
             if [ -d "$D" ]; then
