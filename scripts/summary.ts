@@ -1,7 +1,7 @@
 /** סיכום של קובץ נתונים, באותם חישובים כמו הדף. רק מספרים מסוכמים, בלי פרטים אישיים. */
 import { readFile } from 'node:fs/promises';
 import { unpack } from '../lib/leads/file';
-import { countBy, matrixByMonth, productStats, purchases, removedIn, summarize } from '../lib/metrics';
+import { breakdown, countBy, matrixByMonth, productStats, purchases, removedIn, resultOf, RESULT_ORDER, summarize, testStats } from '../lib/metrics';
 
 async function main() {
 const file = unpack(JSON.parse(await readFile(process.argv[2] ?? 'public/data/leads.json', 'utf8')));
@@ -13,6 +13,9 @@ console.log([
   `שורות ${file.sheetRows}, כפילויות ${file.duplicatesRemoved}, בלי תאריך ${file.skippedRows}, לידים ${s.leads}`,
   `דרך הבוט ${s.paidBot} (${r(s.revenueBot)}), מחוץ לבוט ${s.paidOther} (${r(s.revenueOther)}), עסקה ממוצעת בוט ${r(s.avgDealBot)}, כולל ${r(s.avgDealAll)}`,
   `הסירו את עצמם ${removedIn(file.leads, { from: null, to: null })}`,
+  `התחילו שיחה ${s.startedJourney}, עברו ${s.passed}, נכשלו ${s.failed}, רכשו ${s.purchased} (מתוך מי שהתחיל שיחה ${s.purchasedOfStarted}), סך הכול שולם ${r(s.totalPaid)}`,
+  'פילוח לפי תוצאה: ' + breakdown(file.leads, resultOf, RESULT_ORDER).rows.map((x) => `${x.name}: לידים ${x.leads}, התחילו שאלון ${x.startedQ}, סיימו ${x.finishedQ}, רכשו ${x.purchased}, שולם ${r(x.totalPaid)}`).join(' | '),
+  'מבחנים, אחוז מעבר: ' + testStats(file.leads).slice(0, 4).map((x) => `${x.name} ${x.passed}/${x.passed + x.failed}`).join('; '),
   `רכישות לפי חודש: ${m.months.map((x, i) => `${x}: ${m.monthTotals[i]}`).join(', ')}`,
   'מוצרים: ' + productStats(ps).slice(0, 8).map((p) => `${p.name} ${p.count} (ממוצע ${r(p.avg)}, ${r(p.min)}-${r(p.max)})`).join('; '),
   'מבחנים: ' + countBy(file.leads, (l) => l.test).slice(0, 5).map((t) => `${t.name} ${t.count}`).join('; '),
