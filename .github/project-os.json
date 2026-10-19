@@ -3,13 +3,18 @@
   "reviewer": "Eliel-tr1",
   "approval_word": "מאושר",
   "evidence_branch": "evidence",
-  "areas": [],
+  "areas": [
+    "נתונים",
+    "דשבורד",
+    "תשתית",
+    "הרשאות"
+  ],
   "audit": {
     "stalled_days": 3,
     "review_days": 7,
     "question_days": 7,
     "docs_days": 2
   },
-  "name": "osher-max-yakir",
+  "name": "דשבורד אושר מקס",
   "board_issue": 1
 }
