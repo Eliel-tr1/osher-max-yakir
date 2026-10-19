@@ -1,0 +1,41 @@
+name: באג
+description: משהו שלא עובד כמו שצריך
+labels: ["שלב: בתור", "סוג: באג"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: מה קרה
+      description: מה ראית, ומה ציפית לראות.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: איך לשחזר
+      description: הצעדים, הכתובת, המכשיר והשעה בערך. בלי סיסמאות ובלי נתונים אישיים של לקוחות.
+      placeholder: |
+        1. נכנסים ל...
+        2. לוחצים על...
+        3. רואים...
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: מתי זה גמור
+      description: מה צריך לקרות כדי שנדע שזה תוקן.
+    validations:
+      required: false
+  - type: dropdown
+    id: priority
+    attributes:
+      label: עדיפות
+      options:
+        - "1: דחוף"
+        - "2: חשוב"
+        - "3: רגיל"
+        - "4: מתישהו"
+      default: 1
+    validations:
+      required: true

@@ -1,0 +1,27 @@
+# osher-max-yakir
+
+(משפט אחד: מה המערכת עושה ולמי.)
+
+## איפה הכול נמצא
+
+| מה | איפה |
+|---|---|
+| הסבר כללי על הפרויקט | [docs/PROJECT.md](docs/PROJECT.md) |
+| ציר זמן והתקדמות | [docs/TIMELINE.md](docs/TIMELINE.md) |
+| איפה הדברים עומדים עכשיו | [docs/HANDOFF.md](docs/HANDOFF.md) |
+| החלטות של מנהל הפרויקט | [docs/DECISIONS.md](docs/DECISIONS.md) |
+| סביבות, פריסה ולוגים | [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md) |
+| סיכונים פתוחים | [docs/RISKS.md](docs/RISKS.md) |
+| חוקים לסוכני AI | [AGENTS.md](AGENTS.md) |
+| המשימות | ה-issues של הריפו, ולוח הבקרה המוצמד |
+
+## איך עובדים
+
+- כל משימה, באג, בקשה ושאלה היא issue.
+- סוכן AI עובד על התור לפי עדיפות, ומדווח על כל משימה שסיים.
+- מנהל הפרויקט (@Eliel-tr1) בודק, מאשר וסוגר.
+- הפירוט המלא נמצא ב-[AGENTS.md](AGENTS.md).
+
+## הרצה מקומית
+
+(הפקודות להתקנה, להרצה ולבדיקות.)

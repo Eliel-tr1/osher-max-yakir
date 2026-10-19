@@ -1,0 +1,37 @@
+name: בקשה
+description: משהו חדש שצריך לבנות או לשנות
+labels: ["שלב: בתור", "סוג: בקשת מנהל"]
+body:
+  - type: textarea
+    id: source
+    attributes:
+      label: מקור
+      description: מאיפה זה הגיע - פגישה, הודעה, מסמך. ציטוט אם יש.
+    validations:
+      required: false
+  - type: textarea
+    id: need
+    attributes:
+      label: מה צריך
+      description: מה רוצים שיקרה, במילים פשוטות.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: מתי זה גמור
+      description: משפט אחד שאפשר לבדוק. למשל - "לקוח שנרשם מקבל וואטסאפ תוך דקה".
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: עדיפות
+      options:
+        - "1: דחוף"
+        - "2: חשוב"
+        - "3: רגיל"
+        - "4: מתישהו"
+      default: 2
+    validations:
+      required: true

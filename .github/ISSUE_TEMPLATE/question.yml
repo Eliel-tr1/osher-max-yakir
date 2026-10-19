@@ -1,0 +1,42 @@
+name: שאלה למנהל
+description: החלטה שרק מנהל הפרויקט יכול לקבל. העבודה ממשיכה לפי ההמלצה עד שהוא עונה.
+labels: ["שלב: בתור", "סוג: שאלה למנהל"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: השאלה
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: האפשרויות
+      description: כל אפשרות, ומה המחיר שלה.
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: ההמלצה
+      description: מה הסוכן ממליץ, ולפי מה הוא ממשיך לעבוד בינתיים.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: מה משתנה אם מחליטים אחרת
+    validations:
+      required: false
+  - type: dropdown
+    id: priority
+    attributes:
+      label: עדיפות
+      options:
+        - "1: דחוף"
+        - "2: חשוב"
+        - "3: רגיל"
+        - "4: מתישהו"
+      default: 1
+    validations:
+      required: true
