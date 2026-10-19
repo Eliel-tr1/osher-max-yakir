@@ -9,7 +9,9 @@ text = urllib.request.urlopen(url, timeout=60).read().decode('utf-8')
 rows = list(csv.reader(io.StringIO(text)))
 h = rows[0]
 data = [r for r in rows[1:] if any(c.strip() for c in r)]
-out = [f'עמודות: {len(h)}', f'שורות עם נתונים: {len(data)}',
+KNOWN = set('''תאריך כניסה,קוד מזהה,שם לקוח,טלפון,מייל,מקור הגעה,סטטוס,הסיר את עצמו?,ענה לצ'אטבוט?,לינק לשיחה,שלב בשאלון,סטטוס שאלון,שם תהליך,ניקוד לקוח,הערות,מבחן,תשובה 1,תשובה 2,תשובה 3,תשובה 4,תשובה 5,תשובה 6,תשובה 7,תשובה 8,תשובה 9,תשובה 10,תשובה 11,תשובה 12,תשובה 13,תשובה 14,תשובה 15,Reserved 1,Reserved 2,Reserved 3,Reserved 4,Reserved 5,Reserved 6,מוצר שנקנה,סכום ששולם,כמות יח',תשלומים,מזהה תשלום,דף תשלום,קופון,דירוג חוויה,ממליץ,הערות ממליץ,Reserved 8,תאריך,שעה,מיקום,מזהה אירוע,שם בוטקאסט,מספר בוטקאסט,תאריך תגובה'''.split(','))
+new_cols = [f'{i}:{c}' for i, c in enumerate(h) if c not in KNOWN]
+out = [f'עמודות: {len(h)}; חדשות או ששמן השתנה: ' + (', '.join(new_cols) or 'אין'), f'שורות עם נתונים: {len(data)}',
        f'שורות באורך שונה מהכותרת: {sum(1 for r in data if len(r) != len(h))}']
 
 def col(name):
@@ -21,7 +23,7 @@ def top(name, n=10):
     empty = c.pop('', 0)
     return f'{name}: ריקים {empty}; ' + '; '.join(f'{k} ({v})' for k, v in c.most_common(n))
 
-for name in ['מקור הגעה', 'סטטוס', 'הסיר את עצמו?', 'סטטוס שאלון', 'שם תהליך', 'מוצר שנקנה', 'תשלומים', 'מבחן', 'שם בוטקאסט', 'מספר בוטקאסט']:
+for name in [c for c in h if c not in KNOWN] + ['מקור הגעה', 'סטטוס', 'הסיר את עצמו?', 'סטטוס שאלון', 'שם תהליך', 'מוצר שנקנה', 'תשלומים', 'מבחן', 'שם בוטקאסט', 'מספר בוטקאסט']:
     if name in h:
         out.append(top(name))
 
