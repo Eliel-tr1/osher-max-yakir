@@ -25,7 +25,7 @@ description: איך כותבים קוד בפרויקט הזה - מבנה, שמו
 | `lib/metrics.ts`, `lib/ranges.ts` | כל החישובים והגדרות המדדים, וטווחי תאריכים |
 | `app/charts.tsx` | רכיבי הגרפים: עמודות, רשימה מדורגת, טבלת חום |
 | `scripts/build-data.ts` | בונה את קובץ הנתונים, מהטבלה או הדגמה |
-| `public/refresh.php` | כפתור הרענון: מבקש מגיטהאב להריץ את העדכון. ה-PHP היחיד בפרויקט; הלוגיקה של הנתונים לא עוברת אליו |
+| `public/refresh.php`, `public/_leads.php` | כפתור הרענון בשרת: קורא את הטבלה ובונה את קובץ הנתונים. `_leads.php` הוא תרגום של `fromSheet.ts` |
 | `tests/` | בדיקות Vitest |
 | `deploy/static-deploy.sh` | הסקריפט שרץ על השרת ומחליף את התיקייה `oshermax` |
 | `scripts/preview.mjs` | תצוגה מקומית של הבנייה הסטטית, באותו נתיב כמו בשרת |
@@ -45,6 +45,9 @@ description: איך כותבים קוד בפרויקט הזה - מבנה, שמו
 - תאריכים מהשיטס הם שעון ישראל: תמיד דרך `parseSheetDate`, אף פעם לא `new Date(string)`.
 - `deploy/static-deploy.sh` נוגע רק ב-`oshermax` וב-`~/.cache/osher-max-dashboard`. באתר יש פרויקטים חיים אחרים.
 - כל קישור או נכס בדף עובר דרך Next (`<Link>`, `next/image`, ייבוא), כדי שיקבל את `/oshermax` מעצמו. נתיב קשיח כמו `"/logo.png"` נשבר בשרת.
+
+- **כל שינוי ב-`lib/sheet/parse.ts`, `lib/leads/fromSheet.ts` או `lib/leads/file.ts` נעשה גם ב-`public/_leads.php`, באותו קומיט.** `tests/parity.test.ts` נכשל אם הם לא זהים.
+- עמודות בטבלה נקראות לפי שם, לא לפי מיקום (A, BD...). עמודות חדשות לא שוברות כלום; עמודה שהדשבורד משתמש בה ועוד לא קיימת תמיד הולכת ל-`OPTIONAL_COLUMNS`.
 
 ## בדיקות
 - `tests/*.test.ts`, מריצים `npm test`.

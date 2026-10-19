@@ -1,16 +1,23 @@
 <?php
 /**
- * כפתור הרענון של הדשבורד: מבקש מגיטהאב להריץ את "עדכון נתונים" (refresh-data.yml).
- * GET  -> מצב: האם מוגדר, ומתי הייתה הבקשה האחרונה
- * POST -> מפעיל עדכון. פעם בדקה לכל היותר; לחיצה נוספת בתוך הדקה מחכה לאותו עדכון.
- *
- * המפתח לגיטהאב לא נמצא כאן: הוא בקובץ מחוץ לתיקיית האתר, שהפריסה כותבת מהסוד REFRESH_TOKEN.
+ * כפתור הרענון של הדשבורד: קורא את לשונית הלידים מגוגל שיטס, מנקה כפילויות ופרטים אישיים,
+ * ומחליף את data/leads.json. הכול בשרת, בלי גיטהאב ובלי מפתחות.
+ * GET  -> מצב: מתי הנתונים נבנו
+ * POST -> רענון. לכל היותר פעם ב-10 שניות; לחיצות בזמן רענון מחכות לו.
+ * העיבוד עצמו ב-_leads.php, שנבדק מול גרסת ה-TypeScript (tests/parity.test.ts).
  */
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Robots-Tag: noindex');
 
-const COOLDOWN = 60;
+require __DIR__ . '/_leads.php';
+
+const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
+const SHEET_TAB = 'לידים';
+const MIN_GAP = 10;
+
+$dataDir = __DIR__ . '/data';
+$dataFile = $dataDir . '/leads.json';
 
 function out(int $code, array $body): void {
     http_response_code($code);
@@ -18,58 +25,73 @@ function out(int $code, array $body): void {
     exit;
 }
 
-// /home/<user>/htdocs/<site>/oshermax -> /home/<user>
-$home = dirname(__DIR__, 3);
-$state = $home . '/.cache/osher-max-dashboard';
-$configFile = $state . '/refresh-config.php';
-$config = @is_readable($configFile) ? (include $configFile) : null;
-$configured = is_array($config) && !empty($config['token']) && !empty($config['repo']);
-
-$lastFile = (@is_writable($state) ? $state : sys_get_temp_dir()) . '/osher-max-last-refresh';
-$last = @is_readable($lastFile) ? (int) @file_get_contents($lastFile) : 0;
-$iso = fn (int $t) => gmdate('Y-m-d\TH:i:s\Z', $t);
+function current_meta(string $file): array {
+    $head = @file_get_contents($file, false, null, 0, 400) ?: '';
+    preg_match('/"generatedAt":"([^"]+)"/', $head, $g);
+    preg_match('/"sheetRows":(\d+)/', $head, $r);
+    return ['generatedAt' => $g[1] ?? null, 'sheetRows' => isset($r[1]) ? (int) $r[1] : null];
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    out(200, ['ok' => true, 'configured' => $configured, 'lastRequestedAt' => $last ? $iso($last) : null]);
+    out(200, ['ok' => true] + current_meta($dataFile));
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     out(405, ['ok' => false, 'error' => 'method']);
 }
-if (!$configured) {
-    out(503, ['ok' => false, 'error' => 'הכפתור עוד לא הוגדר (חסר REFRESH_TOKEN)']);
+if (!is_dir($dataDir) && !@mkdir($dataDir, 0755, true)) {
+    out(500, ['ok' => false, 'error' => 'אין תיקיית נתונים']);
 }
 
-$now = time();
-if ($last && $now - $last < COOLDOWN) {
-    // עדכון כבר בדרך: מחכים לו
-    out(200, ['ok' => true, 'requestedAt' => $iso($last), 'reused' => true]);
+// נעילה: רענון אחד בכל פעם. מי שמגיע באמצע מחכה, ומקבל את התוצאה של אותו רענון.
+$lock = fopen($dataDir . '/.refresh.lock', 'c');
+if (!$lock || !flock($lock, LOCK_EX)) {
+    out(500, ['ok' => false, 'error' => 'נעילה נכשלה']);
+}
+$meta = current_meta($dataFile);
+$age = $meta['generatedAt'] ? time() - strtotime($meta['generatedAt']) : PHP_INT_MAX;
+if ($age < MIN_GAP) {
+    out(200, ['ok' => true, 'reused' => true] + $meta);
 }
 
-$url = 'https://api.github.com/repos/' . $config['repo'] . '/actions/workflows/' . ($config['workflow'] ?? 'refresh-data.yml') . '/dispatches';
+$url = getenv('OSHER_SHEET_URL') ?: 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode(SHEET_TAB);
 $ch = curl_init($url);
 curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_POSTFIELDS => json_encode(['ref' => $config['ref'] ?? 'main']),
-    CURLOPT_HTTPHEADER => [
-        'Authorization: Bearer ' . $config['token'],
-        'Accept: application/vnd.github+json',
-        'X-GitHub-Api-Version: 2022-11-28',
-        'Content-Type: application/json',
-        'User-Agent: osher-max-dashboard',
-    ],
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 15,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_TIMEOUT => 40,
+    CURLOPT_USERAGENT => 'osher-max-dashboard',
 ]);
-curl_exec($ch);
+$csv = curl_exec($ch);
 $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $err = curl_error($ch);
 curl_close($ch);
 
-if ($code !== 204) {
-    $why = $code === 401 || $code === 403 ? 'המפתח לגיטהאב לא תקף או בלי הרשאה' : ($err ?: "HTTP $code");
-    error_log("osher-max refresh failed: $code $err");
-    out(502, ['ok' => false, 'error' => $why]);
+if ($csv === false || $code !== 200) {
+    error_log("osher-max refresh: sheet HTTP $code $err");
+    out(502, ['ok' => false, 'error' => 'קריאת הטבלה נכשלה (' . ($err ?: "HTTP $code") . '). הנתונים הקודמים נשארו.']);
+}
+if (preg_match('/^\s*</', $csv)) {
+    out(502, ['ok' => false, 'error' => 'גוגל החזיר דף ולא טבלה: כנראה הטבלה לא משותפת לצפייה. הנתונים הקודמים נשארו.']);
 }
 
-@file_put_contents($lastFile, (string) $now);
-out(200, ['ok' => true, 'requestedAt' => $iso($now)]);
+try {
+    $file = osher_leads_from_rows(osher_parse_csv($csv), new DateTimeImmutable('now', new DateTimeZone('UTC')));
+} catch (RuntimeException $e) {
+    out(422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']);
+}
+if (!$file['leads']) {
+    out(422, ['ok' => false, 'error' => 'לא נמצאו לידים בטבלה. הנתונים הקודמים נשארו.']);
+}
+
+$tmp = $dataFile . '.tmp';
+if (@file_put_contents($tmp, osher_pack($file)) === false || !@rename($tmp, $dataFile)) {
+    @unlink($tmp);
+    out(500, ['ok' => false, 'error' => 'שמירת הנתונים נכשלה']);
+}
+out(200, [
+    'ok' => true,
+    'generatedAt' => $file['generatedAt'],
+    'sheetRows' => $file['sheetRows'],
+    'duplicatesRemoved' => $file['duplicatesRemoved'],
+    'leads' => count($file['leads']),
+]);

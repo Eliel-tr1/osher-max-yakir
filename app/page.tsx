@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BASE_PATH, REFRESH_MS } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
 import type { Lead, LeadsFile } from '@/lib/leads/types';
@@ -35,7 +35,6 @@ export default function Dashboard() {
   const [group, setGroup] = useState<Group>('result');
   const [product, setProduct] = useState<string | null>(null);
   const [test, setTest] = useState<string | null>(null);
-  const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async (): Promise<LeadsFile | null> => {
     try {
@@ -53,34 +52,21 @@ export default function Dashboard() {
   useEffect(() => {
     fetchData();
     const id = setInterval(fetchData, REFRESH_MS);
-    return () => {
-      clearInterval(id);
-      if (poll.current) clearInterval(poll.current);
-    };
+    return () => clearInterval(id);
   }, [fetchData]);
 
-  /** כפתור הרענון: מבקש מהשרת להפעיל קריאה של הטבלה, ומחכה שהנתונים החדשים יעלו */
+  /** כפתור הרענון: השרת קורא את הטבלה עכשיו (refresh.php), ואז הדף טוען את הנתונים החדשים */
   const startRefresh = useCallback(async () => {
     setRefresh({ state: 'waiting', since: Date.now() });
     try {
       const res = await fetch(`${BASE_PATH}/refresh.php`, { method: 'POST', cache: 'no-store' });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; requestedAt?: string; error?: string };
-      if (!res.ok || !body.ok || !body.requestedAt) throw new Error(body.error ?? `HTTP ${res.status}`);
-      const requested = new Date(body.requestedAt).getTime();
-      const started = Date.now();
-      if (poll.current) clearInterval(poll.current);
-      poll.current = setInterval(async () => {
-        const file = await fetchData();
-        if (file && new Date(file.generatedAt).getTime() >= requested) {
-          if (poll.current) clearInterval(poll.current);
-          setRefresh({ state: 'done' });
-        } else if (Date.now() - started > 4 * 60_000) {
-          if (poll.current) clearInterval(poll.current);
-          setRefresh({ state: 'error', message: 'העדכון לוקח יותר מהרגיל. אפשר לנסות שוב בעוד כמה דקות.' });
-        }
-      }, 6000);
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      const file = await fetchData();
+      if (!file) throw new Error('הנתונים עודכנו בשרת, אבל לא נטענו לדף. אפשר לרענן את הדף.');
+      setRefresh({ state: 'done' });
     } catch (e) {
-      setRefresh({ state: 'error', message: `העדכון לא התחיל (${e instanceof Error ? e.message : String(e)})` });
+      setRefresh({ state: 'error', message: e instanceof Error ? e.message : String(e) });
     }
   }, [fetchData]);
 
@@ -146,8 +132,8 @@ export default function Dashboard() {
             {refresh.state === 'waiting' ? 'מעדכן...' : 'רענון מהטבלה'}
           </button>
           <span role="status" className={refresh.state === 'error' ? 'err' : ''}>
-            {refresh.state === 'waiting' && 'קורא את הטבלה, בערך דקה'}
-            {refresh.state === 'done' && 'עודכן'}
+            {refresh.state === 'waiting' && 'קורא את הטבלה...'}
+            {refresh.state === 'done' && `עודכן: ${nf.format(file.sheetRows)} שורות בטבלה`}
             {refresh.state === 'error' && refresh.message}
           </span>
         </div>
@@ -186,10 +172,10 @@ export default function Dashboard() {
 
       <section className="tiles" aria-label="מספרי מפתח">
         <Tile label="סך הכול לידים" value={nf.format(s.leads)} sub={`${nf.format(file.duplicatesRemoved)} כפילויות הוסרו מהטבלה`} />
-        <Tile label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={`${pct(s.startedJourney, s.leads)} מהלידים · ענו לצ'אטבוט`} />
+        <Tile label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={file.leads.some((l) => l.started) ? `${pct(s.startedJourney, s.leads)} מהלידים · עמודה BD` : 'עמודה BD עוד לא מולאה'} />
         <Tile label="עברו" value={nf.format(s.passed)} sub={`${pct(s.passed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
         <Tile label="נכשלו" value={nf.format(s.failed)} sub={`${pct(s.failed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
-        <Tile label="רכשו" value={nf.format(s.purchased)} sub={`${nf.format(s.purchasedOfStarted)} מתוך מי שהתחיל שיחה (${pct(s.purchasedOfStarted, s.startedJourney)})`} />
+        <Tile label="רכשו" value={nf.format(s.purchased)} sub={s.startedJourney ? `${nf.format(s.purchasedOfStarted)} מתוך מי שהתחיל שיחה (${pct(s.purchasedOfStarted, s.startedJourney)})` : `${pct(s.purchased, s.leads)} מהלידים`} />
         <Tile label="סך הכול שולם" value={money.format(s.totalPaid)} sub={`דרך הבוט ${nf.format(s.paidBot)} (${money.format(s.revenueBot)}) · לא בוט ${nf.format(s.paidOther)} (${money.format(s.revenueOther)})`} />
         <Tile label="עסקה ממוצעת" value={s.avgDealAll === null ? '-' : money.format(s.avgDealAll)} sub={`דרך הבוט: ${s.avgDealBot === null ? '-' : money.format(s.avgDealBot)}`} />
         <Tile label="הסירו את עצמם" value={nf.format(view.removed)} sub="לפי תאריך ההסרה" />

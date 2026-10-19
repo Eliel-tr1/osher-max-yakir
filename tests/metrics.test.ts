@@ -5,7 +5,7 @@ import { countBy, inRange, matrixByMonth, perDay, productStats, purchases, remov
 
 function lead(p: Partial<Lead>): Lead {
   return {
-    at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false,
+    at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false, started: false,
     step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null, ...p,
   };
 }
@@ -29,8 +29,8 @@ describe('summarize', () => {
 
   it('counts passed, failed, conversation starts, and purchases among those who started', () => {
     const s = summarize([
-      lead({ status: 'עבר', answered: true, qStatus: 'converted', amount: 10 }),
-      lead({ status: 'לא עבר', answered: true }),
+      lead({ status: 'עבר', started: true, qStatus: 'converted', amount: 10 }),
+      lead({ status: 'לא עבר', started: true }),
       lead({ status: 'לא עבר', qStatus: 'payment', amount: 5 }),
     ]);
     expect([s.passed, s.failed, s.startedJourney, s.purchased, s.purchasedOfStarted]).toEqual([1, 2, 2, 2, 1]);

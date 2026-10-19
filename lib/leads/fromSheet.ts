@@ -7,8 +7,16 @@ export const REQUIRED_COLUMNS = [
   'שלב בשאלון', 'סטטוס שאלון', 'שם תהליך', 'ניקוד לקוח', 'מבחן', 'מוצר שנקנה', 'סכום ששולם',
 ] as const;
 
-/** עמודות שהדשבורד משתמש בהן אם הן קיימות. בלעדיהן השדה פשוט ריק. */
-export const OPTIONAL_COLUMNS = ['אופן שיחה'] as const;
+/**
+ * עמודות שהדשבורד משתמש בהן אם הן קיימות. בלעדיהן השדה פשוט ריק.
+ * הן ימולאו על ידי סוכן AI. עמודות חדשות אחרות בטבלה לא משפיעות על הדשבורד: הוא קורא לפי שם, לא לפי מיקום.
+ */
+export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה'] as const;
+
+/** ערך "כן" בעמודה של סימון: כל ערך שאינו ריק ואינו שלילה מפורשת. */
+export function isYes(v: string): boolean {
+  return v.trim() !== '' && !/^(לא|no|false|0)$/i.test(v.trim());
+}
 
 type Column = (typeof REQUIRED_COLUMNS)[number] | (typeof OPTIONAL_COLUMNS)[number];
 
@@ -114,6 +122,7 @@ function toLead(r: Raw, col: (r: string[], name: Column) => string): Lead {
     status: cleanText(c('סטטוס')),
     qStatus: cleanText(c('סטטוס שאלון'))?.toLowerCase() ?? null,
     answered: c("ענה לצ'אטבוט?") === 'כן',
+    started: isYes(c('התחיל שיחה')),
     step: num(c('שלב בשאלון')),
     score: num(c('ניקוד לקוח')),
     test: cleanText(c('מבחן')),

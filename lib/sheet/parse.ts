@@ -56,13 +56,26 @@ export function parseSheetDate(value: string): Date | null {
   return new Date(`${iso}${israelOffset(iso)}`);
 }
 
+const offsetFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jerusalem', timeZoneName: 'longOffset' });
+
+/** ההפרש של שעון ישראל מ-UTC ברגע נתון, בדקות */
+function offsetMinutesAt(instant: Date): number {
+  const part = offsetFmt.formatToParts(instant).find((p) => p.type === 'timeZoneName')?.value;
+  const m = part?.match(/GMT([+-])(\d{2}):?(\d{2})?/);
+  return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 120;
+}
+
+/**
+ * ההפרש לשעה מקומית בישראל, "+03:00". בשני שלבים: ההפרש של הרגע שמתקבל מההנחה הראשונה,
+ * כדי שגם שעות שקרובות למעבר לשעון קיץ או חורף ייצאו נכון.
+ */
 function israelOffset(isoLocal: string): string {
-  const guess = new Date(`${isoLocal}Z`);
-  const part = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jerusalem', timeZoneName: 'longOffset' })
-    .formatToParts(guess)
-    .find((p) => p.type === 'timeZoneName')?.value;
-  const m = part?.match(/GMT([+-]\d{2}):?(\d{2})?/);
-  return m ? `${m[1]}:${m[2] ?? '00'}` : '+02:00';
+  const asUtc = new Date(`${isoLocal}Z`).getTime();
+  let off = offsetMinutesAt(new Date(asUtc));
+  off = offsetMinutesAt(new Date(asUtc - off * 60_000));
+  const sign = off < 0 ? '-' : '+';
+  const a = Math.abs(off);
+  return `${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
 }
 
 /** "- 990", "₪2,400", "990.5" -> מספר. ריק או לא מספר -> null. */

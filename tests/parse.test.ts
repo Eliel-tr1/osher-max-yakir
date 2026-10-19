@@ -19,6 +19,15 @@ describe('parseSheetDate', () => {
     expect(parseSheetDate('9/7/2025')?.toISOString()).toBe('2025-07-08T21:00:00.000Z');
   });
 
+  it('is right in the hours next to the clock change, in both directions', () => {
+    // 2026: שעון קיץ מתחיל ב-27/03 בשעה 02:00, ונגמר ב-25/10 בשעה 02:00
+    expect(parseSheetDate('27/03/2026 00:41:28')?.toISOString()).toBe('2026-03-26T22:41:28.000Z');
+    expect(parseSheetDate('27/03/2026 01:59:59')?.toISOString()).toBe('2026-03-26T23:59:59.000Z');
+    expect(parseSheetDate('27/03/2026 03:00:00')?.toISOString()).toBe('2026-03-27T00:00:00.000Z');
+    expect(parseSheetDate('25/10/2026 00:30:00')?.toISOString()).toBe('2026-10-24T21:30:00.000Z');
+    expect(parseSheetDate('25/10/2026 03:00:00')?.toISOString()).toBe('2026-10-25T01:00:00.000Z');
+  });
+
   it('rejects what is not a real date', () => {
     expect(parseSheetDate('')).toBeNull();
     expect(parseSheetDate('31/02/2026')).toBeNull();

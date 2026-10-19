@@ -11,7 +11,10 @@ export interface Lead {
   status: string | null;
   /** "סטטוס שאלון", באותיות קטנות: started / finished / payment / converted */
   qStatus: string | null;
+  /** "ענה לצ'אטבוט?" (עמודה I) */
   answered: boolean;
+  /** "התחיל שיחה" (עמודה BD, ימולא על ידי סוכן AI): התחיל את המסע */
+  started: boolean;
   step: number | null;
   score: number | null;
   /** "מבחן" */
@@ -21,7 +24,7 @@ export interface Lead {
   amount: number | null;
   /** "הסיר את עצמו?": בטבלה כתוב שם תאריך ההסרה */
   removedAt: string | null;
-  /** "אופן שיחה" (עמודה BD): שירות / מכירותי / גם וגם / אין שיחה */
+  /** "אופן שיחה" (עמודה BE, ימולא על ידי סוכן AI): שירות / מכירותי / גם וגם / אין שיחה */
   mode: string | null;
 }
 

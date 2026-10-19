@@ -46,6 +46,7 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
       status: answered ? (rnd() < (converted ? 0.45 : 0.15) ? 'עבר' : 'לא עבר') : null,
       qStatus,
       answered,
+      started: answered || rnd() < 0.3,
       step,
       score: answered ? Math.round(rnd() * 70) : null,
       test: converted || (payment && rnd() < 0.3) ? pick(TESTS) : null,

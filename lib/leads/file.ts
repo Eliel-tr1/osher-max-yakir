@@ -6,7 +6,7 @@ export function pack(file: LeadsFile): string {
 }
 
 const EMPTY: Lead = {
-  at: '', source: null, process: null, status: null, qStatus: null, answered: false,
+  at: '', source: null, process: null, status: null, qStatus: null, answered: false, started: false,
   step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null,
 };
 

@@ -43,9 +43,9 @@ export function purchased(l: Lead): boolean {
   return paidByBot(l) || paidOther(l);
 }
 
-/** התחיל את המסע (התחלת שיחה): ענה לצ'אטבוט, עמודה I (#16, לאישור המנהל). */
+/** התחיל את המסע (התחלת שיחה): עמודה BD, "התחיל שיחה" (החלטת המנהל, #16). */
 export function startedJourney(l: Lead): boolean {
-  return l.answered;
+  return l.started;
 }
 
 /**

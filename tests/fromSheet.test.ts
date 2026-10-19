@@ -66,11 +66,16 @@ describe('leadsFromRows', () => {
     expect(file.leads[0].removedAt).toBe('2026-10-06T13:47:00.000Z');
   });
 
-  it('reads the optional conversation mode column, and works without it', () => {
-    const withMode = leadsFromRows([[...HEADER, 'אופן שיחה'], [...row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' }), 'מכירותי']]);
-    expect(withMode.leads[0].mode).toBe('מכירותי');
+  it('reads the optional AI-filled columns by name, in any position, and works without them', () => {
+    const header = [...HEADER, 'עמודה עתידית', 'התחיל שיחה', 'אופן שיחה'];
+    const r = (started: string) => [...row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' }), 'x', started, 'מכירותי'];
+    const withCols = leadsFromRows([header, r('כן')]);
+    expect(withCols.leads[0]).toMatchObject({ started: true, mode: 'מכירותי' });
+    expect(leadsFromRows([header, r('TRUE')]).leads[0].started).toBe(true);
+    expect(leadsFromRows([header, r('לא')]).leads[0].started).toBe(false);
+    expect(leadsFromRows([header, r('')]).leads[0].started).toBe(false);
     const without = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })]);
-    expect(without.leads[0].mode).toBeNull();
+    expect(without.leads[0]).toMatchObject({ started: false, mode: null });
   });
 
   it('fails loudly when a needed column is renamed', () => {
