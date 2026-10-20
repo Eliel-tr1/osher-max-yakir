@@ -29,6 +29,7 @@ foreach ($order as $ns) {
     $tokens += $c['tokens']; $types[$c['type']] = ($types[$c['type']] ?? 0) + 1;
     $results[] = count($results) + 1 . ". {$ns} | נכנס {$cand[$ns]->format('d/m/Y')} | לקוח {$s['customer']}, בוט {$s['bot']} | {$c['type']} | {$c['reason']}";
 }
+echo 'שורות בטבלה: ' . count($rows) . ', מזהים שענו לבוט מספטמבר: ' . count($cand) . "\n";
 echo 'מודל: ' . ai_model() . "\n";
 echo 'ספירות: ' . json_encode($stats, JSON_UNESCAPED_UNICODE) . "\n";
 echo 'סוגים: ' . json_encode($types, JSON_UNESCAPED_UNICODE) . "; טוקנים: $tokens\n";
