@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -16,6 +16,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: לידים לפי אדם מול לפי הגעה
+        continue-on-error: true
+        run: python3 scripts/people-profile.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים'
       - name: פרופיל
         run: |
           OUT=$(python3 scripts/profile-sheet.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים' 2>&1) || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }

@@ -21,6 +21,7 @@ on:
       - '.github/run-agent-probe'
       - '.github/workflows/agent-probe.yml'
       - 'scripts/agent-probe.py'
+      - 'scripts/people-profile.py'
       - '.github/run-refresh'
   workflow_dispatch:
 
