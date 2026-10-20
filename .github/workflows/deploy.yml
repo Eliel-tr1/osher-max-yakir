@@ -29,6 +29,9 @@ on:
       - 'deploy/agent-env.enc'
       - '.github/run-agent-env-enc'
       - '.github/workflows/agent-env-enc.yml'
+      - 'agent/**'
+      - '.github/run-agent'
+      - '.github/workflows/agent-run.yml'
       - '.github/run-refresh'
   workflow_dispatch:
 

@@ -1,0 +1,32 @@
+name: סוכן השיחות בשרת
+
+# מעלה את agent/ לשרת (~/osher-max-agent/app, מחוץ לאתר) ומריץ סקריפט אחד.
+# שם הסקריפט בשורה הראשונה של .github/run-agent (למשל probe-messages.php).
+# הסקריפטים מדפיסים רק ספירות ומבנה, אף פעם לא תוכן של שיחות או מפתחות.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/run-agent']
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: התקנת sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: העלאה והרצה
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          SCRIPT=$(head -1 .github/run-agent | tr -d '\r ')
+          [[ "$SCRIPT" =~ ^[a-z0-9-]+\.php$ ]] && [ -f "agent/$SCRIPT" ] || { echo "::error::סקריפט לא תקין: $SCRIPT"; exit 1; }
+          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
+          tar -C agent -czf - . | S 'umask 077; mkdir -p ~/osher-max-agent/app && tar -xzf - -C ~/osher-max-agent/app'
+          OUT=$(S "cd ~/osher-max-agent/app && timeout 1800 php $SCRIPT") || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          echo "$OUT"
+          echo "$OUT" | python3 scripts/agent-probe.py notice "סוכן: $SCRIPT"
