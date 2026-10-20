@@ -22,6 +22,9 @@ on:
       - '.github/workflows/agent-probe.yml'
       - 'scripts/agent-probe.py'
       - 'scripts/people-profile.py'
+      - '.github/run-agent-env'
+      - '.github/workflows/agent-env.yml'
+      - 'deploy/agent-env.sh'
       - '.github/run-refresh'
   workflow_dispatch:
 
