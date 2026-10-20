@@ -25,8 +25,19 @@ jobs:
         run: |
           read -r SCRIPT ARGS < .github/run-agent || true
           [[ "$SCRIPT" =~ ^[a-z0-9-]+\.php$ ]] && [ -f "agent/$SCRIPT" ] && [[ "$ARGS" =~ ^[0-9]{0,3}$ ]] || { echo "::error::סקריפט לא תקין: $SCRIPT $ARGS"; exit 1; }
-          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
+          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
           tar -C agent -czf - . | S 'umask 077; mkdir -p ~/osher-max-agent/app && tar -xzf - -C ~/osher-max-agent/app'
-          OUT=$(S "cd ~/osher-max-agent/app && timeout 3000 php $SCRIPT $ARGS") || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          if [ "$SCRIPT" = run.php ]; then
+            # הרצה ארוכה: רצה בשרת בנפרד מהחיבור, ומכאן רק בודקים את הלוג
+            S "cd ~/osher-max-agent/app && mkdir -p ../state && (setsid nohup timeout 3000 php run.php $ARGS > ../state/last-run.log 2>&1 &)"
+            for i in $(seq 1 110); do
+              sleep 30
+              LOG=$(S 'cat ~/osher-max-agent/state/last-run.log')
+              echo "$LOG" | grep -qE '^(סיום|הרצה אחרת|PHP Fatal|.*Exception)' && break
+            done
+            OUT="$LOG"
+          else
+            OUT=$(S "cd ~/osher-max-agent/app && timeout 3000 php $SCRIPT $ARGS") || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          fi
           echo "$OUT"
           echo "$OUT" | python3 scripts/agent-probe.py notice "סוכן: $SCRIPT"

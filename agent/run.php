@@ -34,6 +34,7 @@ foreach ($rows as $r) {
     if (!isset($cand[$ns]) || $d < $cand[$ns]) $cand[$ns] = $d;
 }
 asort($cand);
+echo date('H:i:s') . ' התחלה: ' . count($rows) . " שורות בטבלה\n";
 $stats = ['שורות בטבלה' => count($rows), 'ממתינות לקריאה' => count($cand), 'נקראו' => 0, 'מכירתי' => 0, 'שירותי' => 0, 'בלי תוכן' => 0, 'לא נמצאו בבוט' => 0];
 $stopAt = $night ? $now->setTime(5, 55) : null;
 foreach (array_keys($cand) as $ns) {
@@ -49,6 +50,7 @@ foreach (array_keys($cand) as $ns) {
         $stats[$c['type']]++;
     }
     $save();
+    if ($stats['נקראו'] % 10 === 0) echo date('H:i:s') . " נקראו {$stats['נקראו']}\n";
 }
 
 // כתיבה לטבלה
@@ -67,4 +69,4 @@ if ($pending && env_has('SHEET_WRITER_URL')) {
 $stats['שורות שנכתבו לטבלה'] = $written;
 if ($missing) $stats['מזהים שלא נמצאו בטבלה בזמן הכתיבה'] = $missing;
 $stats['ממתינות לכתיבה'] = count($pending);
-echo json_encode($stats, JSON_UNESCAPED_UNICODE) . "\n";
+echo 'סיום: ' . json_encode($stats, JSON_UNESCAPED_UNICODE) . "\n";
