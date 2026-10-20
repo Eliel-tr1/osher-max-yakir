@@ -23,7 +23,7 @@ jobs:
           USER: ${{ secrets.SERVER_USER }}
           PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | grep -v bashrc; }
+          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
           cat deploy/agent-crypt.php | S 'cat > /tmp/osher-agent-crypt.php'
           cat deploy/agent-env.sh | S 'cat > /tmp/osher-agent-env.sh'
           if [ -s deploy/agent-env.enc ]; then
