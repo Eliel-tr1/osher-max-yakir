@@ -1,0 +1,39 @@
+name: מפתחות לסוכן (העברה מוצפנת)
+
+# כשאין סודות בגיטהאב: השרת יוצר זוג מפתחות ומפרסם רק את החלק הציבורי. המפתחות מוצפנים בו
+# ל-deploy/agent-env.enc, ורק השרת יכול לפענח. אחרי הכתיבה ל-~/osher-max-agent/.env מפתח
+# הפענוח נמחק. לא מודפס אף ערך. רץ כשהקובץ .github/run-agent-env-enc משתנה.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/run-agent-env-enc']
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: התקנת sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: מפתח ציבורי, או פענוח וכתיבה
+        env:
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | grep -v bashrc; }
+          cat deploy/agent-crypt.php | S 'cat > /tmp/osher-agent-crypt.php'
+          cat deploy/agent-env.sh | S 'cat > /tmp/osher-agent-env.sh'
+          if [ -s deploy/agent-env.enc ]; then
+            OUT=$(cat deploy/agent-env.enc | S 'set -o pipefail; php /tmp/osher-agent-crypt.php dec | bash /tmp/osher-agent-env.sh && php /tmp/osher-agent-crypt.php forget
+              E="$HOME/osher-max-agent/.env"
+              K=$(grep "^CLOUDCHAT_API_KEY=" "$E" | cut -d= -f2-); [ -n "$K" ] && echo "CloudChat: $(printf "Authorization: Bearer %s" "$K" | curl -s -o /dev/null -w "%{http_code}" --max-time 20 -H @- https://console.thecloud.chat/api/flow/bot-users-count)"
+              K=$(grep "^OPENAI_API_KEY=" "$E" | cut -d= -f2-); [ -n "$K" ] && echo "OpenAI: $(printf "Authorization: Bearer %s" "$K" | curl -s -o /dev/null -w "%{http_code}" --max-time 20 -H @- https://api.openai.com/v1/models)"
+              rm -f /tmp/osher-agent-crypt.php /tmp/osher-agent-env.sh') || { echo "::error::נכשל: $(echo "$OUT" | tail -2 | tr '\n' ' ')"; exit 1; }
+          else
+            OUT=$(S 'php /tmp/osher-agent-crypt.php pub; rm -f /tmp/osher-agent-crypt.php /tmp/osher-agent-env.sh') || { echo "::error::$OUT"; exit 1; }
+          fi
+          echo "$OUT"
+          echo "$OUT" | python3 scripts/agent-probe.py notice 'מפתחות לסוכן'

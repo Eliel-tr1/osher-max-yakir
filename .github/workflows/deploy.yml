@@ -25,6 +25,10 @@ on:
       - '.github/run-agent-env'
       - '.github/workflows/agent-env.yml'
       - 'deploy/agent-env.sh'
+      - 'deploy/agent-crypt.php'
+      - 'deploy/agent-env.enc'
+      - '.github/run-agent-env-enc'
+      - '.github/workflows/agent-env-enc.yml'
       - '.github/run-refresh'
   workflow_dispatch:
 
