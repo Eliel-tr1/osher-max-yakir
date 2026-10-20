@@ -207,3 +207,21 @@ function seal_for_review(string $text): string {
     if (!openssl_seal($text, $sealed, $ekeys, [$pub], 'aes-256-cbc', $iv)) throw new RuntimeException('הצפנה נכשלה');
     return chunk_split(base64_encode(json_encode(['k' => base64_encode($ekeys[0]), 'iv' => base64_encode($iv), 'd' => base64_encode($sealed)])), 76, "\n");
 }
+
+function env_has(string $key): bool {
+    try { env_value($key); return true; } catch (RuntimeException) { return false; }
+}
+
+/** כתיבה לטבלה דרך סקריפט ה-Apps Script של המנהל (sheet-writer.gs). */
+function sheet_write(array $updates): array {
+    $ch = curl_init(env_value('SHEET_WRITER_URL'));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 300, CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode(['token' => env_value('SHEET_WRITER_TOKEN'), 'updates' => $updates], JSON_UNESCAPED_UNICODE),
+    ]);
+    $raw = curl_exec($ch);
+    $out = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($out) || empty($out['ok'])) throw new RuntimeException('הכתיבה לטבלה נכשלה: ' . mb_substr(is_array($out) ? (string) ($out['error'] ?? '') : (string) $raw, 0, 200));
+    return $out;
+}

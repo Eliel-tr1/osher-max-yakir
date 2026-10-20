@@ -23,10 +23,10 @@ jobs:
           USER: ${{ secrets.SERVER_USER }}
           PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          SCRIPT=$(head -1 .github/run-agent | tr -d '\r ')
-          [[ "$SCRIPT" =~ ^[a-z0-9-]+\.php$ ]] && [ -f "agent/$SCRIPT" ] || { echo "::error::סקריפט לא תקין: $SCRIPT"; exit 1; }
+          read -r SCRIPT ARGS < .github/run-agent || true
+          [[ "$SCRIPT" =~ ^[a-z0-9-]+\.php$ ]] && [ -f "agent/$SCRIPT" ] && [[ "$ARGS" =~ ^[0-9]{0,3}$ ]] || { echo "::error::סקריפט לא תקין: $SCRIPT $ARGS"; exit 1; }
           S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
           tar -C agent -czf - . | S 'umask 077; mkdir -p ~/osher-max-agent/app && tar -xzf - -C ~/osher-max-agent/app'
-          OUT=$(S "cd ~/osher-max-agent/app && timeout 1800 php $SCRIPT") || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
+          OUT=$(S "cd ~/osher-max-agent/app && timeout 3000 php $SCRIPT $ARGS") || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
           echo "$OUT"
           echo "$OUT" | python3 scripts/agent-probe.py notice "סוכן: $SCRIPT"
