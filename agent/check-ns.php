@@ -1,6 +1,15 @@
 <?php
-// בדיקת עזר: המזהה הנוכחי בבוט של טלפון הבדיקה (TEST_PHONE ב-.env). מדפיס רק את המזהה.
+// בדיקת עזר: איך תבנית ההתראה לצוות על פנייה לנציג בונה את הקישור לשיחה. רק שם תבנית וקישורי כפתורים.
 require __DIR__ . '/lib.php';
-$r = cc_get('/subscriber/get-info-by-user-id', ['user_id' => env_value('TEST_PHONE')]);
-$d = $r['json']['data'] ?? $r['json'] ?? [];
-echo "HTTP {$r['code']}, user_ns: " . ($d['user_ns'] ?? '?') . ', הודעה אחרונה: ' . ($d['last_message_at'] ?? '?') . "\n";
+$ch = curl_init(CC_API . '/whatsapp-template/list');
+curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => '{}', CURLOPT_TIMEOUT => 30,
+    CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . env_value('CLOUDCHAT_API_KEY'), 'Content-Type: application/json', 'Accept: application/json']]);
+$j = json_decode((string) curl_exec($ch), true);
+echo 'HTTP ' . curl_getinfo($ch, CURLINFO_RESPONSE_CODE) . "\n";
+$list = $j['data'] ?? $j ?? [];
+foreach ((array) $list as $t) {
+    $s = json_encode($t, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!preg_match('/agent|nציג|נציג/u', (string) ($t['name'] ?? ''))) continue;
+    preg_match_all('#https?://[^"\s\\\\]+#', $s, $m);
+    echo ($t['name'] ?? '?') . ': ' . implode(' | ', array_unique($m[0])) . "\n";
+}
