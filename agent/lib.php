@@ -65,7 +65,7 @@ function parse_date(string $s): ?DateTimeImmutable {
 function cc_get(string $path, array $query): array {
     static $last = 0.0;
     for ($attempt = 1; ; $attempt++) {
-        $wait = $last + CC_GAP_SECONDS - microtime(true);
+        $wait = $last + (float) ($GLOBALS['CC_GAP'] ?? CC_GAP_SECONDS) - microtime(true);
         if ($wait > 0) usleep((int) ($wait * 1e6));
         $headers = [];
         $ch = curl_init(CC_API . $path . '?' . http_build_query($query));

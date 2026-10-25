@@ -12,6 +12,8 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # רק כדי לשמור פלט מוצפן בענף evidence
     steps:
       - uses: actions/checkout@v4
       - name: התקנת sshpass
@@ -27,9 +29,9 @@ jobs:
           [[ "$SCRIPT" =~ ^[a-z0-9-]+\.php$ ]] && [ -f "agent/$SCRIPT" ] && [[ "$ARGS" =~ ^[0-9]{0,3}$ ]] || { echo "::error::סקריפט לא תקין: $SCRIPT $ARGS"; exit 1; }
           S() { sshpass -e ssh -p "${PORT:-22}" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$USER@$HOST" "$@" 2>&1 | { grep -v bashrc || true; }; }
           tar -C agent -czf - . | S 'umask 077; mkdir -p ~/osher-max-agent/app && tar -xzf - -C ~/osher-max-agent/app'
-          if [ "$SCRIPT" = run.php ]; then
+          if [ "$SCRIPT" = run.php ] || [ "$SCRIPT" = audit-converted.php ]; then
             # הרצה ארוכה: רצה בשרת בנפרד מהחיבור, ומכאן רק בודקים את הלוג
-            S "cd ~/osher-max-agent/app && mkdir -p ../state && (setsid nohup timeout 3000 php run.php $ARGS > ../state/last-run.log 2>&1 &)"
+            S "cd ~/osher-max-agent/app && mkdir -p ../state && rm -f ../state/review-out.sealed && (setsid nohup timeout 3000 php $SCRIPT $ARGS > ../state/last-run.log 2>&1 &)"
             for i in $(seq 1 110); do
               sleep 30
               LOG=$(S 'cat ~/osher-max-agent/state/last-run.log')
@@ -41,3 +43,12 @@ jobs:
           fi
           echo "$OUT"
           echo "$OUT" | python3 scripts/agent-probe.py notice "סוכן: $SCRIPT"
+          # פלט מוצפן (רק סוכן הפיתוח יכול לפתוח), נשמר בענף evidence
+          SEALED=$(S 'cat ~/osher-max-agent/state/review-out.sealed 2>/dev/null' || true)
+          if [ -n "$SEALED" ]; then
+            git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git fetch -q origin evidence && git checkout -q -B evidence origin/evidence || git checkout -q --orphan evidence
+            mkdir -p review && printf '%s\n' "$SEALED" > "review/${SCRIPT%.php}-${GITHUB_RUN_ID}.sealed"
+            git add review && git commit -qm "פלט מוצפן: $SCRIPT" && git push -q origin evidence
+            echo "::notice title=פלט מוצפן::review/${SCRIPT%.php}-${GITHUB_RUN_ID}.sealed"
+          fi
