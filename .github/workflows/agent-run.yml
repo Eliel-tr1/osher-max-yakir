@@ -35,7 +35,7 @@ jobs:
             for i in $(seq 1 110); do
               sleep 30
               LOG=$(S 'cat ~/osher-max-agent/state/last-run.log')
-              echo "$LOG" | grep -qE '^(סיום|הרצה אחרת|PHP Fatal|.*Exception)' && break
+              echo "$LOG" | grep -qE '^(סיום|הרצה אחרת|PHP Fatal|Fatal error|.*Exception)' && break
             done
             OUT="$LOG"
           else

@@ -6,6 +6,7 @@
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
 
+ini_set('memory_limit', '1536M');
 $GLOBALS['CC_GAP'] = 1.2;   // מהיר יותר מהסוכן הלילי, עדיין קריאה אחת בכל פעם. 429 מטופל ב-cc_get
 $limit = (int) ($argv[1] ?? 0);
 $state = agent_home() . '/state';
