@@ -79,8 +79,13 @@ $sum = ['מזהים' => 0, 'לא נמצאו בבוט' => 0, 'שגיאה' => 0, '
 $hosts = [];
 $detail = [];
 $n = 0;
+// מטמון: מזהה שכבר נבדק לא נקרא שוב, כך שריצה שנקטעה ממשיכה מאיפה שעצרה
+$cacheFile = "$state/audit-cache.json";
+$cache = json_decode((string) @file_get_contents($cacheFile), true) ?: [];
+$deadline = time() + 2700;
 foreach ($conv as $ns => $x) {
     if ($limit && $n >= $limit) break;
+    if (time() > $deadline) { echo "עצירה בגלל זמן, ממשיכים בריצה הבאה\n"; break; }
     $n++;
     $sum['מזהים']++;
     sort($x['buys']);
@@ -88,7 +93,8 @@ foreach ($conv as $ns => $x) {
     if (!$x['buys']) $sum['בלי תאריך רכישה']++;
     $d = ['ns' => $ns, 'T' => $T, 'buys' => count($x['buys']), 'I' => $x['answered']];
     try {
-        $msgs = conversation($ns);
+        if (!array_key_exists($ns, $cache)) { $cache[$ns] = conversation($ns); if ($n % 10 === 0) file_put_contents($cacheFile, json_encode($cache)); }
+        $msgs = $cache[$ns];
     } catch (RuntimeException $e) {
         $sum['שגיאה']++;
         $detail[] = $d + ['err' => mb_substr($e->getMessage(), 0, 60)];
@@ -131,7 +137,9 @@ foreach ($detail as $d) {
     elseif (!$d['links']) $buckets['שיחה, בלי קישור מהבוט']++;
     else $buckets['שיחה עם קישור מהבוט']++;
 }
+file_put_contents($cacheFile, json_encode($cache));
+@chmod($cacheFile, 0600);
 arsort($hosts);
 file_put_contents("$state/review-out.sealed", seal_for_review(json_encode($detail, JSON_UNESCAPED_UNICODE)));
 echo 'קישורים מהבוט לפני רכישה (host/נתיב): ' . json_encode(array_slice($hosts, 0, 15, true), JSON_UNESCAPED_UNICODE) . "\n";
-echo 'סיום: ' . json_encode($sum + $buckets + ['דקות' => round((microtime(true) - $t0) / 60, 1)], JSON_UNESCAPED_UNICODE) . "\n";
+echo 'סיום: ' . json_encode($sum + $buckets + ['דקות' => round((microtime(true) - $t0) / 60, 1), 'קריאות' => $GLOBALS['CC_STATS']['calls'] ?? 0, '429' => $GLOBALS['CC_STATS']['429'] ?? 0, 'שניות לקריאה' => round(($GLOBALS['CC_STATS']['sec'] ?? 0) / max(1, $GLOBALS['CC_STATS']['calls'] ?? 1), 1), 'בזיכרון' => count($cache)], JSON_UNESCAPED_UNICODE) . "\n";

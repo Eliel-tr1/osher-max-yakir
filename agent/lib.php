@@ -80,7 +80,10 @@ function cc_get(string $path, array $query): array {
         ]);
         $body = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $GLOBALS['CC_STATS']['calls'] = ($GLOBALS['CC_STATS']['calls'] ?? 0) + 1;
+        $GLOBALS['CC_STATS']['sec'] = ($GLOBALS['CC_STATS']['sec'] ?? 0) + (microtime(true) - $last - max(0, $wait));
         $last = microtime(true);
+        if ($code === 429) $GLOBALS['CC_STATS']['429'] = ($GLOBALS['CC_STATS']['429'] ?? 0) + 1;
         if ($code === 429 && $attempt === 1) {
             sleep(max(1, (int) ($headers['retry-after'] ?? CC_429_WAIT)));
             continue;
