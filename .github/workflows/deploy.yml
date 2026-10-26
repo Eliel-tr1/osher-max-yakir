@@ -42,7 +42,7 @@ concurrency:
 env:
   SITE_URL: https://ai.vitrue.co.il/oshermax/
   SHEET_ID: 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU
-  SHEET_TAB: לידים
+  SHEET_GID: "0"   # הלשונית "לידים"
 
 jobs:
   deploy:
@@ -74,7 +74,7 @@ jobs:
         run: |
           npm ci
           # הנתונים האמיתיים נבנים לפני הבנייה. אם הטבלה לא נקראת או שמבנה עמודה השתנה, הפריסה נעצרת
-          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --tab "$SHEET_TAB"
+          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --gid "$SHEET_GID"
           npm run check
       - name: אריזה
         if: steps.gate.outputs.ready == 'true'

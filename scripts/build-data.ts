@@ -1,7 +1,8 @@
 /**
  * בונה את קובץ הנתונים של הדשבורד: public/data/leads.json (או הנתיב שמועבר ב---out).
  *   npx tsx scripts/build-data.ts --demo                    נתוני הדגמה מומצאים
- *   npx tsx scripts/build-data.ts --sheet <id> [--tab לידים] הטבלה האמיתית (קריאה בלבד)
+ *   npx tsx scripts/build-data.ts --sheet <id> [--gid 0]     הטבלה האמיתית (קריאה בלבד). gid 0 = הלשונית "לידים"
+ * הקריאה היא ייצוא מלא של הלשונית: כוללת גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26).
  * בקובץ אין שמות, טלפונים ומיילים. אם מבנה הטבלה השתנה, הסקריפט נכשל ולא כותב כלום.
  */
 import { mkdir, rename, writeFile } from 'node:fs/promises';
@@ -17,8 +18,8 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-async function fromSheet(id: string, tab: string): Promise<LeadsFile> {
-  const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+async function fromSheet(id: string, gid: string): Promise<LeadsFile> {
+  const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=csv&gid=${encodeURIComponent(gid)}`;
   const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw new Error(`קריאת הטבלה נכשלה: HTTP ${res.status}`);
   const type = res.headers.get('content-type') ?? '';
@@ -32,8 +33,8 @@ async function fromSheet(id: string, tab: string): Promise<LeadsFile> {
 async function main() {
   const out = arg('--out') ?? 'public/data/leads.json';
   const sheet = arg('--sheet') ?? process.env.SHEET_ID;
-  const tab = arg('--tab') ?? process.env.SHEET_TAB ?? 'לידים';
-  const file = process.argv.includes('--demo') || !sheet ? demoLeadsFile() : await fromSheet(sheet, tab);
+  const gid = arg('--gid') ?? process.env.SHEET_GID ?? '0';
+  const file = process.argv.includes('--demo') || !sheet ? demoLeadsFile() : await fromSheet(sheet, gid);
   if (file.origin === 'sheet' && file.leads.length === 0) throw new Error('לא נמצאו לידים בטבלה: לא מעדכן, כדי לא למחוק את מה שבאוויר');
   await mkdir(dirname(out), { recursive: true });
   const tmp = `${out}.tmp`;

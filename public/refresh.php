@@ -14,6 +14,7 @@ require __DIR__ . '/_leads.php';
 
 const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
 const SHEET_TAB = 'לידים';
+const SHEET_GID = '0';   // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
 const MIN_GAP = 10;
 
 $dataDir = __DIR__ . '/data';
@@ -53,7 +54,7 @@ if ($age < MIN_GAP) {
     out(200, ['ok' => true, 'reused' => true] + $meta);
 }
 
-$url = getenv('OSHER_SHEET_URL') ?: 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode(SHEET_TAB);
+$url = getenv('OSHER_SHEET_URL') ?: 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/export?format=csv&gid=' . SHEET_GID;
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,

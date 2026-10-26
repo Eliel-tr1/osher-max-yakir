@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
 const SHEET_TAB = 'לידים';
+const SHEET_GID = '0';   // הלשונית "לידים"
 const CC_API = 'https://console.thecloud.chat/api';
 const CC_GAP_SECONDS = 3;      // בין קריאה לקריאה לבוט
 const CC_429_WAIT = 60;        // אם אין Retry-After
@@ -26,9 +27,9 @@ function env_value(string $key): string {
     return $env[$key];
 }
 
-/** הטבלה כמו בכפתור הרענון: [כותרות, שורות]. שורה ריקה לגמרי מדולגת. */
+/** הטבלה כמו בכפתור הרענון, בייצוא מלא (כולל שורות מוסתרות בסינון): [כותרות, שורות]. שורה ריקה לגמרי מדולגת. */
 function sheet_rows(): array {
-    $url = 'https://docs.google.com/spreadsheets/d/' . SHEET_ID . '/gviz/tq?tqx=out:csv&sheet=' . rawurlencode(SHEET_TAB);
+    $url = 'https://docs.google.com/spreadsheets/d/' . SHEET_ID . '/export?format=csv&gid=' . SHEET_GID;
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 60]);
     $csv = curl_exec($ch);
