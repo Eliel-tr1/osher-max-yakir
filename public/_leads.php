@@ -14,6 +14,7 @@ const OSHER_START_DAY = '2026-09-01';
 const OSHER_TEST_PRODUCT = '/בדיק|\btest\b/iu';
 const OSHER_PURCHASE_DUP_SECONDS = 120;
 const OSHER_BOT_SOURCE = 'בוט וואטסאפ';
+const OSHER_BOT_YES = 'כן';
 const OSHER_SITE_SOURCE = 'מהאתר (מבחן או רכישה)';
 
 function osher_trim(string $s): string {
@@ -99,6 +100,12 @@ function osher_yes_no(string $v): ?string {
     return preg_match('/^(לא|no|false|0)$/iu', $t) ? 'no' : 'yes';
 }
 
+/** כמו botFlag: "כן" בדיוק -> 'yes', ריק -> null, אחר -> 'no'. הערך כבר בלי רווחים בקצוות */
+function osher_bot_flag(string $v): ?string {
+    if ($v === '') return null;
+    return $v === OSHER_BOT_YES ? 'yes' : 'no';
+}
+
 /** כמו sourceGroupOf */
 function osher_source_group(?string $source, array $productNames): ?string {
     if ($source === null) return null;
@@ -169,7 +176,7 @@ function osher_leads_from_rows(array $leadRows, ?array $purchaseRows, DateTimeIm
     foreach ($leads as $i => $l) {
         if (($l['qStatus'] === 'converted' || $l['qStatus'] === 'payment') && !isset($withRows[$i])) {
             $purchases[] = ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
-                'source' => null, 'sourceGroup' => null, 'campaign' => null, 'fromLead' => true];
+                'source' => null, 'sourceGroup' => null, 'campaign' => null, 'fromLead' => true, 'bot' => null];
         }
     }
     usort($purchases, fn ($a, $b) => strcmp($a['at'], $b['at']) ?: ($a['lead'] ?? -1) <=> ($b['lead'] ?? -1));
@@ -214,6 +221,7 @@ function osher_purchases_from_rows(array $data, callable $col, array $leads, arr
         $rows[] = ['ts' => $at->getTimestamp(), 'ns' => $ns, 'p' => [
             'at' => osher_iso($at), 'lead' => $lead, 'product' => $product, 'amount' => $amount, 'source' => $source,
             'sourceGroup' => osher_source_group($source, $productNames), 'campaign' => osher_clean($col($cells, 'utm_campaign')), 'fromLead' => false,
+            'bot' => osher_bot_flag($col($cells, 'של הבוט')),
         ]];
     }
     $byNs = [];

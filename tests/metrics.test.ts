@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { demoLeadsFile } from '../lib/leads/demo';
 import type { Lead, LeadsFile, Purchase } from '../lib/leads/types';
 import {
-  accountSize, annotate, autoBucket, botReasons, bucketOf, buyersOf, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel,
+  accountSize, annotate, autoBucket, bucketOf, buyersOf, byBot, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel,
   inRange, matrixByMonth, normalizeMode, passFailOverTime, platformOf, productFamily, productStats, purchaseSources, purchaseSummary, removedIn,
-  sourceRows, summarize, testFamily, testStats, timeSeries,
+  sourceRows, summarize, testFamily, testStats, timeSeries, undecided,
 } from '../lib/metrics';
 
 function lead(p: Partial<Lead>): Lead {
@@ -14,7 +14,7 @@ function lead(p: Partial<Lead>): Lead {
   };
 }
 function buy(p: Partial<Purchase>): Purchase {
-  return { at: '2026-10-02T07:00:00.000Z', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, ...p };
+  return { at: '2026-10-02T07:00:00.000Z', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, bot: null, ...p };
 }
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
   return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases };
@@ -28,20 +28,19 @@ const L = [
   lead({ removedAt: '2026-10-05T07:00:00.000Z' }),
 ];
 const P = [
-  buy({ lead: 0, amount: 100, product: 'Lightning Pro', source: "אורגני - צ'אטבוט וואטסאפ", sourceGroup: 'בוט וואטסאפ' }),
-  buy({ lead: 0, amount: 50, product: 'funded activation fee', at: '2026-10-09T07:00:00.000Z' }),
-  buy({ lead: 1, amount: 30, product: 'Instant', source: 'Vitrue', sourceGroup: 'Vitrue', campaign: 'halloween' }),
-  buy({ lead: 3, amount: null, product: 'Lightning Access', source: 'google', sourceGroup: 'google' }),
-  buy({ lead: null, amount: 20, product: null, at: '2026-09-15T07:00:00.000Z' }),
+  // ליד converted עם שיחה מכירתית, אבל "של הבוט" ריק: עוד לא הוכרע, ולא של הבוט
+  buy({ lead: 0, amount: 100, product: 'Lightning Pro', source: "אורגני - צ'אטבוט וואטסאפ", sourceGroup: 'בוט וואטסאפ', bot: null }),
+  buy({ lead: 0, amount: 50, product: 'funded activation fee', at: '2026-10-09T07:00:00.000Z', bot: 'yes' }),
+  // vitrue, אבל הסוכן הכריע "לא"
+  buy({ lead: 1, amount: 30, product: 'Instant', source: 'Vitrue', sourceGroup: 'Vitrue', campaign: 'halloween', bot: 'no' }),
+  buy({ lead: 3, amount: null, product: 'Lightning Access', source: 'google', sourceGroup: 'google', bot: 'yes' }),
+  buy({ lead: null, amount: 20, product: null, at: '2026-09-15T07:00:00.000Z', bot: null }),
 ];
 
-describe('bot attribution (the iron rule, 28/10)', () => {
-  it('is converted, or a bot utm source, or a sales conversation; a purchase can match several', () => {
-    expect(botReasons(P[0], L)).toEqual(['converted', 'conversation']);
-    expect(botReasons(P[2], L)).toEqual(['utm']);
-    expect(botReasons(P[3], L)).toEqual([]);
-    expect(botReasons(P[4], L)).toEqual([]);
-    expect(botReasons(buy({ lead: 2 }), L)).toEqual([]);
+describe('bot attribution (the column "של הבוט", 29/10)', () => {
+  it('is only what the column says: yes is the bot; no and undecided are not', () => {
+    expect(P.map(byBot)).toEqual([false, true, false, true, false]);
+    expect(P.map(undecided)).toEqual([true, false, false, false, true]);
   });
 
   it('unifies the agent spelling of the conversation mode', () => {
@@ -65,12 +64,11 @@ describe('summaries', () => {
     expect(summarize([], []).avgDeal).toBeNull();
   });
 
-  it('splits purchases into bot and not bot, with reasons, repeat buyers and amount-less purchases', () => {
-    const b = purchaseSummary(P, L);
+  it('splits purchases into bot, not bot and undecided, with repeat buyers and amount-less purchases', () => {
+    const b = purchaseSummary(P);
     expect(b).toEqual({
       purchases: 5, buyers: 4, repeatBuyers: 1, totalPaid: 200, avgDeal: 50, noAmount: 1,
-      bot: { purchases: 3, paid: 180 }, other: { purchases: 2, paid: 20 },
-      reasons: { converted: 2, utm: 1, conversation: 2 },
+      bot: { purchases: 2, paid: 50 }, other: { purchases: 3, paid: 150 }, undecided: { purchases: 2, paid: 120 },
     });
   });
 
@@ -119,12 +117,13 @@ describe('products and sources', () => {
     expect(productFamily('access funded activation fee')).toBe('דמי הפעלה (activation fee)');
     expect(productFamily('Lightning challenge 1 step - MT5, 100k')).toBe('Lightning challenge');
     expect(productFamily(null)).toBe('לא צוין');
-    const stats = productStats(P, L);
-    expect(stats.find((s) => s.name === 'Instant')).toEqual({ name: 'Instant', count: 1, revenue: 30, bot: 1, avg: 30, min: 30, max: 30 });
+    const stats = productStats(P);
+    expect(stats.find((s) => s.name === 'Instant')).toEqual({ name: 'Instant', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 });
+    expect(stats.find((s) => s.name === 'funded activation fee')).toMatchObject({ count: 1, revenue: 50, bot: 1 });
     expect(stats.find((s) => s.name === 'לא צוין')).toEqual({ name: 'לא צוין', count: 1, revenue: 20, bot: 0, avg: 20, min: 20, max: 20 });
     expect(stats.find((s) => s.name === 'Lightning Access')).toMatchObject({ count: 1, revenue: 0, avg: null });
-    expect(purchaseSources(P, L).map((s) => [s.name, s.count])).toEqual([['לא צוין', 2], ['google', 1], ['Vitrue', 1], ['בוט וואטסאפ', 1]]);
-    expect(campaigns(P, L)).toEqual([{ name: 'halloween', count: 1, revenue: 30, bot: 1, avg: 30, min: 30, max: 30 }]);
+    expect(purchaseSources(P).map((s) => [s.name, s.count])).toEqual([['לא צוין', 2], ['google', 1], ['Vitrue', 1], ['בוט וואטסאפ', 1]]);
+    expect(campaigns(P)).toEqual([{ name: 'halloween', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 }]);
   });
 
   it('rows per source group with leads, starts, buyers and money', () => {
@@ -148,7 +147,9 @@ describe('demo data', () => {
     expect(a.origin).toBe('demo');
     expect(a.leads.every((l) => !l.product || l.product.startsWith('Demo'))).toBe(true);
     expect(a.purchases.every((p) => p.lead === null || a.leads[p.lead])).toBe(true);
-    expect(purchaseSummary(a.purchases, a.leads).bot.purchases).toBeGreaterThan(0);
+    const b = purchaseSummary(a.purchases);
+    expect(b.bot.purchases).toBeGreaterThan(0);
+    expect(b.undecided.purchases).toBeGreaterThan(0);
   });
 });
 

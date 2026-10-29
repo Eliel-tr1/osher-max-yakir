@@ -104,33 +104,16 @@ export function salesConversation(l: Lead): boolean {
 }
 
 /**
- * ערכי utm_source שמגיעים מלינקים של הבוט (דיוורים). רכישה עם מקור כזה היא של הבוט גם בלי שיחה
- * (כלל הברזל, החלטת המנהל 28/10). להוסיף ערכים חדשים כאן, באותיות קטנות.
+ * רכישה של הבוט: בעמודה "של הבוט" בלשונית "רכישות" כתוב "כן" (החלטת המנהל, 29/10/2026).
+ * את ההכרעה כותב הסוכן של המנהל בסריקת הלילה. הדשבורד לא מחשב אותה. כל ערך אחר, כולל ריק, הוא לא של הבוט.
  */
-export const BOT_UTM_SOURCES = ['vitrue'];
-
-export type BotReason = 'converted' | 'utm' | 'conversation';
-export const BOT_REASON_LABEL: Record<BotReason, string> = {
-  converted: 'converted בטבלה',
-  utm: 'לינק של הבוט (utm)',
-  conversation: 'שיחה מכירתית',
-};
-
-/**
- * למה הרכישה נחשבת של הבוט (כלל הברזל, 28/10): הליד מסומן converted (כולל קופון של הבוט),
- * או שהרכישה הגיעה מלינק של הבוט, או שהייתה שיחה מכירתית. ריק = לא של הבוט.
- */
-export function botReasons(p: Purchase, leads: Lead[]): BotReason[] {
-  const out: BotReason[] = [];
-  const l = p.lead === null ? null : leads[p.lead];
-  if (l?.qStatus === 'converted') out.push('converted');
-  if (p.source && BOT_UTM_SOURCES.includes(p.source.toLowerCase())) out.push('utm');
-  if (l && salesConversation(l)) out.push('conversation');
-  return out;
+export function byBot(p: Purchase): boolean {
+  return p.bot === 'yes';
 }
 
-export function byBot(p: Purchase, leads: Lead[]): boolean {
-  return botReasons(p, leads).length > 0;
+/** עוד לא הוכרע: תא ריק, עמודה שלא קיימת, או רכישה שנלקחה משורת ליד. */
+export function undecided(p: Purchase): boolean {
+  return p.bot === null;
 }
 
 // ---------- מספרי מפתח ----------
@@ -333,23 +316,20 @@ export interface PurchaseSummary {
   avgDeal: number | null;
   /** רכישות בלי סכום (נספרות, לא נסכמות) */
   noAmount: number;
+  /** "של הבוט" = כן */
   bot: { purchases: number; paid: number };
+  /** כל השאר: לא, ערך אחר, ועוד לא הוכרעו */
   other: { purchases: number; paid: number };
-  /** כמה רכישות לכל סיבה (רכישה יכולה להופיע בכמה) */
-  reasons: Record<BotReason, number>;
+  /** מתוך other: עוד לא הוכרעו (ריק) */
+  undecided: { purchases: number; paid: number };
 }
 
-export function purchaseSummary(purchases: Purchase[], leads: Lead[]): PurchaseSummary {
+export function purchaseSummary(purchases: Purchase[]): PurchaseSummary {
   const sum = (ps: Purchase[]) => ps.reduce((s, p) => s + (p.amount ?? 0), 0);
   const paid = purchases.filter((p) => (p.amount ?? 0) > 0);
-  const bot: Purchase[] = [];
-  const other: Purchase[] = [];
-  const reasons: Record<BotReason, number> = { converted: 0, utm: 0, conversation: 0 };
-  for (const p of purchases) {
-    const rs = botReasons(p, leads);
-    (rs.length ? bot : other).push(p);
-    for (const r of rs) reasons[r]++;
-  }
+  const bot = purchases.filter(byBot);
+  const other = purchases.filter((p) => !byBot(p));
+  const open = purchases.filter(undecided);
   const perLead = new Map<number, number>();
   for (const p of purchases) if (p.lead !== null) perLead.set(p.lead, (perLead.get(p.lead) ?? 0) + 1);
   return {
@@ -361,7 +341,7 @@ export function purchaseSummary(purchases: Purchase[], leads: Lead[]): PurchaseS
     noAmount: purchases.length - paid.length,
     bot: { purchases: bot.length, paid: sum(bot) },
     other: { purchases: other.length, paid: sum(other) },
-    reasons,
+    undecided: { purchases: open.length, paid: sum(open) },
   };
 }
 
@@ -398,13 +378,13 @@ export interface ProductStat {
   bot: number;
 }
 
-export function productStats(ps: Purchase[], leads: Lead[], nameOf: (p: Purchase) => string = (p) => p.product ?? NO_PRODUCT): ProductStat[] {
+export function productStats(ps: Purchase[], nameOf: (p: Purchase) => string = (p) => p.product ?? NO_PRODUCT): ProductStat[] {
   const by = new Map<string, { amounts: number[]; count: number; bot: number }>();
   for (const p of ps) {
     const n = nameOf(p);
     const s = by.get(n) ?? { amounts: [], count: 0, bot: 0 };
     s.count++;
-    if (byBot(p, leads)) s.bot++;
+    if (byBot(p)) s.bot++;
     if (p.amount && p.amount > 0) s.amounts.push(p.amount);
     by.set(n, s);
   }
@@ -422,12 +402,12 @@ export function productStats(ps: Purchase[], leads: Lead[], nameOf: (p: Purchase
 }
 
 /** רכישות לפי מקור ה-utm של הרכישה עצמה */
-export function purchaseSources(ps: Purchase[], leads: Lead[]): ProductStat[] {
-  return productStats(ps, leads, (p) => p.sourceGroup ?? (p.fromLead ? 'מלשונית הלידים' : NO_PRODUCT));
+export function purchaseSources(ps: Purchase[]): ProductStat[] {
+  return productStats(ps, (p) => p.sourceGroup ?? (p.fromLead ? 'מלשונית הלידים' : NO_PRODUCT));
 }
 
-export function campaigns(ps: Purchase[], leads: Lead[]): ProductStat[] {
-  return productStats(ps.filter((p) => p.campaign), leads, (p) => p.campaign!);
+export function campaigns(ps: Purchase[]): ProductStat[] {
+  return productStats(ps.filter((p) => p.campaign), (p) => p.campaign!);
 }
 
 // ---------- מקור הגעה ----------

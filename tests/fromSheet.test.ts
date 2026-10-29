@@ -23,7 +23,7 @@ describe('leadsFromRows', () => {
     const json = JSON.stringify(file);
     for (const secret of ['0500000001', 'x@example.com', 'לקוח בדיקה', 'פרטי', '"u1"']) expect(json).not.toContain(secret);
     expect(file.leads[0]).toMatchObject({ qStatus: 'converted', amount: 99, test: 'Test 20K', product: null, process: 'תהליך ראשי', sourceGroup: 'בוט וואטסאפ' });
-    expect(file.purchases).toEqual([{ at: '2026-10-02T08:00:00.000Z', lead: 0, product: 'Lightning Pro', amount: 99, source: 'ig', sourceGroup: 'ig', campaign: null, fromLead: false }]);
+    expect(file.purchases).toEqual([{ at: '2026-10-02T08:00:00.000Z', lead: 0, product: 'Lightning Pro', amount: 99, source: 'ig', sourceGroup: 'ig', campaign: null, fromLead: false, bot: null }]);
   });
 
   it('one person per id: keeps the fuller row, and the first when equally full', () => {
@@ -112,11 +112,34 @@ describe('leadsFromRows', () => {
     const withCols = leadsFromRows([header, r('כן')]);
     expect(withCols.leads[0]).toMatchObject({ aiConversation: 'yes', mode: 'מכירתית', removedAt: '2026-10-06T13:47:00.000Z' });
     expect(withCols.purchaseRows).toBe(0);
-    expect(withCols.purchases).toEqual([{ at: '2026-10-01T07:00:00.000Z', lead: 0, product: null, amount: 20, source: null, sourceGroup: null, campaign: null, fromLead: true }]);
+    expect(withCols.purchases).toEqual([{ at: '2026-10-01T07:00:00.000Z', lead: 0, product: null, amount: 20, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null }]);
     expect(leadsFromRows([header, r('לא')]).leads[0].aiConversation).toBe('no');
     expect(leadsFromRows([header, r('')]).leads[0].aiConversation).toBeNull();
     const without = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })]);
     expect(without.leads[0]).toMatchObject({ aiConversation: null, mode: null });
+  });
+
+  it('reads "של הבוט" on every purchase row: exactly "כן" is the bot, empty is undecided, anything else is no', () => {
+    const file = leadsFromRows(
+      [HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' }), row({ ...base, 'קוד מזהה': 'u2', 'תאריך כניסה': '01/10/2026 10:00:00', 'סטטוס שאלון': 'converted', 'סכום ששולם': '9' })],
+      [
+        [...PHEADER, 'של הבוט'],
+        ...['כן', '  כן ', 'לא', '', 'yes', 'כן.', 'כ ן', 'כןכן'].map((v, i) => [
+          ...prow({ תאריך: `02/10/2026 1${i}:00`, 'קוד מזהה': 'u1', 'מוצר שנקנה': 'A', 'סכום ששולם': String(10 + i), 'מקור הגעה': 'vitrue' }), v,
+        ]),
+      ],
+    );
+    // הראשונה (לפי תאריך) נלקחה משורת הליד של u2, שאין לו שורות ברכישות: עוד לא הוכרעה
+    expect(file.purchases[0]).toMatchObject({ fromLead: true, bot: null });
+    expect(file.purchases.slice(1).map((p) => p.bot)).toEqual(['yes', 'yes', 'no', null, 'no', 'no', 'no', 'no']);
+  });
+
+  it('works without the "של הבוט" column: every purchase is undecided, and the refresh does not fail', () => {
+    const file = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })], [
+      PHEADER,
+      prow({ תאריך: '02/10/2026 11:00', 'קוד מזהה': 'u1', 'מוצר שנקנה': 'A', 'סכום ששולם': '29', 'מקור הגעה': 'vitrue' }),
+    ]);
+    expect(file.purchases.map((p) => p.bot)).toEqual([null]);
   });
 
   it('reads utm_campaign on purchases when the column exists', () => {

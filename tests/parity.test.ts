@@ -39,7 +39,7 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
   const rnd = seeded(42);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const header = ['שם לקוח', ...REQUIRED_COLUMNS, 'טלפון', 'מייל', 'הערות', ...(extraHeader ? ['עמודה עתידית', ...OPTIONAL_COLUMNS] : [])];
-  const pheader = ['שם לקוח', ...PURCHASE_COLUMNS, 'טלפון', 'קופון מהרכישה', ...(extraHeader ? ['utm_campaign'] : [])];
+  const pheader = ['שם לקוח', ...PURCHASE_COLUMNS, 'טלפון', 'קופון מהרכישה', ...(extraHeader ? ['utm_campaign', 'של הבוט'] : [])];
   const lines = [`﻿${header.map(q).join(',')}`];
   const plines = [pheader.map(q).join(',')];
   const date = (year = 2026) => {
@@ -87,6 +87,7 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
         'שם לקוח': v['שם לקוח'], תאריך: d, 'קוד מזהה': rnd() < 0.05 ? `OTHER${i}` : id, 'מקור הגעה': pick(SOURCES),
         'מוצר שנקנה': rnd() < 0.3 ? pick(['', '-']) : pick(PRODUCTS), 'סכום ששולם': rnd() < 0.3 ? amount : pick(['', '5', '14', '169']),
         טלפון: v['טלפון'], 'קופון מהרכישה': pick(['', 'pass50', '{"code":"","discount":""}']), utm_campaign: pick(['', 'halloween_lightning']),
+        'של הבוט': pick(['', 'כן', ' כן ', 'לא', 'yes', 'כן.', '\u00a0כן\u00a0', 'כ ן']),
       };
       plines.push(pheader.map((h) => q(p[h] ?? '')).join(','));
       if (rnd() < 0.2) {
@@ -124,6 +125,8 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     expect(ts.purchases.length).toBeGreaterThan(400);
     expect(ts.purchases.some((p: { fromLead: boolean }) => p.fromLead)).toBe(true);
     expect(ts.purchases.some((p: { campaign?: string }) => p.campaign)).toBe(true);
+    for (const v of ['yes', 'no']) expect(ts.purchases.some((p: { bot?: string }) => p.bot === v)).toBe(true);
+    expect(ts.purchases.some((p: { bot?: string }) => p.bot === undefined)).toBe(true);
     expect(ph).toEqual(ts);
   });
 

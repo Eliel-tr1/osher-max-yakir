@@ -15,8 +15,20 @@ export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה'] as 
 
 /** עמודות שהדשבורד צריך בלשונית הרכישות. */
 export const PURCHASE_COLUMNS = ['תאריך', 'קוד מזהה', 'מקור הגעה', 'מוצר שנקנה', 'סכום ששולם'] as const;
-/** עמודות של רכישות שעוד לא קיימות בטבלה. utm_campaign יתווסף על ידי n8n (#14). */
-export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign'] as const;
+/**
+ * עמודות של רכישות שהדשבורד קורא אם הן קיימות. בלעדיהן הרענון לא נכשל.
+ * "של הבוט": ההכרעה אם הרכישה של הבוט, נכתבת רק על ידי הסוכן של המנהל (החלטת המנהל, 29/10/2026).
+ */
+export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign', 'של הבוט'] as const;
+
+/** הערך של "של הבוט" שאומר שהרכישה של הבוט. רק הוא, בדיוק, אחרי הסרת רווחים בקצוות. */
+export const BOT_YES = 'כן';
+
+/** "של הבוט": "כן" בדיוק = 'yes'; ריק = null (עוד לא הוכרע); כל ערך אחר = 'no'. הערך כבר בלי רווחים בקצוות. */
+export function botFlag(v: string): 'yes' | 'no' | null {
+  if (v === '') return null;
+  return v === BOT_YES ? 'yes' : 'no';
+}
 
 /** שורות מלפני התאריך הזה הן שורות בדיקה ולא נכנסות לדשבורד (החלטת המנהל, 29/10/2026). */
 export const START_DAY = '2026-09-01';
@@ -118,7 +130,8 @@ export function leadsFromRows(leadRows: string[][], purchaseRows: string[][] | n
   const withRows = new Set(purchases.map((p) => p.lead).filter((l): l is number => l !== null));
   leads.forEach((l, i) => {
     if ((l.qStatus === 'converted' || l.qStatus === 'payment') && !withRows.has(i)) {
-      purchases.push({ at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true });
+      // רכישה משורת ליד: אין לה תא "של הבוט", ולכן היא עוד לא הוכרעה
+      purchases.push({ at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null });
     }
   });
   purchases.sort((a, b) => a.at.localeCompare(b.at) || (a.lead ?? -1) - (b.lead ?? -1));
@@ -172,7 +185,7 @@ function purchasesFromRows(
       at, ns,
       p: {
         at: at.toISOString(), lead, product, amount, source, sourceGroup: sourceGroupOf(source, productNames),
-        campaign: cleanText(col(cells, 'utm_campaign')), fromLead: false,
+        campaign: cleanText(col(cells, 'utm_campaign')), fromLead: false, bot: botFlag(col(cells, 'של הבוט')),
       },
     });
   });

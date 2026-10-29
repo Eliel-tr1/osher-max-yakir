@@ -10,7 +10,7 @@ const EMPTY_LEAD: Lead = {
   step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null,
 };
 
-const EMPTY_PURCHASE: Purchase = { at: '', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false };
+const EMPTY_PURCHASE: Purchase = { at: '', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, bot: null };
 
 export function unpack(json: unknown): LeadsFile {
   const f = json as Partial<LeadsFile> | null;

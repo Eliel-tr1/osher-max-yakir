@@ -78,6 +78,8 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
         sourceGroup: src === BOT ? 'בוט וואטסאפ' : CHANNELS.includes(src) ? src : 'מהאתר (מבחן או רכישה)',
         campaign: src === 'vitrue' ? pick(['demo_halloween', 'demo_welcome']) : null,
         fromLead: false,
+        // כמו העמודה "של הבוט": חלק מהרכישות עוד לא הוכרעו
+        bot: rnd() < 0.2 ? null : src === 'vitrue' || rnd() < 0.25 ? 'yes' : 'no',
       });
     }
   }

@@ -5,9 +5,9 @@ import { BASE_PATH, REFRESH_MS } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
 import type { LeadsFile } from '@/lib/leads/types';
 import {
-  annotate, autoBucket, BOT_REASON_LABEL, byBot, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange,
+  annotate, autoBucket, byBot, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange,
   matrixByMonth, NO_PRODUCT, passFailOverTime, productFamily, productStats, purchaseSources, purchaseSummary, removedIn, sourceRows, summarize,
-  testStats, timeSeries, type Bucket, type BotReason,
+  testStats, timeSeries, type Bucket,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
 import { BarList, Columns, Fold, FunnelStrip, HeatTable, SimpleTable, Sparkline, SplitList, Stats, fmtDay, fmtMonth, fmtMonthShort, money, nf, pct, pctOf } from './charts';
@@ -52,8 +52,6 @@ const timeFmt = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numer
 
 type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
-
-const REASONS: BotReason[] = ['converted', 'utm', 'conversation'];
 
 export default function Dashboard() {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
@@ -123,7 +121,7 @@ export default function Dashboard() {
     const filtered = source === ALL && proc === ALL;
     // רכישות לפי תאריך הרכישה. כשמסננים לפי מקור או תהליך, רק הרכישות של הלידים שנשארו
     const purchasesAll = inRange(file.purchases, range).filter((p) => filtered || (p.lead !== null && keep.has(p.lead)));
-    const ps = purchasesAll.filter((p) => channel === 'all' || byBot(p, file.leads));
+    const ps = purchasesAll.filter((p) => channel === 'all' || byBot(p));
     const auto = autoBucket(leads);
     const lb = leadsBy ?? auto;
     const tb = testsBy ?? auto;
@@ -144,17 +142,17 @@ export default function Dashboard() {
       passFail: passFailOverTime(leads, tb),
       passFailBy: tb,
       testMatrix: matrixByMonth(leads.filter((l) => l.test), (l) => l.test, (l) => l.at),
-      buys: purchaseSummary(ps, file.leads),
-      buysAll: purchaseSummary(purchasesAll, file.leads),
+      buys: purchaseSummary(ps),
+      buysAll: purchaseSummary(purchasesAll),
       buysBy: pb,
       buysSeries: timeSeries(ps, (p) => p.at, pb, 2, (p) => {
         const v = measure === 'money' ? (p.amount ?? 0) : 1;
-        return byBot(p, file.leads) ? [v, 0] : [0, v];
+        return byBot(p) ? [v, 0] : [0, v];
       }),
-      families: productStats(ps, file.leads, (p) => productFamily(p.product)),
-      products: productStats(ps, file.leads),
-      buySources: purchaseSources(ps, file.leads),
-      campaigns: campaigns(ps, file.leads),
+      families: productStats(ps, (p) => productFamily(p.product)),
+      products: productStats(ps),
+      buySources: purchaseSources(ps),
+      campaigns: campaigns(ps),
       productMatrix: matrixByMonth(ps, (p) => productFamily(p.product), (p) => p.at),
       bySource: sourceRows(leads),
       bySourceRaw: sourceRows(leads, (l) => l.source),
@@ -175,7 +173,6 @@ export default function Dashboard() {
   const ex = view.exams;
   const b = view.buys;
   const scanned = s.aiAnalyzed;
-  const botShare = view.buysAll.purchases ? view.buysAll.bot.purchases / view.buysAll.purchases : null;
 
   return (
     <main className="page">
@@ -307,7 +304,7 @@ export default function Dashboard() {
           { label: 'סכום', value: money.format(b.totalPaid) },
           { label: 'עסקה ממוצעת', value: b.avgDeal === null ? '-' : money.format(b.avgDeal) },
           { label: 'קונים', value: nf.format(b.buyers), sub: `${nf.format(b.repeatBuyers)} קנו יותר מפעם` },
-          { label: 'בזכות הבוט', value: nf.format(view.buysAll.bot.purchases), sub: `${money.format(view.buysAll.bot.paid)} · ${pctOf(botShare)} מהרכישות` },
+          { label: 'בזכות הבוט', value: nf.format(view.buysAll.bot.purchases), sub: `${money.format(view.buysAll.bot.paid)} · ${nf.format(view.buysAll.undecided.purchases)} רכישות עוד לא הוכרעו` },
           { label: 'לא בזכות הבוט', value: nf.format(view.buysAll.other.purchases), sub: money.format(view.buysAll.other.paid) },
         ]} />
         <Columns
@@ -322,9 +319,16 @@ export default function Dashboard() {
             <BarList items={view.families.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.families.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
           </div>
           <div>
-            <h3>למה בזכות הבוט</h3>
-            <BarList items={REASONS.map((r) => ({ name: BOT_REASON_LABEL[r], count: b.reasons[r] }))} max={3} />
-            <p className="hint tight">רכישה יכולה לעמוד ביותר מתנאי אחד. converted כולל גם קופון של הבוט.</p>
+            <h3>בזכות הבוט</h3>
+            <BarList
+              items={[
+                { name: 'כן', count: view.buysAll.bot.purchases },
+                { name: 'לא', count: view.buysAll.other.purchases - view.buysAll.undecided.purchases },
+                { name: 'עוד לא הוכרעו', count: view.buysAll.undecided.purchases },
+              ]}
+              max={3}
+            />
+            <p className="hint tight">לפי העמודה &quot;של הבוט&quot; בלשונית הרכישות. רכישה שעוד לא הוכרעה לא נחשבת של הבוט.</p>
           </div>
           <div>
             <h3>מקור הרכישה (utm)</h3>
@@ -338,7 +342,7 @@ export default function Dashboard() {
           </>
         )}
         <p className="hint">
-          בזכות הבוט (כלל הברזל): הליד מסומן converted, או שהרכישה הגיעה מלינק של הבוט (utm_source vitrue), או שהייתה שיחה מכירתית לפי הסוכן.
+          בזכות הבוט: בעמודה &quot;של הבוט&quot; בלשונית הרכישות כתוב &quot;כן&quot;. את ההכרעה כותב הסוכן של המנהל בכל לילה, ותא ריק הוא רכישה שעוד לא הוכרעה.
           מקור הרכישה נרשם מ-27/10 והלאה. רכישות בלי סכום נספרות אבל לא נכנסות לסכומים ולממוצע. שם מוצר שלא נרשם מופיע כ&quot;{NO_PRODUCT}&quot;.
         </p>
         <Fold title="כל המוצרים" count={view.products.length}>
