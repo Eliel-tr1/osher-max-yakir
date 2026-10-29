@@ -1,4 +1,4 @@
-import type { Lead } from './leads/types';
+import type { Lead, LeadsFile, Purchase } from './leads/types';
 
 export interface Range {
   /** כולל, או null = מההתחלה */
@@ -24,26 +24,36 @@ function inside(iso: string, range: Range): boolean {
   return (!range.from || t >= range.from.getTime()) && (!range.to || t < range.to.getTime());
 }
 
-export function inRange(leads: Lead[], range: Range): Lead[] {
-  return leads.filter((l) => inside(l.at, range));
+// ---------- לידים עם הרכישות שלהם ----------
+
+/** ליד עם המיקום שלו בקובץ וסיכום הרכישות שלו, כדי שסינון לא יאבד את הקשר לרכישות. */
+export interface LeadX extends Lead {
+  i: number;
+  /** כמה רכישות יש לו בלשונית הרכישות (כולל בלי סכום) */
+  purchases: number;
+  /** כמה שילם בסך הכול */
+  spent: number;
 }
 
-/** שילם בזכות הבוט: סטטוס שאלון converted (החלטת המנהל, #12). */
-export function paidByBot(l: Lead): boolean {
-  return l.qStatus === 'converted';
+export function annotate(file: LeadsFile): LeadX[] {
+  const leads: LeadX[] = file.leads.map((l, i) => ({ ...l, i, purchases: 0, spent: 0 }));
+  for (const p of file.purchases) {
+    if (p.lead === null) continue;
+    const l = leads[p.lead];
+    if (!l) continue;
+    l.purchases++;
+    l.spent += p.amount ?? 0;
+  }
+  return leads;
 }
 
-/** שילם, אבל לא בהכרח בזכות הבוט: סטטוס שאלון payment (החלטת המנהל, #16). */
-export function paidOther(l: Lead): boolean {
-  return l.qStatus === 'payment';
+export function inRange<T extends { at: string }>(items: T[], range: Range): T[] {
+  return items.filter((x) => inside(x.at, range));
 }
 
-/** רכש: converted או payment (#16). */
-export function purchased(l: Lead): boolean {
-  return paidByBot(l) || paidOther(l);
-}
+// ---------- הגדרות ----------
 
-/** התחיל את המסע (התחלת שיחה), טכנית: ענה לצ'אטבוט, עמודה I (החלטת המנהל, #16). */
+/** התחיל שיחה, טכנית: ענה לצ'אטבוט, עמודה I. n8n מסמן אותה ברגע שהלקוח שלח הודעה כלשהי (החלטת המנהל, #16). */
 export function startedJourney(l: Lead): boolean {
   return l.answered;
 }
@@ -60,8 +70,7 @@ export function aiAnalyzed(l: Lead): boolean {
 
 /**
  * התחיל שאלון: עמודה K, "שלב בשאלון", מלאה (#16).
- * בנתונים עמודה K ריקה אצל רוב מי שסיים את השאלון, ולכן נחשב גם מי שעמודה L שלו started, finished או converted:
- * מי שסיים, התחיל.
+ * בנתונים עמודה K ריקה אצל רוב מי שסיים את השאלון, ולכן נחשב גם מי שעמודה L שלו started, finished או converted.
  */
 export function startedQuestionnaire(l: Lead): boolean {
   return l.step !== null || l.qStatus === 'started' || finishedQuestionnaire(l);
@@ -74,11 +83,57 @@ export function finishedQuestionnaire(l: Lead): boolean {
 
 export const PASSED = 'עבר';
 export const FAILED = 'לא עבר';
+export const ACTIVE = 'לקוח פעיל';
 
-/** שם המוצר של רכישה: "מוצר שנקנה", ואם ריק אז "מבחן" (לבירור, #12). */
-export function productOf(l: Lead): string {
-  return l.product ?? l.test ?? 'לא צוין';
+/** "אופן שיחה" (עמודה BE): הסוכן כותב מכירתית או שירותית (החלטת המנהל, 20/10). איות ישן (מכירתי, שירותי) מאוחד. */
+export const MODE_SALES = 'מכירתית';
+export const MODE_SERVICE = 'שירותית';
+export const UNSET = 'לא סווג';
+
+export function normalizeMode(m: string | null): string | null {
+  if (!m) return null;
+  const t = m.replace(/\s+/g, ' ').trim();
+  if (t === '') return null;
+  if (/^מכירת/.test(t)) return MODE_SALES;
+  if (/^שירות/.test(t)) return MODE_SERVICE;
+  return t;
 }
+
+export function salesConversation(l: Lead): boolean {
+  return normalizeMode(l.mode) === MODE_SALES;
+}
+
+/**
+ * ערכי utm_source שמגיעים מלינקים של הבוט (דיוורים). רכישה עם מקור כזה היא של הבוט גם בלי שיחה
+ * (כלל הברזל, החלטת המנהל 28/10). להוסיף ערכים חדשים כאן, באותיות קטנות.
+ */
+export const BOT_UTM_SOURCES = ['vitrue'];
+
+export type BotReason = 'converted' | 'utm' | 'conversation';
+export const BOT_REASON_LABEL: Record<BotReason, string> = {
+  converted: 'converted בטבלה',
+  utm: 'לינק של הבוט (utm)',
+  conversation: 'שיחה מכירתית',
+};
+
+/**
+ * למה הרכישה נחשבת של הבוט (כלל הברזל, 28/10): הליד מסומן converted (כולל קופון של הבוט),
+ * או שהרכישה הגיעה מלינק של הבוט, או שהייתה שיחה מכירתית. ריק = לא של הבוט.
+ */
+export function botReasons(p: Purchase, leads: Lead[]): BotReason[] {
+  const out: BotReason[] = [];
+  const l = p.lead === null ? null : leads[p.lead];
+  if (l?.qStatus === 'converted') out.push('converted');
+  if (p.source && BOT_UTM_SOURCES.includes(p.source.toLowerCase())) out.push('utm');
+  if (l && salesConversation(l)) out.push('conversation');
+  return out;
+}
+
+export function byBot(p: Purchase, leads: Lead[]): boolean {
+  return botReasons(p, leads).length > 0;
+}
+
+// ---------- מספרי מפתח ----------
 
 export interface Summary {
   leads: number;
@@ -87,167 +142,319 @@ export interface Summary {
   aiAnalyzed: number;
   /** מתוכן, שיחה אמיתית */
   realConversations: number;
-  passed: number;
-  failed: number;
-  purchased: number;
-  /** רכשו מתוך מי שהתחיל שיחה */
-  purchasedOfStarted: number;
-  paidBot: number;
-  paidOther: number;
-  /** סך הכול שולם: עמודה AM, על כל מי שרכש */
+  /** מתוכן, שיחה מכירתית */
+  salesConversations: number;
+  /** רכישות בטווח (לפי תאריך הרכישה) */
+  purchases: number;
+  /** קונים שונים בטווח */
+  buyers: number;
+  /** סך הכול שולם בטווח */
   totalPaid: number;
-  revenueBot: number;
-  revenueOther: number;
-  avgDealBot: number | null;
-  avgDealAll: number | null;
+  /** עסקה ממוצעת: רק רכישות עם סכום (החלטת המנהל, 29/10) */
+  avgDeal: number | null;
+  /** לידים בטווח שרכשו אי פעם */
+  leadsWhoBought: number;
 }
 
-export function summarize(leads: Lead[]): Summary {
-  const sum = (xs: Lead[]) => xs.reduce((s, l) => s + (l.amount ?? 0), 0);
-  const withAmount = (xs: Lead[]) => xs.filter((l) => (l.amount ?? 0) > 0);
-  const bot = leads.filter(paidByBot);
-  const other = leads.filter(paidOther);
-  const all = leads.filter(purchased);
-  const botA = withAmount(bot);
-  const allA = withAmount(all);
+export function summarize(leads: LeadX[], purchases: Purchase[]): Summary {
+  const paid = purchases.filter((p) => (p.amount ?? 0) > 0);
+  const total = paid.reduce((s, p) => s + p.amount!, 0);
   return {
     leads: leads.length,
     startedJourney: leads.filter(startedJourney).length,
     aiAnalyzed: leads.filter(aiAnalyzed).length,
     realConversations: leads.filter(realConversation).length,
-    passed: leads.filter((l) => l.status === PASSED).length,
-    failed: leads.filter((l) => l.status === FAILED).length,
-    purchased: all.length,
-    purchasedOfStarted: all.filter(startedJourney).length,
-    paidBot: bot.length,
-    paidOther: other.length,
-    totalPaid: sum(all),
-    revenueBot: sum(bot),
-    revenueOther: sum(other),
-    avgDealBot: botA.length ? sum(botA) / botA.length : null,
-    avgDealAll: allA.length ? sum(allA) / allA.length : null,
+    salesConversations: leads.filter(salesConversation).length,
+    purchases: purchases.length,
+    buyers: buyersOf(purchases),
+    totalPaid: total,
+    avgDeal: paid.length ? total / paid.length : null,
+    leadsWhoBought: leads.filter((l) => l.purchases > 0).length,
   };
 }
 
-export const UNSET = 'לא סווג';
-
-/**
- * "אופן שיחה" (עמודה BE) נכתב על ידי סוכן ה-AI, והקטגוריות שלו פתוחות (שירותי, מכירתי, טכני, פניית שירות...).
- * הדשבורד מציג כל ערך כמו שהוא, ומאחד רק רווחים. כשתיקבע רשימה סגורה לסוכן, היא תיכנס ל-MODE_ORDER.
- */
-export const MODE_ORDER: string[] = [];
-
-export function normalizeMode(m: string | null): string | null {
-  if (!m) return null;
-  const t = m.replace(/\s+/g, ' ').trim();
-  return t === '' ? null : t;
-}
-
-/** הקטגוריות של אופן שיחה: קודם לפי MODE_ORDER, אחר כך מהנפוצה לנדירה, ו"לא סווג" בסוף. */
-export function modesOf(leads: Lead[]): string[] {
-  const counts = new Map<string, number>();
-  for (const l of leads) {
-    const m = normalizeMode(l.mode);
-    if (m) counts.set(m, (counts.get(m) ?? 0) + 1);
+/** קונים שונים: לפי הליד, ורכישה בלי ליד נספרת כקונה בפני עצמה */
+export function buyersOf(purchases: Purchase[]): number {
+  const ids = new Set<number>();
+  let orphans = 0;
+  for (const p of purchases) {
+    if (p.lead === null) orphans++;
+    else ids.add(p.lead);
   }
-  const rest = [...counts.keys()].filter((m) => !MODE_ORDER.includes(m)).sort((a, b) => counts.get(b)! - counts.get(a)! || a.localeCompare(b));
-  return [...MODE_ORDER.filter((m) => counts.has(m)), ...rest, UNSET];
+  return ids.size + orphans;
 }
 
-export interface BreakdownRow {
-  name: string;
+/** משפך: ליד, שיחה, שאלון, רכישה */
+export interface Funnel {
   leads: number;
-  /** התחילו שיחה: ענו לצ'אטבוט */
   started: number;
-  /** הסוכן קרא את השיחה */
-  analyzed: number;
-  /** שיחה אמיתית לפי הסוכן */
-  real: number;
   startedQ: number;
   finishedQ: number;
-  purchased: number;
-  paidBot: number;
-  paidOther: number;
-  totalPaid: number;
-  passed: number;
-  failed: number;
-  /** לפי אופן שיחה, באותו סדר כמו modes */
-  byMode: number[];
+  bought: number;
 }
 
-export interface Breakdown {
-  rows: BreakdownRow[];
-  total: BreakdownRow;
-  modes: string[];
-}
-
-/** טבלת פילוח: לכל קבוצה כמה לידים, שאלון, רכישות, תשלום, עברו ונכשלו, ואופן שיחה. */
-export function breakdown(leads: Lead[], groupOf: (l: Lead) => string, order?: string[]): Breakdown {
-  const modes = modesOf(leads);
-  const empty = (name: string): BreakdownRow => ({
-    name, leads: 0, started: 0, analyzed: 0, real: 0, startedQ: 0, finishedQ: 0, purchased: 0, paidBot: 0, paidOther: 0, totalPaid: 0, passed: 0, failed: 0,
-    byMode: modes.map(() => 0),
-  });
-  const add = (r: BreakdownRow, l: Lead) => {
-    r.leads++;
-    if (startedJourney(l)) r.started++;
-    if (aiAnalyzed(l)) r.analyzed++;
-    if (realConversation(l)) r.real++;
-    if (startedQuestionnaire(l)) r.startedQ++;
-    if (finishedQuestionnaire(l)) r.finishedQ++;
-    if (purchased(l)) {
-      r.purchased++;
-      r.totalPaid += l.amount ?? 0;
-    }
-    if (paidByBot(l)) r.paidBot++;
-    if (paidOther(l)) r.paidOther++;
-    if (l.status === PASSED) r.passed++;
-    if (l.status === FAILED) r.failed++;
-    r.byMode[modes.indexOf(normalizeMode(l.mode) ?? UNSET)]++;
+export function funnel(leads: LeadX[]): Funnel {
+  return {
+    leads: leads.length,
+    started: leads.filter(startedJourney).length,
+    startedQ: leads.filter(startedQuestionnaire).length,
+    finishedQ: leads.filter(finishedQuestionnaire).length,
+    bought: leads.filter((l) => l.purchases > 0).length,
   };
-  const groups = new Map<string, BreakdownRow>();
-  for (const name of order ?? []) groups.set(name, empty(name));
-  const total = empty('סך הכול');
-  for (const l of leads) {
-    const g = groupOf(l);
-    if (!groups.has(g)) groups.set(g, empty(g));
-    add(groups.get(g)!, l);
-    add(total, l);
-  }
-  const rows = [...groups.values()];
-  if (!order) rows.sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
-  return { rows, total, modes };
 }
 
-/** קבוצה לפי תוצאת המבחן, בסדר: עבר, לא עבר, בלי סטטוס. */
-export function resultOf(l: Lead): string {
-  return l.status === PASSED || l.status === FAILED ? l.status : 'בלי סטטוס';
+/** כמה הסירו את עצמם, לפי תאריך ההסרה (ולא לפי תאריך הכניסה). */
+export function removedIn(all: Lead[], range: Range): number {
+  return all.filter((l) => l.removedAt && inside(l.removedAt, range)).length;
 }
-export const RESULT_ORDER = [PASSED, FAILED, 'בלי סטטוס'];
 
-export interface TestStat {
-  name: string;
-  total: number;
+// ---------- מבחנים ----------
+
+/** עשה מבחן: יש תוצאה (עבר או לא עבר), או שיש שם מבחן והסטטוס נדרס ל"לקוח פעיל" אחרי רכישה. */
+export function didExam(l: Lead): boolean {
+  return l.status === PASSED || l.status === FAILED || (l.test !== null && l.status === ACTIVE);
+}
+
+export interface ExamSummary {
+  did: number;
   passed: number;
   failed: number;
-  /** אחוז מעבר מתוך מי שיש לו תוצאה, null כשאין */
+  /** יש שם מבחן אבל התוצאה נדרסה על ידי "לקוח פעיל" */
+  overwritten: number;
+  passRate: number | null;
+  /** עברו ורכשו אחר כך */
+  passedAndBought: number;
+}
+
+export function examSummary(leads: LeadX[]): ExamSummary {
+  const passed = leads.filter((l) => l.status === PASSED);
+  const failed = leads.filter((l) => l.status === FAILED).length;
+  const overwritten = leads.filter((l) => l.test !== null && l.status === ACTIVE).length;
+  return {
+    did: passed.length + failed + overwritten,
+    passed: passed.length,
+    failed,
+    overwritten,
+    passRate: passed.length + failed ? passed.length / (passed.length + failed) : null,
+    passedAndBought: passed.filter((l) => l.purchases > 0).length,
+  };
+}
+
+export interface PassFailRow {
+  name: string;
+  passed: number;
+  failed: number;
+  /** כולל מי שהתוצאה שלו נדרסה */
+  total: number;
   passRate: number | null;
 }
 
-export function testStats(leads: Lead[]): TestStat[] {
-  const m = new Map<string, TestStat>();
+function passFailRows(leads: Lead[], keyOf: (l: Lead) => string | null, order?: string[]): PassFailRow[] {
+  const m = new Map<string, PassFailRow>();
   for (const l of leads) {
-    if (!l.test) continue;
-    const s = m.get(l.test) ?? { name: l.test, total: 0, passed: 0, failed: 0, passRate: null };
-    s.total++;
-    if (l.status === PASSED) s.passed++;
-    if (l.status === FAILED) s.failed++;
-    m.set(l.test, s);
+    if (!didExam(l)) continue;
+    const k = keyOf(l);
+    if (!k) continue;
+    const r = m.get(k) ?? { name: k, passed: 0, failed: 0, total: 0, passRate: null };
+    r.total++;
+    if (l.status === PASSED) r.passed++;
+    if (l.status === FAILED) r.failed++;
+    m.set(k, r);
   }
-  return [...m.values()]
-    .map((s) => ({ ...s, passRate: s.passed + s.failed ? s.passed / (s.passed + s.failed) : null }))
-    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const rows = [...m.values()].map((r) => ({ ...r, passRate: r.passed + r.failed ? r.passed / (r.passed + r.failed) : null }));
+  if (order) return rows.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name) || b.total - a.total);
+  return rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
+
+/** משפחת המבחן, לפי השם. */
+export function testFamily(name: string): string {
+  const n = name.toLowerCase();
+  if (/one step assessment/.test(n)) return 'One Step Assessment';
+  if (/one step access/.test(n)) return 'One Step Access';
+  if (/one step funded/.test(n)) return 'One Step Funded';
+  if (/express|instant/.test(n)) return 'Express / Instant';
+  if (/freedom/.test(n)) return 'Freedom';
+  if (/adventure/.test(n)) return 'Adventure';
+  if (/lightning/.test(n)) return 'Lightning';
+  if (/two step|2 step/.test(n)) return 'Two Step';
+  if (/crypto/.test(n)) return 'Crypto';
+  return 'אחר';
+}
+
+/** גודל החשבון, "100K" */
+export function accountSize(name: string): string | null {
+  const m = name.match(/(\d+)\s*k\b/i);
+  return m ? `${m[1]}K` : null;
+}
+
+export function platformOf(name: string): string {
+  if (/trade\s*r?locker/i.test(name)) return 'TradeLocker';
+  if (/mt5/i.test(name)) return 'MT5';
+  if (/bybit/i.test(name)) return 'Bybit';
+  return 'לא צוין';
+}
+
+export function examsByFamily(leads: Lead[]): PassFailRow[] {
+  return passFailRows(leads, (l) => (l.test ? testFamily(l.test) : null));
+}
+
+const SIZE_ORDER = ['2K', '5K', '10K', '20K', '50K', '100K', '200K', '500K'];
+export function examsBySize(leads: Lead[]): PassFailRow[] {
+  return passFailRows(leads, (l) => (l.test ? accountSize(l.test) : null), SIZE_ORDER).sort((a, b) => {
+    const ia = SIZE_ORDER.indexOf(a.name);
+    const ib = SIZE_ORDER.indexOf(b.name);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+}
+
+export function examsByPlatform(leads: Lead[]): PassFailRow[] {
+  return passFailRows(leads, (l) => (l.test ? platformOf(l.test) : null));
+}
+
+/** כל מבחן בנפרד */
+export function testStats(leads: Lead[]): PassFailRow[] {
+  return passFailRows(leads, (l) => l.test);
+}
+
+/** תוצאה: עבר או לא עבר, לפי תאריך הכניסה של הליד */
+export function passFailOverTime(leads: Lead[], b: Bucket): { key: string; passed: number; failed: number }[] {
+  return timeSeries(leads.filter(didExam), (l) => l.at, b, 2, (l) => [l.status === PASSED ? 1 : 0, l.status === FAILED ? 1 : 0])
+    .map(({ key, values: [passed, failed] }) => ({ key, passed, failed }));
+}
+
+// ---------- רכישות ----------
+
+export interface PurchaseSummary {
+  purchases: number;
+  buyers: number;
+  /** קונים עם יותר מרכישה אחת */
+  repeatBuyers: number;
+  totalPaid: number;
+  avgDeal: number | null;
+  /** רכישות בלי סכום (נספרות, לא נסכמות) */
+  noAmount: number;
+  bot: { purchases: number; paid: number };
+  other: { purchases: number; paid: number };
+  /** כמה רכישות לכל סיבה (רכישה יכולה להופיע בכמה) */
+  reasons: Record<BotReason, number>;
+}
+
+export function purchaseSummary(purchases: Purchase[], leads: Lead[]): PurchaseSummary {
+  const sum = (ps: Purchase[]) => ps.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const paid = purchases.filter((p) => (p.amount ?? 0) > 0);
+  const bot: Purchase[] = [];
+  const other: Purchase[] = [];
+  const reasons: Record<BotReason, number> = { converted: 0, utm: 0, conversation: 0 };
+  for (const p of purchases) {
+    const rs = botReasons(p, leads);
+    (rs.length ? bot : other).push(p);
+    for (const r of rs) reasons[r]++;
+  }
+  const perLead = new Map<number, number>();
+  for (const p of purchases) if (p.lead !== null) perLead.set(p.lead, (perLead.get(p.lead) ?? 0) + 1);
+  return {
+    purchases: purchases.length,
+    buyers: buyersOf(purchases),
+    repeatBuyers: [...perLead.values()].filter((n) => n > 1).length,
+    totalPaid: sum(paid),
+    avgDeal: paid.length ? sum(paid) / paid.length : null,
+    noAmount: purchases.length - paid.length,
+    bot: { purchases: bot.length, paid: sum(bot) },
+    other: { purchases: other.length, paid: sum(other) },
+    reasons,
+  };
+}
+
+export const NO_PRODUCT = 'לא צוין';
+
+/** משפחת המוצר, לפי השם. */
+export function productFamily(name: string | null): string {
+  if (!name) return NO_PRODUCT;
+  const n = name.toLowerCase();
+  if (/activation fee/.test(n)) return 'דמי הפעלה (activation fee)';
+  if (/lightning pro/.test(n)) return 'Lightning Pro';
+  if (/lightning access/.test(n)) return 'Lightning Access';
+  if (/lightning/.test(n)) return 'Lightning challenge';
+  if (/one step assessment/.test(n)) return 'One Step Assessment';
+  if (/one step access/.test(n)) return 'One Step Access';
+  if (/one step funded/.test(n)) return 'One Step Funded';
+  if (/express|instant/.test(n)) return 'Instant / Express';
+  if (/freedom/.test(n)) return 'Freedom';
+  if (/adventure/.test(n)) return 'Adventure';
+  if (/two step|2 step/.test(n)) return 'Two Step';
+  if (/crypto/.test(n)) return 'Crypto';
+  if (/challenge/.test(n)) return 'Challenge';
+  return 'אחר';
+}
+
+export interface ProductStat {
+  name: string;
+  count: number;
+  revenue: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+  /** מתוכן של הבוט */
+  bot: number;
+}
+
+export function productStats(ps: Purchase[], leads: Lead[], nameOf: (p: Purchase) => string = (p) => p.product ?? NO_PRODUCT): ProductStat[] {
+  const by = new Map<string, { amounts: number[]; count: number; bot: number }>();
+  for (const p of ps) {
+    const n = nameOf(p);
+    const s = by.get(n) ?? { amounts: [], count: 0, bot: 0 };
+    s.count++;
+    if (byBot(p, leads)) s.bot++;
+    if (p.amount && p.amount > 0) s.amounts.push(p.amount);
+    by.set(n, s);
+  }
+  return [...by.entries()]
+    .map(([name, s]) => {
+      const revenue = s.amounts.reduce((x, y) => x + y, 0);
+      return {
+        name, count: s.count, revenue, bot: s.bot,
+        avg: s.amounts.length ? revenue / s.amounts.length : null,
+        min: s.amounts.length ? Math.min(...s.amounts) : null,
+        max: s.amounts.length ? Math.max(...s.amounts) : null,
+      };
+    })
+    .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name));
+}
+
+/** רכישות לפי מקור ה-utm של הרכישה עצמה */
+export function purchaseSources(ps: Purchase[], leads: Lead[]): ProductStat[] {
+  return productStats(ps, leads, (p) => p.sourceGroup ?? (p.fromLead ? 'מלשונית הלידים' : NO_PRODUCT));
+}
+
+export function campaigns(ps: Purchase[], leads: Lead[]): ProductStat[] {
+  return productStats(ps.filter((p) => p.campaign), leads, (p) => p.campaign!);
+}
+
+// ---------- מקור הגעה ----------
+
+export interface SourceRow {
+  name: string;
+  leads: number;
+  started: number;
+  bought: number;
+  spent: number;
+}
+
+export function sourceRows(leads: LeadX[], keyOf: (l: Lead) => string | null = (l) => l.sourceGroup): SourceRow[] {
+  const m = new Map<string, SourceRow>();
+  for (const l of leads) {
+    const k = keyOf(l) ?? NO_PRODUCT;
+    const r = m.get(k) ?? { name: k, leads: 0, started: 0, bought: 0, spent: 0 };
+    r.leads++;
+    if (startedJourney(l)) r.started++;
+    if (l.purchases > 0) r.bought++;
+    r.spent += l.spent;
+    m.set(k, r);
+  }
+  return [...m.values()].sort((a, b) => b.leads - a.leads || a.name.localeCompare(b.name));
+}
+
+// ---------- זמן ----------
 
 export type Bucket = 'day' | 'week' | 'month';
 
@@ -274,9 +481,9 @@ function nextBucket(key: string, b: Bucket): string {
 }
 
 /** יחידת הזמן שמתאימה לטווח: עד חודשיים לפי יום, עד חצי שנה לפי שבוע, מעבר לזה לפי חודש. */
-export function autoBucket(leads: Lead[]): Bucket {
-  if (!leads.length) return 'day';
-  const days = leads.map((l) => dayKey(l.at)).sort();
+export function autoBucket(items: { at: string }[]): Bucket {
+  if (!items.length) return 'day';
+  const days = items.map((l) => dayKey(l.at)).sort();
   const span = (new Date(`${days[days.length - 1]}T12:00:00Z`).getTime() - new Date(`${days[0]}T12:00:00Z`).getTime()) / 86_400_000 + 1;
   return span <= 62 ? 'day' : span <= 182 ? 'week' : 'month';
 }
@@ -301,66 +508,6 @@ export function timeSeries<T>(items: T[], at: (x: T) => string, b: Bucket, width
     if (k >= keys[keys.length - 1]) break;
   }
   return out;
-}
-
-/** עברו ונכשלו לאורך זמן */
-export function passFailOverTime(leads: Lead[], b: Bucket): { key: string; passed: number; failed: number }[] {
-  return timeSeries(leads, (l) => l.at, b, 2, (l) => [l.status === PASSED ? 1 : 0, l.status === FAILED ? 1 : 0])
-    .map(({ key, values: [passed, failed] }) => ({ key, passed, failed }));
-}
-
-/** כמה הסירו את עצמם, לפי תאריך ההסרה (ולא לפי תאריך הכניסה). */
-export function removedIn(all: Lead[], range: Range): number {
-  return all.filter((l) => l.removedAt && inside(l.removedAt, range)).length;
-}
-
-export interface Purchase {
-  at: string;
-  channel: 'bot' | 'other';
-  product: string;
-  amount: number | null;
-}
-
-export function purchases(leads: Lead[]): Purchase[] {
-  return leads
-    .filter(purchased)
-    .map((l) => ({ at: l.at, channel: paidByBot(l) ? 'bot' : 'other', product: productOf(l), amount: l.amount }));
-}
-
-export interface ProductStat {
-  name: string;
-  count: number;
-  revenue: number;
-  avg: number | null;
-  min: number | null;
-  max: number | null;
-}
-
-export function productStats(ps: Purchase[]): ProductStat[] {
-  const by = new Map<string, number[]>();
-  const counts = new Map<string, number>();
-  for (const p of ps) {
-    counts.set(p.product, (counts.get(p.product) ?? 0) + 1);
-    if (p.amount && p.amount > 0) {
-      const a = by.get(p.product) ?? [];
-      a.push(p.amount);
-      by.set(p.product, a);
-    }
-  }
-  return [...counts.entries()]
-    .map(([name, count]) => {
-      const a = by.get(name) ?? [];
-      const revenue = a.reduce((s, x) => s + x, 0);
-      return {
-        name,
-        count,
-        revenue,
-        avg: a.length ? revenue / a.length : null,
-        min: a.length ? Math.min(...a) : null,
-        max: a.length ? Math.max(...a) : null,
-      };
-    })
-    .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name));
 }
 
 export interface Matrix {
@@ -388,24 +535,6 @@ export function matrixByMonth<T>(items: T[], name: (x: T) => string | null, at: 
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const monthTotals = months.map((_, i) => list.reduce((s, r) => s + r.byMonth[i], 0));
   return { months, rows: list, monthTotals };
-}
-
-/** כמה לידים בכל יום בטווח, כולל ימים בלי לידים. */
-export function perDay(leads: Lead[]): { day: string; count: number }[] {
-  if (!leads.length) return [];
-  const counts = new Map<string, number>();
-  for (const l of leads) counts.set(dayKey(l.at), (counts.get(dayKey(l.at)) ?? 0) + 1);
-  const days = [...counts.keys()].sort();
-  const out: { day: string; count: number }[] = [];
-  const d = new Date(`${days[0]}T12:00:00Z`);
-  const last = days[days.length - 1];
-  while (true) {
-    const k = d.toISOString().slice(0, 10);
-    out.push({ day: k, count: counts.get(k) ?? 0 });
-    if (k >= last) break;
-    d.setUTCDate(d.getUTCDate() + 1);
-  }
-  return out;
 }
 
 /** ספירה לפי ערך, מהנפוץ לנדיר. */

@@ -1,93 +1,143 @@
 import { describe, expect, it } from 'vitest';
 import { demoLeadsFile } from '../lib/leads/demo';
-import type { Lead } from '../lib/leads/types';
-import { countBy, inRange, matrixByMonth, perDay, productStats, purchases, removedIn, summarize } from '../lib/metrics';
+import type { Lead, LeadsFile, Purchase } from '../lib/leads/types';
+import {
+  accountSize, annotate, autoBucket, botReasons, bucketOf, buyersOf, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel,
+  inRange, matrixByMonth, normalizeMode, passFailOverTime, platformOf, productFamily, productStats, purchaseSources, purchaseSummary, removedIn,
+  sourceRows, summarize, testFamily, testStats, timeSeries,
+} from '../lib/metrics';
 
 function lead(p: Partial<Lead>): Lead {
   return {
-    at: '2026-10-01T07:00:00.000Z', source: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
+    at: '2026-10-01T07:00:00.000Z', source: null, sourceGroup: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
     step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null, ...p,
   };
 }
+function buy(p: Partial<Purchase>): Purchase {
+  return { at: '2026-10-02T07:00:00.000Z', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, ...p };
+}
+function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
+  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases };
+}
 
-const sample = [
-  lead({ qStatus: 'converted', amount: 100, test: 'T1' }),
-  lead({ qStatus: 'converted', amount: 300, test: 'T1', at: '2026-09-15T07:00:00.000Z' }),
-  lead({ qStatus: 'converted', amount: null, test: 'T2' }),
-  lead({ qStatus: 'payment', amount: 50, product: 'P1' }),
-  lead({ qStatus: 'payment', amount: 0, product: 'P1' }),
-  lead({}),
+const L = [
+  lead({ qStatus: 'converted', answered: true, aiConversation: 'yes', mode: 'מכירתית', status: 'עבר', test: 'One Step Assessment - 100K - MT5' }),
+  lead({ qStatus: 'payment', answered: true, aiConversation: 'no', status: 'לא עבר', test: 'Freedom Challenge - MT5 - 20k' }),
+  lead({ qStatus: 'finished', answered: true, aiConversation: 'yes', mode: 'שירותי', step: 10 }),
+  lead({ status: 'לקוח פעיל', test: 'One Step access- 500K - TradeLocker', sourceGroup: 'google' }),
+  lead({ removedAt: '2026-10-05T07:00:00.000Z' }),
+];
+const P = [
+  buy({ lead: 0, amount: 100, product: 'Lightning Pro', source: "אורגני - צ'אטבוט וואטסאפ", sourceGroup: 'בוט וואטסאפ' }),
+  buy({ lead: 0, amount: 50, product: 'funded activation fee', at: '2026-10-09T07:00:00.000Z' }),
+  buy({ lead: 1, amount: 30, product: 'Instant', source: 'Vitrue', sourceGroup: 'Vitrue', campaign: 'halloween' }),
+  buy({ lead: 3, amount: null, product: 'Lightning Access', source: 'google', sourceGroup: 'google' }),
+  buy({ lead: null, amount: 20, product: null, at: '2026-09-15T07:00:00.000Z' }),
 ];
 
-describe('summarize', () => {
-  it('counts converted as paid by the bot and payment as paid not necessarily by the bot', () => {
-    expect(summarize(sample)).toEqual({
-      leads: 6, startedJourney: 0, aiAnalyzed: 0, realConversations: 0, passed: 0, failed: 0, purchased: 5, purchasedOfStarted: 0,
-      paidBot: 3, paidOther: 2, totalPaid: 450, revenueBot: 400, revenueOther: 50, avgDealBot: 200, avgDealAll: 150,
+describe('bot attribution (the iron rule, 28/10)', () => {
+  it('is converted, or a bot utm source, or a sales conversation; a purchase can match several', () => {
+    expect(botReasons(P[0], L)).toEqual(['converted', 'conversation']);
+    expect(botReasons(P[2], L)).toEqual(['utm']);
+    expect(botReasons(P[3], L)).toEqual([]);
+    expect(botReasons(P[4], L)).toEqual([]);
+    expect(botReasons(buy({ lead: 2 }), L)).toEqual([]);
+  });
+
+  it('unifies the agent spelling of the conversation mode', () => {
+    expect(normalizeMode(' מכירתי ')).toBe('מכירתית');
+    expect(normalizeMode('שירות')).toBe('שירותית');
+    expect(normalizeMode('')).toBeNull();
+    expect(normalizeMode('משהו אחר')).toBe('משהו אחר');
+  });
+});
+
+describe('summaries', () => {
+  it('counts leads by entry, purchases by purchase date, money only where there is an amount', () => {
+    const leads = annotate(file(L, P));
+    expect(leads.map((l) => [l.purchases, l.spent])).toEqual([[2, 150], [1, 30], [0, 0], [1, 0], [0, 0]]);
+    const s = summarize(leads, P);
+    expect(s).toEqual({
+      leads: 5, startedJourney: 3, aiAnalyzed: 3, realConversations: 2, salesConversations: 1,
+      purchases: 5, buyers: 4, totalPaid: 200, avgDeal: 50, leadsWhoBought: 3,
+    });
+    expect(buyersOf([])).toBe(0);
+    expect(summarize([], []).avgDeal).toBeNull();
+  });
+
+  it('splits purchases into bot and not bot, with reasons, repeat buyers and amount-less purchases', () => {
+    const b = purchaseSummary(P, L);
+    expect(b).toEqual({
+      purchases: 5, buyers: 4, repeatBuyers: 1, totalPaid: 200, avgDeal: 50, noAmount: 1,
+      bot: { purchases: 3, paid: 180 }, other: { purchases: 2, paid: 20 },
+      reasons: { converted: 2, utm: 1, conversation: 2 },
     });
   });
 
-  it('counts passed, failed, conversation starts (column I), and purchases among those who started', () => {
-    const s = summarize([
-      lead({ status: 'עבר', answered: true, qStatus: 'converted', amount: 10 }),
-      lead({ status: 'לא עבר', answered: true }),
-      lead({ status: 'לא עבר', qStatus: 'payment', amount: 5 }),
-    ]);
-    expect([s.passed, s.failed, s.startedJourney, s.purchased, s.purchasedOfStarted]).toEqual([1, 2, 2, 2, 1]);
-  });
-
-  it('keeps the agent verdict (column BD) apart from the technical start: real, not real, not read yet', () => {
-    const s = summarize([
-      lead({ answered: true, aiConversation: 'yes' }),
-      lead({ answered: true, aiConversation: 'no' }),
-      lead({ answered: true }),
-      lead({ aiConversation: 'no' }),
-    ]);
-    expect([s.startedJourney, s.aiAnalyzed, s.realConversations]).toEqual([3, 3, 1]);
-  });
-
-  it('has no averages when nothing was paid', () => {
-    const s = summarize([lead({})]);
-    expect(s.avgDealBot).toBeNull();
-    expect(s.avgDealAll).toBeNull();
+  it('builds the funnel and removals by removal date', () => {
+    const leads = annotate(file(L, P));
+    expect(funnel(leads)).toEqual({ leads: 5, started: 3, startedQ: 2, finishedQ: 2, bought: 3 });
+    expect(removedIn(L, { from: new Date('2026-10-04T00:00:00Z'), to: null })).toBe(1);
+    expect(removedIn(L, { from: null, to: new Date('2026-10-04T00:00:00Z') })).toBe(0);
+    expect(inRange(P, { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-10-05T00:00:00Z') })).toHaveLength(3);
   });
 });
 
-describe('purchases and products', () => {
-  it('names a purchase by product, then by test, and gives count, average, min and max', () => {
-    const stats = productStats(purchases(sample));
-    expect(stats).toEqual([
-      { name: 'P1', count: 2, revenue: 50, avg: 50, min: 50, max: 50 },
-      { name: 'T1', count: 2, revenue: 400, avg: 200, min: 100, max: 300 },
-      { name: 'T2', count: 1, revenue: 0, avg: null, min: null, max: null },
+describe('exams', () => {
+  it('counts results, overwritten results, pass rate and who bought after passing', () => {
+    const leads = annotate(file(L, P));
+    expect(examSummary(leads)).toEqual({ did: 3, passed: 1, failed: 1, overwritten: 1, passRate: 0.5, passedAndBought: 1 });
+    expect(examSummary([]).passRate).toBeNull();
+  });
+
+  it('reads family, account size and platform from the test name', () => {
+    expect(testFamily('One Step Assessment - 100K - MT5')).toBe('One Step Assessment');
+    expect(testFamily('Express - No Challenge Instant Funding Plan 5K MT5')).toBe('Express / Instant');
+    expect(testFamily('PTB CRYPTO challenge 10k bybit')).toBe('Crypto');
+    expect(accountSize('One Step access- 500K - TradeLocker')).toBe('500K');
+    expect(accountSize('Freedom Challenge - MT5 - 20k')).toBe('20K');
+    expect(accountSize('Lightning Pro')).toBeNull();
+    expect(platformOf('Lightning challenge 1 step - TraderLocker, 20k')).toBe('TradeLocker');
+    expect(platformOf('Freedom Challenge - MT5 - 20k')).toBe('MT5');
+  });
+
+  it('breaks exams down by family, size (in order) and platform, and lists every test', () => {
+    expect(examsByFamily(L).map((r) => [r.name, r.passed, r.failed, r.total])).toEqual([
+      ['Freedom', 0, 1, 1], ['One Step Access', 0, 0, 1], ['One Step Assessment', 1, 0, 1],
     ]);
+    expect(examsBySize(L).map((r) => r.name)).toEqual(['20K', '100K', '500K']);
+    expect(examsByPlatform(L).map((r) => [r.name, r.total])).toEqual([['MT5', 2], ['TradeLocker', 1]]);
+    const t = testStats([lead({ test: 'A', status: 'עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A' }), lead({ test: 'B' })]);
+    expect(t).toEqual([{ name: 'A', total: 3, passed: 1, failed: 2, passRate: 1 / 3 }]);
+    const days = passFailOverTime([lead({ at: '2026-10-01T07:00:00.000Z', status: 'עבר' }), lead({ at: '2026-10-03T07:00:00.000Z', status: 'לא עבר' })], 'day');
+    expect(days).toEqual([{ key: '2026-10-01', passed: 1, failed: 0 }, { key: '2026-10-02', passed: 0, failed: 0 }, { key: '2026-10-03', passed: 0, failed: 1 }]);
+  });
+});
+
+describe('products and sources', () => {
+  it('groups products into families and gives count, revenue, bot share, average, min and max', () => {
+    expect(productFamily('access funded activation fee')).toBe('דמי הפעלה (activation fee)');
+    expect(productFamily('Lightning challenge 1 step - MT5, 100k')).toBe('Lightning challenge');
+    expect(productFamily(null)).toBe('לא צוין');
+    const stats = productStats(P, L);
+    expect(stats.find((s) => s.name === 'Instant')).toEqual({ name: 'Instant', count: 1, revenue: 30, bot: 1, avg: 30, min: 30, max: 30 });
+    expect(stats.find((s) => s.name === 'לא צוין')).toEqual({ name: 'לא צוין', count: 1, revenue: 20, bot: 0, avg: 20, min: 20, max: 20 });
+    expect(stats.find((s) => s.name === 'Lightning Access')).toMatchObject({ count: 1, revenue: 0, avg: null });
+    expect(purchaseSources(P, L).map((s) => [s.name, s.count])).toEqual([['לא צוין', 2], ['google', 1], ['Vitrue', 1], ['בוט וואטסאפ', 1]]);
+    expect(campaigns(P, L)).toEqual([{ name: 'halloween', count: 1, revenue: 30, bot: 1, avg: 30, min: 30, max: 30 }]);
+  });
+
+  it('rows per source group with leads, starts, buyers and money', () => {
+    const rows = sourceRows(annotate(file(L, P)));
+    expect(rows).toEqual([{ name: 'לא צוין', leads: 4, started: 3, bought: 2, spent: 180 }, { name: 'google', leads: 1, started: 0, bought: 1, spent: 0 }]);
   });
 
   it('builds a month by name table with exact counts, in Israel time', () => {
-    const m = matrixByMonth(purchases(sample), (p) => p.product, (p) => p.at);
+    const m = matrixByMonth(P, (p) => p.product, (p) => p.at);
     expect(m.months).toEqual(['2026-09', '2026-10']);
-    expect(m.rows.find((r) => r.name === 'T1')).toEqual({ name: 'T1', total: 2, byMonth: [1, 1] });
-    expect(m.monthTotals).toEqual([1, 4]);
-    // 30/09 23:30 בישראל הוא עדיין ספטמבר, גם אם ב-UTC זה 20:30
+    expect(m.monthTotals).toEqual([0, 4]);
     expect(matrixByMonth([{ at: '2026-09-30T20:30:00.000Z' }], () => 'x', (x) => x.at).months).toEqual(['2026-09']);
-  });
-});
-
-describe('ranges', () => {
-  it('filters by entry date, and counts removals by removal date', () => {
-    const r = { from: new Date('2026-10-01T00:00:00+03:00'), to: null };
-    expect(inRange(sample, r)).toHaveLength(5);
-    const all = [lead({ at: '2026-09-01T07:00:00.000Z', removedAt: '2026-10-02T07:00:00.000Z' }), lead({ removedAt: '2026-09-02T07:00:00.000Z' })];
-    expect(removedIn(all, r)).toBe(1);
-  });
-
-  it('fills days without leads with zero', () => {
-    const days = perDay([lead({ at: '2026-10-01T07:00:00.000Z' }), lead({ at: '2026-10-03T07:00:00.000Z' })]);
-    expect(days).toEqual([{ day: '2026-10-01', count: 1 }, { day: '2026-10-02', count: 0 }, { day: '2026-10-03', count: 1 }]);
-  });
-
-  it('counts by value, most common first', () => {
-    expect(countBy(sample, (l) => l.test)).toEqual([{ name: 'T1', count: 2 }, { name: 'T2', count: 1 }]);
+    expect(countBy(L, (l) => l.test)[0]).toEqual({ name: 'Freedom Challenge - MT5 - 20k', count: 1 });
   });
 });
 
@@ -97,7 +147,8 @@ describe('demo data', () => {
     expect(a).toEqual(demoLeadsFile());
     expect(a.origin).toBe('demo');
     expect(a.leads.every((l) => !l.product || l.product.startsWith('Demo'))).toBe(true);
-    expect(summarize(a.leads).paidBot).toBeGreaterThan(0);
+    expect(a.purchases.every((p) => p.lead === null || a.leads[p.lead])).toBe(true);
+    expect(purchaseSummary(a.purchases, a.leads).bot.purchases).toBeGreaterThan(0);
   });
 });
 
@@ -108,7 +159,7 @@ describe('the data file', () => {
     const text = pack(f);
     expect(text).not.toContain('null');
     expect(unpack(JSON.parse(text))).toEqual(f);
-    expect(() => unpack({ version: 2 })).toThrow();
+    expect(() => unpack({ version: 1, leads: [] })).toThrow();
   });
 });
 
@@ -127,53 +178,8 @@ describe('date presets', () => {
   });
 });
 
-describe('breakdowns', () => {
-  const ls = [
-    lead({ status: 'עבר', step: 3, qStatus: 'converted', amount: 100, mode: 'מכירותי' }),
-    lead({ status: 'עבר', step: 10, qStatus: 'finished', mode: 'שירות' }),
-    lead({ status: 'לא עבר', step: 1, qStatus: 'payment', amount: 50 }),
-    lead({ status: 'לא עבר', mode: 'משהו חדש' }),
-    lead({}),
-  ];
-
-  it('groups by test result in a fixed order, with questionnaire, purchases, paid total and conversation mode', async () => {
-    const { breakdown, resultOf, RESULT_ORDER } = await import('../lib/metrics');
-    const b = breakdown(ls, resultOf, RESULT_ORDER);
-    expect(b.modes).toEqual(['מכירותי', 'משהו חדש', 'שירות', 'לא סווג']);
-    expect(b.rows.map((r) => [r.name, r.leads, r.startedQ, r.finishedQ, r.purchased, r.totalPaid])).toEqual([
-      ['עבר', 2, 2, 2, 1, 100],
-      ['לא עבר', 2, 1, 0, 1, 50],
-      ['בלי סטטוס', 1, 0, 0, 0, 0],
-    ]);
-    expect(b.rows[0].byMode).toEqual([1, 0, 1, 0]);
-    expect(b.rows[1].byMode).toEqual([0, 1, 0, 1]);
-    expect(b.total).toMatchObject({ leads: 5, passed: 2, failed: 2, purchased: 2, totalPaid: 150 });
-  });
-
-  it('counts everyone who finished the questionnaire as having started it, even when column K is empty', async () => {
-    const { breakdown } = await import('../lib/metrics');
-    const b = breakdown([lead({ qStatus: 'finished' }), lead({ qStatus: 'converted' }), lead({ qStatus: 'started' }), lead({ qStatus: 'payment' })], () => 'x');
-    expect([b.total.startedQ, b.total.finishedQ]).toEqual([3, 2]);
-  });
-
-  it('gives each test its pass rate, and pass and fail over time', async () => {
-    const { testStats, passFailOverTime } = await import('../lib/metrics');
-    const t = testStats([
-      lead({ test: 'A', status: 'עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A', status: 'לא עבר' }), lead({ test: 'A' }),
-      lead({ test: 'B' }),
-    ]);
-    expect(t[0]).toEqual({ name: 'A', total: 4, passed: 1, failed: 2, passRate: 1 / 3 });
-    expect(t[1].passRate).toBeNull();
-    const days = passFailOverTime([
-      lead({ at: '2026-10-01T07:00:00.000Z', status: 'עבר' }), lead({ at: '2026-10-03T07:00:00.000Z', status: 'לא עבר' }),
-    ], 'day');
-    expect(days).toEqual([{ key: '2026-10-01', passed: 1, failed: 0 }, { key: '2026-10-02', passed: 0, failed: 0 }, { key: '2026-10-03', passed: 0, failed: 1 }]);
-  });
-});
-
 describe('time buckets', () => {
-  it('starts weeks on Sunday, in Israel time, and rolls months over the year', async () => {
-    const { bucketOf, timeSeries } = await import('../lib/metrics');
+  it('starts weeks on Sunday, in Israel time, and rolls months over the year', () => {
     // יום שני 19/10/2026 -> השבוע של יום ראשון 18/10
     expect(bucketOf('2026-10-19T09:00:00.000Z', 'week')).toBe('2026-10-18');
     // שבת 24/10 בלילה, 23:30 בישראל, עדיין באותו שבוע
@@ -183,28 +189,12 @@ describe('time buckets', () => {
     expect(s).toEqual([{ key: '2025-12', values: [1] }, { key: '2026-01', values: [0] }, { key: '2026-02', values: [1] }]);
   });
 
-  it('picks day up to two months, week up to half a year, then month', async () => {
-    const { autoBucket } = await import('../lib/metrics');
+  it('picks day up to two months, week up to half a year, then month', () => {
     const span = (days: number) => [lead({ at: '2026-01-01T10:00:00.000Z' }), lead({ at: new Date(Date.parse('2026-01-01T10:00:00.000Z') + (days - 1) * 86_400_000).toISOString() })];
     expect(autoBucket(span(62))).toBe('day');
     expect(autoBucket(span(63))).toBe('week');
     expect(autoBucket(span(182))).toBe('week');
     expect(autoBucket(span(183))).toBe('month');
     expect(autoBucket([])).toBe('day');
-  });
-});
-
-describe('conversation mode (written by the agent)', () => {
-  it('shows every category as written, most common first, with only spaces unified, and unclassified last', async () => {
-    const { modesOf, breakdown } = await import('../lib/metrics');
-    const ls = [lead({ mode: 'מכירתי' }), lead({ mode: ' מכירתי ' }), lead({ mode: 'פניית  שירות' }), lead({ mode: 'טכני' }), lead({ mode: 'טכני' }), lead({ mode: 'טכני' }), lead({})];
-    expect(modesOf(ls)).toEqual(['טכני', 'מכירתי', 'פניית שירות', 'לא סווג']);
-    expect(breakdown(ls, () => 'x').total.byMode).toEqual([3, 2, 1, 1]);
-  });
-
-  it('counts conversation starts, agent reads and real conversations per group', async () => {
-    const { breakdown } = await import('../lib/metrics');
-    const b = breakdown([lead({ answered: true, aiConversation: 'yes' }), lead({ answered: true, aiConversation: 'no' }), lead({})], () => 'x');
-    expect([b.total.started, b.total.analyzed, b.total.real]).toEqual([2, 2, 1]);
   });
 });

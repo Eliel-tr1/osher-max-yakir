@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BASE_PATH, REFRESH_MS } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
-import type { Lead, LeadsFile } from '@/lib/leads/types';
+import type { LeadsFile } from '@/lib/leads/types';
 import {
-  autoBucket, breakdown, countBy, inRange, matrixByMonth, monthKey, normalizeMode, passFailOverTime, productStats, purchases, timeSeries,
-  type Bucket,
-  modesOf, removedIn, resultOf, RESULT_ORDER, summarize, testStats, UNSET,
+  annotate, autoBucket, BOT_REASON_LABEL, byBot, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange,
+  matrixByMonth, NO_PRODUCT, passFailOverTime, productFamily, productStats, purchaseSources, purchaseSummary, removedIn, sourceRows, summarize,
+  testStats, timeSeries, type Bucket, type BotReason,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
-import { BarList, BreakdownTable, Columns, HeatTable, TestTable, fmtDay, fmtMonth, money, nf, pct } from './charts';
+import { BarList, Columns, Fold, FunnelStrip, HeatTable, SimpleTable, Sparkline, SplitList, Stats, fmtDay, fmtMonth, fmtMonthShort, money, nf, pct, pctOf } from './charts';
 
 const BUCKETS: { id: Bucket; label: string }[] = [
   { id: 'day', label: 'יום' },
@@ -20,7 +20,7 @@ const BUCKETS: { id: Bucket; label: string }[] = [
 const BUCKET_WORD: Record<Bucket, string> = { day: 'יום', week: 'שבוע', month: 'חודש' };
 
 function fmtBucket(key: string, b: Bucket): string {
-  return b === 'month' ? fmtMonth(key) : b === 'week' ? `שבוע ${fmtDay(key)}` : fmtDay(key);
+  return b === 'month' ? fmtMonthShort(key) : b === 'week' ? fmtDay(key) : fmtDay(key);
 }
 
 /** בחירת יחידת זמן. null = אוטומטי לפי הטווח */
@@ -37,18 +37,23 @@ function BucketChips({ value, auto, onChange }: { value: Bucket | null; auto: Bu
   );
 }
 
+function Chips<T extends string>({ value, options, onChange, label }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void; label: string }) {
+  return (
+    <div className="chips small" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.id} type="button" className={value === o.id ? 'on' : ''} aria-pressed={value === o.id} onClick={() => onChange(o.id)}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
 const ALL = '';
 const timeFmt = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
 
 type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
-type Group = 'result' | 'mode' | 'process';
 
-const GROUPS: { id: Group; label: string; of: (l: Lead) => string; order?: string[]; orderOf?: (leads: Lead[]) => string[] }[] = [
-  { id: 'result', label: 'תוצאת מבחן', of: resultOf, order: RESULT_ORDER },
-  { id: 'mode', label: 'אופן שיחה', of: (l) => normalizeMode(l.mode) ?? UNSET, orderOf: modesOf },
-  { id: 'process', label: 'תהליך', of: (l) => l.process ?? 'לא צוין' },
-];
+const REASONS: BotReason[] = ['converted', 'utm', 'conversation'];
 
 export default function Dashboard() {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
@@ -58,16 +63,16 @@ export default function Dashboard() {
   const [source, setSource] = useState(ALL);
   const [proc, setProc] = useState(ALL);
   const [channel, setChannel] = useState<'all' | 'bot'>('all');
-  const [group, setGroup] = useState<Group>('result');
-  const [product, setProduct] = useState<string | null>(null);
-  const [test, setTest] = useState<string | null>(null);
+  const [measure, setMeasure] = useState<'count' | 'money'>('count');
   const [leadsBy, setLeadsBy] = useState<Bucket | null>(null);
   const [testsBy, setTestsBy] = useState<Bucket | null>(null);
+  const [buysBy, setBuysBy] = useState<Bucket | null>(null);
   /** טווח חדש מחזיר את יחידת הזמן לאוטומטי, כדי ש"7 ימים" לא יוצג כעמודה אחת של חודש */
   const choosePreset = (p: Preset) => {
     setPreset(p);
     setLeadsBy(null);
     setTestsBy(null);
+    setBuysBy(null);
   };
 
   const fetchData = useCallback(async (): Promise<LeadsFile | null> => {
@@ -105,43 +110,56 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const file = load.state === 'ready' ? load.file : null;
-  const sources = useMemo(() => (file ? countBy(file.leads, (l) => l.source) : []), [file]);
-  const processes = useMemo(() => (file ? countBy(file.leads, (l) => l.process) : []), [file]);
+  const all = useMemo(() => (file ? annotate(file) : []), [file]);
+  const sources = useMemo(() => countBy(all, (l) => l.sourceGroup), [all]);
+  const processes = useMemo(() => countBy(all, (l) => l.process), [all]);
 
   const view = useMemo(() => {
     if (!file) return null;
     const range = rangeFor(preset, new Date(), custom);
-    const scoped = file.leads.filter((l) => (source === ALL || l.source === source) && (proc === ALL || l.process === proc));
+    const scoped = all.filter((l) => (source === ALL || l.sourceGroup === source) && (proc === ALL || l.process === proc));
     const leads = inRange(scoped, range);
-    const allPurchases = purchases(leads);
-    const ps = allPurchases.filter((p) => channel === 'all' || p.channel === 'bot');
+    const keep = new Set(scoped.map((l) => l.i));
+    const filtered = source === ALL && proc === ALL;
+    // רכישות לפי תאריך הרכישה. כשמסננים לפי מקור או תהליך, רק הרכישות של הלידים שנשארו
+    const purchasesAll = inRange(file.purchases, range).filter((p) => filtered || (p.lead !== null && keep.has(p.lead)));
+    const ps = purchasesAll.filter((p) => channel === 'all' || byBot(p, file.leads));
     const auto = autoBucket(leads);
     const lb = leadsBy ?? auto;
     const tb = testsBy ?? auto;
-    const monthsAll = [...new Set(allPurchases.map((p) => monthKey(p.at)))].sort();
-    const g = GROUPS.find((x) => x.id === group)!;
-    const withTest = leads.filter((l) => l.test && (!test || l.test === test));
+    const pb = buysBy ?? autoBucket(purchasesAll);
+    const leadsSeries = timeSeries(leads, (l) => l.at, lb, 1, () => [1]);
     return {
-      summary: summarize(leads),
+      summary: summarize(leads, purchasesAll),
+      funnel: funnel(leads),
       removed: removedIn(scoped, range),
       auto,
       leadsBy: lb,
-      leadsSeries: timeSeries(leads, (l) => l.at, lb, 1, () => [1]),
-      monthsAll,
-      byMonth: monthsAll.map((m) => {
-        const inM = allPurchases.filter((p) => monthKey(p.at) === m);
-        return [inM.filter((p) => p.channel === 'bot').length, inM.filter((p) => p.channel === 'other').length];
-      }),
-      productMatrix: matrixByMonth(ps, (p) => p.product, (p) => p.at),
-      products: productStats(ps),
-      table: breakdown(leads, g.of, g.orderOf ? g.orderOf(leads) : g.order),
-      bySource: breakdown(leads, (l) => l.source ?? 'לא צוין'),
+      leadsSeries,
+      exams: examSummary(leads),
+      byFamily: examsByFamily(leads),
+      bySize: examsBySize(leads),
+      byPlatform: examsByPlatform(leads),
       tests: testStats(leads),
-      passFail: passFailOverTime(test ? withTest : leads.filter((l) => l.test), tb),
+      passFail: passFailOverTime(leads, tb),
       passFailBy: tb,
       testMatrix: matrixByMonth(leads.filter((l) => l.test), (l) => l.test, (l) => l.at),
+      buys: purchaseSummary(ps, file.leads),
+      buysAll: purchaseSummary(purchasesAll, file.leads),
+      buysBy: pb,
+      buysSeries: timeSeries(ps, (p) => p.at, pb, 2, (p) => {
+        const v = measure === 'money' ? (p.amount ?? 0) : 1;
+        return byBot(p, file.leads) ? [v, 0] : [0, v];
+      }),
+      families: productStats(ps, file.leads, (p) => productFamily(p.product)),
+      products: productStats(ps, file.leads),
+      buySources: purchaseSources(ps, file.leads),
+      campaigns: campaigns(ps, file.leads),
+      productMatrix: matrixByMonth(ps, (p) => productFamily(p.product), (p) => p.at),
+      bySource: sourceRows(leads),
+      bySourceRaw: sourceRows(leads, (l) => l.source),
     };
-  }, [file, preset, custom, source, proc, channel, group, test, leadsBy, testsBy]);
+  }, [file, all, preset, custom, source, proc, channel, measure, leadsBy, testsBy, buysBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
   if (load.state === 'error' || !file || !view) {
@@ -154,8 +172,10 @@ export default function Dashboard() {
   }
 
   const s = view.summary;
-  const selected = view.products.find((p) => p.name === product) ?? view.products[0] ?? null;
-  const g = GROUPS.find((x) => x.id === group)!;
+  const ex = view.exams;
+  const b = view.buys;
+  const scanned = s.aiAnalyzed;
+  const botShare = view.buysAll.purchases ? view.buysAll.bot.purchases / view.buysAll.purchases : null;
 
   return (
     <main className="page">
@@ -170,7 +190,7 @@ export default function Dashboard() {
           </button>
           <span role="status" className={refresh.state === 'error' ? 'err' : ''}>
             {refresh.state === 'waiting' && 'קורא את הטבלה...'}
-            {refresh.state === 'done' && `עודכן: ${nf.format(file.sheetRows)} שורות בטבלה`}
+            {refresh.state === 'done' && 'עודכן עכשיו'}
             {refresh.state === 'error' && refresh.message}
           </span>
         </div>
@@ -207,113 +227,147 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="tiles" aria-label="מספרי מפתח">
-        <Tile label="סך הכול לידים" value={nf.format(s.leads)} sub={`${nf.format(file.duplicatesRemoved)} כפילויות הוסרו מהטבלה`} />
+      <section className="top" aria-label="מספרי מפתח">
+        <Tile label="סך הכול לידים" value={nf.format(s.leads)} sub={`${nf.format(s.startedJourney)} ענו לצ'אטבוט`} />
         <Tile
           label="התחילו שיחה"
           value={nf.format(s.startedJourney)}
-          sub={`${pct(s.startedJourney, s.leads)} מהלידים · ענו לצ'אטבוט. ${
-            s.aiAnalyzed ? `שיחה אמיתית: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שהסוכן קרא` : 'סוכן הניתוח עוד לא קרא שיחות'
-          }`}
+          sub={scanned ? `שיחה אמיתית: ${nf.format(s.realConversations)} מתוך ${nf.format(scanned)} שנסרקו · מכירתית: ${nf.format(s.salesConversations)}` : 'הסוכן עוד לא סרק שיחות בטווח הזה'}
         />
-        <Tile label="עברו" value={nf.format(s.passed)} sub={`${pct(s.passed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
-        <Tile label="נכשלו" value={nf.format(s.failed)} sub={`${pct(s.failed, s.passed + s.failed)} ממי שיש לו תוצאה`} />
-        <Tile label="רכשו" value={nf.format(s.purchased)} sub={s.startedJourney ? `${nf.format(s.purchasedOfStarted)} מתוך מי שהתחיל שיחה (${pct(s.purchasedOfStarted, s.startedJourney)})` : `${pct(s.purchased, s.leads)} מהלידים`} />
-        <Tile label="סך הכול שולם" value={money.format(s.totalPaid)} sub={`דרך הבוט ${nf.format(s.paidBot)} (${money.format(s.revenueBot)}) · לא בוט ${nf.format(s.paidOther)} (${money.format(s.revenueOther)})`} />
-        <Tile label="עסקה ממוצעת" value={s.avgDealAll === null ? '-' : money.format(s.avgDealAll)} sub={`דרך הבוט: ${s.avgDealBot === null ? '-' : money.format(s.avgDealBot)}`} />
+        <Tile label="רכשו" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות לפי תאריך הרכישה`} />
+        <Tile label="סך הכול שולם" value={money.format(s.totalPaid)} sub="לפי לשונית הרכישות" />
+        <Tile label="עסקה ממוצעת" value={s.avgDeal === null ? '-' : money.format(s.avgDeal)} sub="רכישות עם סכום בלבד" />
+        <Tile label="אחוז המרה" value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} מהלידים בטווח רכשו`} />
         <Tile label="הסירו את עצמם" value={nf.format(view.removed)} sub="לפי תאריך ההסרה" />
-      </section>
-
-      <section className="card">
-        <div className="cardhead">
-          <h2>מהליד ועד התשלום, לפי {g.label}</h2>
-          <div className="chips small" role="group" aria-label="פילוח לפי">
-            {GROUPS.map((x) => (
-              <button key={x.id} type="button" className={group === x.id ? 'on' : ''} aria-pressed={group === x.id} onClick={() => setGroup(x.id)}>{x.label}</button>
-            ))}
+        <article className="tile sparkcard">
+          <div className="sparkhead">
+            <p className="label">לידים לפי {BUCKET_WORD[view.leadsBy]}</p>
+            <BucketChips value={leadsBy} auto={view.auto} onChange={setLeadsBy} />
           </div>
-        </div>
-        <p className="hint">
-          התחילו שיחה: ענו לצ&apos;אטבוט (עמודה I). שיחה אמיתית: לפי סוכן הניתוח (עמודה BD), מתוך השיחות שהוא כבר קרא. התחילו שאלון: עמודה K מלאה. סיימו: finished או converted.
-          רכשו: converted (דרך הבוט) או payment (לא בהכרח דרך הבוט). האחוזים מתוך הלידים בשורה.
-        </p>
-        <BreakdownTable data={view.table} groupHeader={g.label} showResult={group !== 'result'} showModes={group !== 'mode'} showAi={file.leads.some((l) => l.aiConversation !== null)} />
+          <Sparkline labels={view.leadsSeries.map((d) => fmtBucket(d.key, view.leadsBy))} values={view.leadsSeries.map((d) => d.values[0])} />
+        </article>
+      </section>
+
+      <section className="card slim">
+        <h2>מהליד ועד הרכישה</h2>
+        <FunnelStrip steps={[
+          { label: 'לידים', value: view.funnel.leads },
+          { label: 'התחילו שיחה', value: view.funnel.started },
+          { label: 'התחילו שאלון', value: view.funnel.startedQ },
+          { label: 'סיימו שאלון', value: view.funnel.finishedQ },
+          { label: 'רכשו', value: view.funnel.bought },
+        ]} />
       </section>
 
       <section className="card">
         <div className="cardhead">
-          <h2>מבחנים: עברו ונכשלו, לפי {BUCKET_WORD[view.passFailBy]}</h2>
+          <h2>מבחנים</h2>
           <BucketChips value={testsBy} auto={view.auto} onChange={setTestsBy} />
         </div>
-        <p className="hint">{test ? <>מוצג: <bdi>{test}</bdi>. </> : 'כל המבחנים. '}לחיצה על מבחן בטבלה מציגה רק אותו{test ? ', ולחיצה נוספת מחזירה לכולם' : ''}.</p>
+        <Stats items={[
+          { label: 'עשו מבחן', value: nf.format(ex.did) },
+          { label: 'עברו', value: nf.format(ex.passed) },
+          { label: 'נכשלו', value: nf.format(ex.failed) },
+          { label: 'אחוז מעבר', value: pctOf(ex.passRate) },
+          { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: pct(ex.passedAndBought, ex.passed) + ' מהעוברים' },
+        ]} />
         <Columns
           labels={view.passFail.map((d) => fmtBucket(d.key, view.passFailBy))}
           values={view.passFail.map((d) => [d.passed, d.failed])}
           series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--series-2' }]}
-          height={200}
         />
-        <TestTable items={view.tests} selected={test} onSelect={setTest} />
-        <h3>כמה נעשו מכל מבחן, לפי חודש</h3>
-        <HeatTable {...view.testMatrix} nameHeader="מבחן" />
-      </section>
-
-      <section className="card">
-        <div className="cardhead">
-          <h2>לידים לפי {BUCKET_WORD[view.leadsBy]}</h2>
-          <BucketChips value={leadsBy} auto={view.auto} onChange={setLeadsBy} />
+        <div className="three">
+          <div><h3>לפי סוג</h3><SplitList items={view.byFamily} /></div>
+          <div><h3>לפי גודל חשבון</h3><SplitList items={view.bySize} /></div>
+          <div><h3>לפי פלטפורמה</h3><SplitList items={view.byPlatform} /></div>
         </div>
-        <Columns labels={view.leadsSeries.map((d) => fmtBucket(d.key, view.leadsBy))} values={view.leadsSeries.map((d) => d.values)} series={[{ key: 'leads', label: 'לידים', color: '--series-1' }]} />
+        <p className="hint">
+          עד 19/10 שם המבחן לא נרשם בטבלה, ולכן הפילוחים לפי סוג כוללים רק מבחנים עם שם. מי שעבר ואז רכש מקבל בטבלה סטטוס &quot;לקוח פעיל&quot; והתוצאה שלו נדרסת
+          {ex.overwritten ? ` (${nf.format(ex.overwritten)} כאלה בטווח)` : ''}. התאריך הוא תאריך הכניסה של הליד.
+        </p>
+        <Fold title="כל המבחנים" count={view.tests.length}>
+          <SplitList items={view.tests} max={100} />
+        </Fold>
+        <Fold title="כמה נעשו מכל מבחן, לפי חודש">
+          <HeatTable {...view.testMatrix} nameHeader="מבחן" />
+        </Fold>
       </section>
 
       <section className="card">
         <div className="cardhead">
-          <h2>רכישות לפי חודש</h2>
-          <div className="chips small" role="group" aria-label="איזה רכישות">
-            <button type="button" className={channel === 'all' ? 'on' : ''} aria-pressed={channel === 'all'} onClick={() => setChannel('all')}>כל הרכישות</button>
-            <button type="button" className={channel === 'bot' ? 'on' : ''} aria-pressed={channel === 'bot'} onClick={() => setChannel('bot')}>רק דרך הבוט</button>
+          <h2>רכישות</h2>
+          <div className="chipsrow">
+            <Chips value={channel} onChange={setChannel} label="איזה רכישות" options={[{ id: 'all', label: 'כל הרכישות' }, { id: 'bot', label: 'רק בזכות הבוט' }]} />
+            <Chips value={measure} onChange={setMeasure} label="מה למדוד" options={[{ id: 'count', label: 'מספר' }, { id: 'money', label: 'סכום' }]} />
+            <BucketChips value={buysBy} auto={autoBucket(file.purchases)} onChange={setBuysBy} />
           </div>
         </div>
+        <Stats items={[
+          { label: 'רכישות', value: nf.format(b.purchases), sub: b.noAmount ? `${nf.format(b.noAmount)} בלי סכום` : undefined },
+          { label: 'סכום', value: money.format(b.totalPaid) },
+          { label: 'עסקה ממוצעת', value: b.avgDeal === null ? '-' : money.format(b.avgDeal) },
+          { label: 'קונים', value: nf.format(b.buyers), sub: `${nf.format(b.repeatBuyers)} קנו יותר מפעם` },
+          { label: 'בזכות הבוט', value: nf.format(view.buysAll.bot.purchases), sub: `${money.format(view.buysAll.bot.paid)} · ${pctOf(botShare)} מהרכישות` },
+          { label: 'לא בזכות הבוט', value: nf.format(view.buysAll.other.purchases), sub: money.format(view.buysAll.other.paid) },
+        ]} />
         <Columns
-          labels={view.monthsAll.map(fmtMonth)}
-          values={view.byMonth.map(([b, o]) => (channel === 'bot' ? [b, 0] : [b, o]))}
-          series={[{ key: 'bot', label: 'דרך הבוט (converted)', color: '--series-1' }, { key: 'other', label: 'לא בהכרח דרך הבוט (payment)', color: '--series-2' }]}
-          height={200}
+          labels={view.buysSeries.map((d) => fmtBucket(d.key, view.buysBy))}
+          values={view.buysSeries.map((d) => d.values)}
+          series={[{ key: 'bot', label: 'בזכות הבוט', color: '--series-1' }, { key: 'other', label: 'לא בזכות הבוט', color: '--series-2' }]}
+          isMoney={measure === 'money'}
         />
-        <h3>ובתוך כל חודש, לפי מוצר</h3>
-        <HeatTable {...view.productMatrix} nameHeader="מוצר" />
-      </section>
-
-      <section className="card split">
-        <div>
-          <h2>מוצרים שנרכשו</h2>
-          <p className="hint">שם המוצר לפי &quot;מוצר שנקנה&quot;, ואם ריק לפי &quot;מבחן&quot; (לבירור). לחיצה על מוצר מראה את הסכומים שלו.</p>
-          <BarList items={view.products} selected={selected?.name} onSelect={setProduct} />
+        <div className="three">
+          <div>
+            <h3>לפי סוג מוצר</h3>
+            <BarList items={view.families.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.families.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
+          </div>
+          <div>
+            <h3>למה בזכות הבוט</h3>
+            <BarList items={REASONS.map((r) => ({ name: BOT_REASON_LABEL[r], count: b.reasons[r] }))} max={3} />
+            <p className="hint tight">רכישה יכולה לעמוד ביותר מתנאי אחד. converted כולל גם קופון של הבוט.</p>
+          </div>
+          <div>
+            <h3>מקור הרכישה (utm)</h3>
+            <BarList items={view.buySources.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.buySources.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
+          </div>
         </div>
-        <aside className="side" aria-live="polite">
-          {selected ? (
-            <>
-              <p className="label" dir="auto">{selected.name}</p>
-              <dl>
-                <div><dt>נרכש</dt><dd>{nf.format(selected.count)} פעמים</dd></div>
-                <div><dt>סכום ממוצע</dt><dd>{selected.avg === null ? '-' : money.format(selected.avg)}</dd></div>
-                <div><dt>הכי גבוה</dt><dd>{selected.max === null ? '-' : money.format(selected.max)}</dd></div>
-                <div><dt>הכי נמוך</dt><dd>{selected.min === null ? '-' : money.format(selected.min)}</dd></div>
-                <div><dt>סך הכול</dt><dd>{money.format(selected.revenue)}</dd></div>
-              </dl>
-            </>
-          ) : <p className="empty">אין רכישות בטווח הזה</p>}
-        </aside>
+        {view.campaigns.length > 0 && (
+          <>
+            <h3>לפי קמפיין (utm_campaign)</h3>
+            <BarList items={view.campaigns.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.campaigns.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
+          </>
+        )}
+        <p className="hint">
+          בזכות הבוט (כלל הברזל): הליד מסומן converted, או שהרכישה הגיעה מלינק של הבוט (utm_source vitrue), או שהייתה שיחה מכירתית לפי הסוכן.
+          מקור הרכישה נרשם מ-27/10 והלאה. רכישות בלי סכום נספרות אבל לא נכנסות לסכומים ולממוצע. שם מוצר שלא נרשם מופיע כ&quot;{NO_PRODUCT}&quot;.
+        </p>
+        <Fold title="כל המוצרים" count={view.products.length}>
+          <SimpleTable
+            headers={['מוצר', 'רכישות', 'בזכות הבוט', 'סכום', 'ממוצע', 'הכי נמוך', 'הכי גבוה']}
+            rows={view.products.map((p) => ({ key: p.name, cells: [p.name, nf.format(p.count), nf.format(p.bot), money.format(p.revenue), p.avg === null ? '-' : money.format(p.avg), p.min === null ? '-' : money.format(p.min), p.max === null ? '-' : money.format(p.max)] }))}
+          />
+        </Fold>
+        <Fold title="סוגי מוצרים לפי חודש">
+          <HeatTable {...view.productMatrix} nameHeader="סוג מוצר" />
+        </Fold>
       </section>
 
       <section className="card">
         <h2>מקור הגעה</h2>
-        <p className="hint">לפי עמודת &quot;מקור הגעה&quot;. קמפיינים יתווספו כשהטבלה תכלול עמודת קמפיין (utm_campaign).</p>
-        <BreakdownTable data={view.bySource} groupHeader="מקור הגעה" showResult showModes={false} showAi={file.leads.some((l) => l.aiConversation !== null)} />
+        <p className="hint tight">
+          &quot;בוט וואטסאפ&quot;: נכנסו דרך הבוט. שם של ערוץ (ig, google, Klaviyo, vitrue): utm של האתר. &quot;מהאתר (מבחן או רכישה)&quot;: בטבלה כתוב שם של מבחן או מוצר במקום מקור, כלומר הגיעו מהאתר בלי utm.
+        </p>
+        <BarList items={view.bySource.map((r) => ({ name: r.name, count: r.leads }))} extra={(n) => { const r = view.bySource.find((x) => x.name === n); return r ? `רכשו ${nf.format(r.bought)}` : null; }} />
+        <Fold title="הרשימה המלאה, כמו שכתוב בטבלה" count={view.bySourceRaw.length}>
+          <SimpleTable
+            headers={['מקור הגעה', 'לידים', 'התחילו שיחה', 'רכשו', 'שולם']}
+            rows={view.bySourceRaw.map((r) => ({ key: r.name, cells: [r.name, nf.format(r.leads), nf.format(r.started), nf.format(r.bought), money.format(r.spent)] }))}
+          />
+        </Fold>
       </section>
 
       <footer className="foot">
-        {nf.format(file.sheetRows)} שורות בטבלה · {nf.format(file.duplicatesRemoved)} כפילויות הוסרו
-        {file.skippedRows ? ` · ${nf.format(file.skippedRows)} שורות בלי תאריך כניסה` : ''} · נבדק בדפדפן ב-{timeFmt.format(load.checkedAt)}
+        {nf.format(file.sheetRows)} שורות בלשונית הלידים · {nf.format(file.purchaseRows)} שורות בלשונית הרכישות · נבדק בדפדפן ב-{timeFmt.format(load.checkedAt)}
       </footer>
     </main>
   );

@@ -1,25 +1,27 @@
 /** סיכום של קובץ נתונים, באותם חישובים כמו הדף. רק מספרים מסוכמים, בלי פרטים אישיים. */
 import { readFile } from 'node:fs/promises';
 import { unpack } from '../lib/leads/file';
-import { breakdown, countBy, matrixByMonth, productStats, purchases, removedIn, resultOf, RESULT_ORDER, summarize, testStats } from '../lib/metrics';
+import { annotate, examSummary, examsByFamily, productFamily, productStats, purchaseSources, purchaseSummary, removedIn, sourceRows, summarize, timeSeries, byBot } from '../lib/metrics';
 
 async function main() {
-const file = unpack(JSON.parse(await readFile(process.argv[2] ?? 'public/data/leads.json', 'utf8')));
-const s = summarize(file.leads);
-const ps = purchases(file.leads);
-const m = matrixByMonth(ps, (p) => p.product, (p) => p.at);
-const r = (x: number | null) => (x === null ? '-' : Math.round(x));
-console.log([
-  `שורות ${file.sheetRows}, כפילויות ${file.duplicatesRemoved}, בלי תאריך ${file.skippedRows}, לידים ${s.leads}`,
-  `דרך הבוט ${s.paidBot} (${r(s.revenueBot)}), מחוץ לבוט ${s.paidOther} (${r(s.revenueOther)}), עסקה ממוצעת בוט ${r(s.avgDealBot)}, כולל ${r(s.avgDealAll)}`,
-  `הסירו את עצמם ${removedIn(file.leads, { from: null, to: null })}`,
-  `התחילו שיחה ${s.startedJourney}, עברו ${s.passed}, נכשלו ${s.failed}, רכשו ${s.purchased} (מתוך מי שהתחיל שיחה ${s.purchasedOfStarted}), סך הכול שולם ${r(s.totalPaid)}`,
-  'פילוח לפי תוצאה: ' + breakdown(file.leads, resultOf, RESULT_ORDER).rows.map((x) => `${x.name}: לידים ${x.leads}, התחילו שאלון ${x.startedQ}, סיימו ${x.finishedQ}, רכשו ${x.purchased}, שולם ${r(x.totalPaid)}`).join(' | '),
-  'מבחנים, אחוז מעבר: ' + testStats(file.leads).slice(0, 4).map((x) => `${x.name} ${x.passed}/${x.passed + x.failed}`).join('; '),
-  `רכישות לפי חודש: ${m.months.map((x, i) => `${x}: ${m.monthTotals[i]}`).join(', ')}`,
-  'מוצרים: ' + productStats(ps).slice(0, 8).map((p) => `${p.name} ${p.count} (ממוצע ${r(p.avg)}, ${r(p.min)}-${r(p.max)})`).join('; '),
-  'מבחנים: ' + countBy(file.leads, (l) => l.test).slice(0, 5).map((t) => `${t.name} ${t.count}`).join('; '),
-].join('\n'));
+  const file = unpack(JSON.parse(await readFile(process.argv[2] ?? 'public/data/leads.json', 'utf8')));
+  const leads = annotate(file);
+  const s = summarize(leads, file.purchases);
+  const b = purchaseSummary(file.purchases, file.leads);
+  const ex = examSummary(leads);
+  const r = (x: number | null) => (x === null ? '-' : Math.round(x));
+  const months = timeSeries(file.purchases, (p) => p.at, 'month', 2, (p) => (byBot(p, file.leads) ? [1, 0] : [0, 1]));
+  console.log([
+    `שורות לידים ${file.sheetRows} -> לידים ${s.leads}; שורות רכישות ${file.purchaseRows} -> רכישות ${b.purchases} (${b.noAmount} בלי סכום)`,
+    `התחילו שיחה ${s.startedJourney}, נסרקו ${s.aiAnalyzed}, שיחה אמיתית ${s.realConversations}, מכירתית ${s.salesConversations}, הסירו את עצמם ${removedIn(file.leads, { from: null, to: null })}`,
+    `קונים ${b.buyers} (חוזרים ${b.repeatBuyers}), שולם ${r(b.totalPaid)}, עסקה ממוצעת ${r(b.avgDeal)}, אחוז המרה ${s.leads ? Math.round((100 * s.leadsWhoBought) / s.leads) : 0}%`,
+    `בזכות הבוט ${b.bot.purchases} (${r(b.bot.paid)}), לא ${b.other.purchases} (${r(b.other.paid)}); סיבות: converted ${b.reasons.converted}, utm ${b.reasons.utm}, שיחה ${b.reasons.conversation}`,
+    `מבחנים: עשו ${ex.did}, עברו ${ex.passed}, נכשלו ${ex.failed}, נדרסו ${ex.overwritten}, עברו ורכשו ${ex.passedAndBought}; ` + examsByFamily(leads).slice(0, 5).map((x) => `${x.name} ${x.passed}/${x.passed + x.failed}`).join('; '),
+    `רכישות לפי חודש (בוט/לא): ${months.map((m) => `${m.key}: ${m.values[0]}/${m.values[1]}`).join(', ')}`,
+    'סוגי מוצרים: ' + productStats(file.purchases, file.leads, (p) => productFamily(p.product)).slice(0, 8).map((p) => `${p.name} ${p.count} (${r(p.revenue)})`).join('; '),
+    'מקור הרכישה: ' + purchaseSources(file.purchases, file.leads).slice(0, 6).map((p) => `${p.name} ${p.count}`).join('; '),
+    'מקור הגעה: ' + sourceRows(leads).slice(0, 6).map((x) => `${x.name} ${x.leads} (רכשו ${x.bought})`).join('; '),
+  ].join('\n'));
 }
 
 main();

@@ -92,12 +92,54 @@ button, input, select { font: inherit; color: inherit; }
   border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 10px; min-height: 36px; max-width: 260px;
 }
 
-/* מספרי מפתח */
-.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
-.tile .label { color: var(--ink-2); font-size: 14px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.tile .value { font-size: 32px; font-weight: 650; line-height: 1.1; margin: 0; }
-.tile .sub { color: var(--ink-3); font-size: 13px; margin: 8px 0 0; }
+/* מספרי מפתח: 7 כרטיסים וגרף לידים קטן, בצד שמאל של השורה השנייה */
+.top { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+.tile .label { color: var(--ink-2); font-size: 13px; margin: 0 0 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tile .value { font-size: 28px; font-weight: 650; line-height: 1.15; margin: 0; font-variant-numeric: tabular-nums; }
+.tile .sub { color: var(--ink-3); font-size: 12.5px; margin: 6px 0 0; line-height: 1.35; }
+.sparkcard { display: flex; flex-direction: column; gap: 6px; }
+.sparkhead { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sparkhead .label { margin: 0; }
+.sparkhead .chips.small button { padding: 2px 8px; font-size: 12px; min-height: 26px; }
+.spark { position: relative; margin-top: auto; }
+.spark svg { width: 100%; display: block; }
+.sparkfoot { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); margin-top: 4px; min-height: 1.3em; }
+.sparkfoot strong { color: var(--ink-2); font-weight: 600; }
+
+/* מספרים קטנים בתוך כרטיס */
+.stats { display: flex; flex-wrap: wrap; gap: 6px 26px; margin: 2px 0 14px; }
+.stat { display: flex; flex-direction: column; min-width: 0; }
+.stat .label { font-size: 12.5px; color: var(--ink-2); }
+.stat .value { font-size: 22px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat .sub { font-size: 12px; color: var(--ink-3); }
+
+/* שלושה פילוחים זה ליד זה */
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 22px; margin-top: 8px; }
+.three h3 { margin-top: 10px; }
+
+/* משפך */
+.slim { padding: 14px 18px; }
+.slim h2 { font-size: 16px; margin-bottom: 8px; }
+.funnel { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.funnel li { display: grid; grid-template-rows: auto auto auto; gap: 2px; min-width: 0; }
+.funnel .bar { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); position: relative; overflow: hidden; }
+.funnel .bar::after { content: ''; position: absolute; inset: 0; width: var(--w); background: var(--series-1); border-radius: 4px; }
+.funnel .label { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.funnel .value { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.funnel .pct { font-size: 12px; color: var(--ink-3); min-height: 1.3em; }
+
+/* חלק מקופל */
+.fold { border-top: 1px solid var(--line); margin-top: 12px; }
+.fold summary { cursor: pointer; padding: 10px 2px; font-size: 14px; font-weight: 600; color: var(--ink-2); list-style: none; display: flex; align-items: center; gap: 8px; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: rotate(45deg); margin: 0 2px 3px 4px; transition: transform 0.15s; }
+.fold[open] summary::before { transform: rotate(-135deg); margin-bottom: -2px; }
+.fold summary .count { font-weight: 500; color: var(--ink-3); font-size: 13px; }
+.fold summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; border-radius: 6px; }
+.foldbody { padding: 2px 0 10px; }
+.chipsrow { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.hint.tight { margin: 4px 0 8px; }
 .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .tbc { font-size: 11px; background: var(--notice); color: var(--notice-ink); border-radius: 999px; padding: 1px 7px; }
 
@@ -110,13 +152,6 @@ button, input, select { font: inherit; color: inherit; }
 .hint { margin: -4px 0 12px; color: var(--ink-3); font-size: 13px; }
 .empty { color: var(--ink-3); font-size: 14px; margin: 8px 0; }
 
-.split { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
-.side { background: var(--surface-2); border-radius: 12px; padding: 14px 16px; position: sticky; top: 12px; }
-.side .label { margin: 0 0 10px; font-weight: 600; overflow-wrap: anywhere; text-align: right; unicode-bidi: plaintext; }
-.side dl { margin: 0; display: grid; gap: 8px; }
-.side dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
-.side dt { color: var(--ink-2); }
-.side dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* עמודות */
 .chart { position: relative; }
@@ -143,7 +178,14 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .barrow .name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; unicode-bidi: plaintext; }
 .barrow .track { height: 14px; display: block; }
 .barrow .fill { display: block; height: 100%; border-radius: 4px 0 0 4px; min-width: 2px; }
-.barrow .num { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.barrow .num { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; line-height: 1.15; }
+.barrow .num small { font-weight: 400; color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+.barrow.split .track { position: relative; }
+.barrow.split .fill { position: absolute; top: 0; inset-inline-start: 0; border-radius: 4px 0 0 4px; }
+.barrow.split .fill.second { border-radius: 0; min-width: 0; }
+.barlist .barrow { grid-template-columns: minmax(90px, 240px) minmax(0, 1fr) 72px; }
+.three .barrow { grid-template-columns: minmax(70px, 150px) minmax(0, 1fr) 70px; gap: 8px; }
+.three .barrow .name { font-size: 13px; }
 .more { margin-top: 6px; background: none; border: 0; color: var(--series-1); cursor: pointer; padding: 4px 6px; font-size: 14px; }
 
 /* טבלת חום */
@@ -167,23 +209,26 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .tests tbody th button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
 .tests tr.on th, .tests tr.on td { background: var(--surface-2); }
 .heat td { font-variant-numeric: tabular-nums; min-width: 64px; }
+.simple th, .simple td { text-align: center; }
+.simple tbody th { text-align: right; }
 .heat .total, .heat tfoot td { font-weight: 650; }
 .heat tfoot th, .heat tfoot td { border-top: 1px solid var(--line); }
 
 .foot { margin-top: 24px; color: var(--ink-3); font-size: 13px; }
 
 @media (max-width: 1000px) {
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .three { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
   .page { padding-top: 18px; }
   .head h1 { font-size: 22px; }
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .top { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .tile { padding: 12px; }
-  .tile .value { font-size: 26px; }
-  .split { grid-template-columns: 1fr; }
-  .side { position: static; }
+  .tile .value { font-size: 24px; }
+  .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats { gap: 6px 18px; }
   .barrow { grid-template-columns: minmax(80px, 42%) minmax(0, 1fr) 44px; gap: 8px; }
   .card { padding: 14px; }
 }

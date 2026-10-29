@@ -1,6 +1,6 @@
 <?php
 /**
- * כפתור הרענון של הדשבורד: קורא את לשונית הלידים מגוגל שיטס, מנקה כפילויות ופרטים אישיים,
+ * כפתור הרענון של הדשבורד: קורא את לשוניות הלידים והרכישות מגוגל שיטס, מנקה כפילויות ופרטים אישיים,
  * ומחליף את data/leads.json. הכול בשרת, בלי גיטהאב ובלי מפתחות.
  * GET  -> מצב: מתי הנתונים נבנו
  * POST -> רענון. לכל היותר פעם ב-10 שניות; לחיצות בזמן רענון מחכות לו.
@@ -13,8 +13,8 @@ header('X-Robots-Tag: noindex');
 require __DIR__ . '/_leads.php';
 
 const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
-const SHEET_TAB = 'לידים';
-const SHEET_GID = '0';   // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
+const SHEET_GID = '0';            // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
+const PURCHASES_GID = '282711056'; // הלשונית "רכישות": שורה לכל רכישה (החלטת המנהל, 2026-10-29)
 const MIN_GAP = 10;
 
 $dataDir = __DIR__ . '/data';
@@ -54,29 +54,37 @@ if ($age < MIN_GAP) {
     out(200, ['ok' => true, 'reused' => true] + $meta);
 }
 
-$url = getenv('OSHER_SHEET_URL') ?: 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/export?format=csv&gid=' . SHEET_GID;
-$ch = curl_init($url);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_TIMEOUT => 40,
-    CURLOPT_USERAGENT => 'osher-max-dashboard',
-]);
-$csv = curl_exec($ch);
-$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$err = curl_error($ch);
-curl_close($ch);
+/** ייצוא CSV מלא של לשונית אחת (כולל שורות שמוסתרות בסינון). מחזיר [csv, שגיאה] */
+function fetch_tab(string $gid): array {
+    $url = 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/export?format=csv&gid=' . $gid;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 40,
+        CURLOPT_USERAGENT => 'osher-max-dashboard',
+    ]);
+    $csv = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($csv === false || $code !== 200) {
+        error_log("osher-max refresh: sheet gid $gid HTTP $code $err");
+        return [null, 'קריאת הטבלה נכשלה (' . ($err ?: "HTTP $code") . '). הנתונים הקודמים נשארו.'];
+    }
+    if (preg_match('/^\s*</', $csv)) {
+        return [null, 'גוגל החזיר דף ולא טבלה: כנראה הטבלה לא משותפת לצפייה. הנתונים הקודמים נשארו.'];
+    }
+    return [$csv, null];
+}
 
-if ($csv === false || $code !== 200) {
-    error_log("osher-max refresh: sheet HTTP $code $err");
-    out(502, ['ok' => false, 'error' => 'קריאת הטבלה נכשלה (' . ($err ?: "HTTP $code") . '). הנתונים הקודמים נשארו.']);
-}
-if (preg_match('/^\s*</', $csv)) {
-    out(502, ['ok' => false, 'error' => 'גוגל החזיר דף ולא טבלה: כנראה הטבלה לא משותפת לצפייה. הנתונים הקודמים נשארו.']);
-}
+[$leadsCsv, $err] = fetch_tab(SHEET_GID);
+if ($err) out(502, ['ok' => false, 'error' => $err]);
+[$purchasesCsv, $err] = fetch_tab(PURCHASES_GID);
+if ($err) out(502, ['ok' => false, 'error' => $err]);
 
 try {
-    $file = osher_leads_from_rows(osher_parse_csv($csv), new DateTimeImmutable('now', new DateTimeZone('UTC')));
+    $file = osher_leads_from_rows(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')));
 } catch (RuntimeException $e) {
     out(422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']);
 }
@@ -93,6 +101,7 @@ out(200, [
     'ok' => true,
     'generatedAt' => $file['generatedAt'],
     'sheetRows' => $file['sheetRows'],
-    'duplicatesRemoved' => $file['duplicatesRemoved'],
+    'purchaseRows' => $file['purchaseRows'],
     'leads' => count($file['leads']),
+    'purchases' => count($file['purchases']),
 ]);

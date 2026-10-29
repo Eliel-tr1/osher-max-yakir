@@ -17,6 +17,7 @@ env:
   SITE_URL: https://ai.vitrue.co.il/oshermax/
   SHEET_ID: 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU
   SHEET_GID: "0"   # הלשונית "לידים"
+  PURCHASES_GID: "282711056"   # הלשונית "רכישות"
 
 jobs:
   refresh:
@@ -36,7 +37,7 @@ jobs:
       - name: קריאת הטבלה
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --gid "$SHEET_GID" --out leads.json
+          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --gid "$SHEET_GID" --purchases-gid "$PURCHASES_GID" --out leads.json
       - name: העלאה לשרת
         run: |
           if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSHPASS" ]; then echo "::error::חסרים סודות של השרת"; exit 1; fi
