@@ -43,8 +43,9 @@ jobs:
           fi
           echo "$OUT"
           echo "$OUT" | python3 scripts/agent-probe.py notice "סוכן: $SCRIPT"
-          # פלט מוצפן (רק סוכן הפיתוח יכול לפתוח), נשמר בענף evidence
-          SEALED=$(S 'cat ~/osher-max-agent/state/review-out.sealed 2>/dev/null' || true)
+          # פלט מוצפן (רק סוכן הפיתוח יכול לפתוח), נשמר בענף evidence. רק של הבדיקה שמייצרת אותו
+          SEALED=""
+          [ "$SCRIPT" = audit-converted.php ] && SEALED=$(S 'cat ~/osher-max-agent/state/review-out.sealed 2>/dev/null' || true)
           if [ -n "$SEALED" ]; then
             git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git fetch -q origin evidence && git checkout -q -B evidence origin/evidence || git checkout -q --orphan evidence
