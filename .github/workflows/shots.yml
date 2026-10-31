@@ -1,0 +1,40 @@
+name: צילומי מסך
+
+# צילומים של הדשבורד החי לדיווח. הנתונים עסקיים (בלי פרטים אישיים), ולכן הפלט נשמר רק מוצפן במפתח של סוכן הפיתוח, בענף evidence.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/run-shots']
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: צילום
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund >/dev/null
+          npm i --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null
+          npx playwright install chromium --with-deps >/dev/null 2>&1
+          node scripts/shots.mjs https://ai.vitrue.co.il/oshermax/ /tmp/shots
+      - name: הצפנה ושמירה בענף evidence
+        run: |
+          set -e
+          tar czf /tmp/shots.tgz -C /tmp shots
+          KEY=$(openssl rand -hex 32); IV=$(openssl rand -hex 16)
+          openssl enc -aes-256-cbc -K "$KEY" -iv "$IV" -in /tmp/shots.tgz -out /tmp/shots.enc
+          printf '%s:%s' "$KEY" "$IV" | openssl pkeyutl -encrypt -pubin -inkey agent/review-key.pub.pem -pkeyopt rsa_padding_mode:oaep -out /tmp/shots.key
+          unset KEY IV
+          git config user.name 'github-actions'; git config user.email 'github-actions@users.noreply.github.com'
+          git fetch -q origin evidence && git checkout -q -B evidence origin/evidence
+          D="review/shots-${GITHUB_RUN_ID}"; mkdir -p "$D"
+          cp /tmp/shots.enc /tmp/shots.key "$D/"
+          git add "$D" && git commit -qm "צילומי מסך מוצפנים" && git push -q origin evidence
+          echo "::notice title=צילומים::$D"
