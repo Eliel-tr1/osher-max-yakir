@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -16,6 +16,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: עמודות ולשוניות חדשות
+        continue-on-error: true
+        run: |
+          OUT=$(python3 scripts/profile-new.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 2>&1)
+          python3 - "$OUT" <<'PY'
+          import sys
+          parts, cur = [], ''
+          for line in sys.argv[1].splitlines():
+              if len((cur + line).encode()) > 2500 and cur:
+                  parts.append(cur); cur = ''
+              cur += line + '\n'
+          parts.append(cur)
+          for i, p in enumerate(parts, 1):
+              p = p.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::notice title=חדש {i}/{len(parts)}::{p}')
+          PY
       - name: לידים לפי אדם מול לפי הגעה
         continue-on-error: true
         run: python3 scripts/people-profile.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים'
