@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/check-numbers.ts', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -42,8 +42,11 @@ jobs:
           npx tsx scripts/build-data.ts --sheet 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU --gid 0 --purchases-gid 282711056 --out /tmp/leads.json >/dev/null
           curl -sL -o /tmp/leads.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=0"
           curl -sL -o /tmp/purchases.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=282711056"
-          PARITY=$(npx tsx scripts/parity-real.ts /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)
-          OUT="$PARITY"$'\n'"$(npx tsx scripts/summary.ts /tmp/leads.json)"$'\n'"$OUT"
+          curl -sL -o /tmp/mailings.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=704173708" || true
+          curl -sL -o /tmp/waves.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=359996576" || true
+          PARITY=$(npx tsx scripts/parity-real.ts /tmp/leads.csv /tmp/purchases.csv /tmp/mailings.csv /tmp/waves.csv 2>&1 || true)
+          CHECK=$(npx tsx scripts/check-numbers.ts /tmp/leads.json /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)
+          OUT="$PARITY"$'\n'"$CHECK"$'\n'"$(npx tsx scripts/summary.ts /tmp/leads.json)"$'\n'"$OUT"
           echo "$OUT"
           # הערה אחת מוגבלת בגודל, אז מפצלים לחלקים של עד 2500 בתים
           python3 - "$OUT" <<'PY'
