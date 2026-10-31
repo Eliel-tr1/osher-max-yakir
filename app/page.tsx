@@ -5,12 +5,16 @@ import { BASE_PATH, REFRESH_MS } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
 import type { LeadsFile } from '@/lib/leads/types';
 import {
-  annotate, autoBucket, byBot, campaigns, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange,
-  matrixByMonth, NO_PRODUCT, passFailOverTime, productFamily, productStats, purchaseSources, purchaseSummary, removedIn, sourceRows, summarize,
-  testStats, timeSeries, type Bucket,
+  annotate, autoBucket, countBy, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange, matrixByMonth, passFailOverTime, removedIn, sourceRows,
+  summarize, testStats, timeSeries, withPurchasesAfterEntry, type Bucket,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
-import { BarList, Columns, Fold, FunnelStrip, HeatTable, SimpleTable, Sparkline, SplitList, Stats, fmtDay, fmtMonth, fmtMonthShort, money, nf, pct, pctOf } from './charts';
+import { BarList, Columns, Fold, FunnelStrip, HeatTable, SimpleTable, Sparkline, SplitList, Stats, fmtDay, fmtMonthShort, money, nf, pct, pctOf } from './charts';
+import { CouponsSection } from './sections/coupons';
+import { MailingsSection } from './sections/mailings';
+import { PopupSection } from './sections/popup';
+import { PurchasesSection, type Channel, type Measure } from './sections/purchases';
+import { TrackingSection, useTrackingHealth } from './sections/tracking';
 
 const BUCKETS: { id: Bucket; label: string }[] = [
   { id: 'day', label: 'יום' },
@@ -37,17 +41,8 @@ function BucketChips({ value, auto, onChange }: { value: Bucket | null; auto: Bu
   );
 }
 
-function Chips<T extends string>({ value, options, onChange, label }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void; label: string }) {
-  return (
-    <div className="chips small" role="group" aria-label={label}>
-      {options.map((o) => (
-        <button key={o.id} type="button" className={value === o.id ? 'on' : ''} aria-pressed={value === o.id} onClick={() => onChange(o.id)}>{o.label}</button>
-      ))}
-    </div>
-  );
-}
-
 const ALL = '';
+const EMPTY: LeadsFile['leads'] = [];
 const timeFmt = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
 
 type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
@@ -60,8 +55,8 @@ export default function Dashboard() {
   const [custom, setCustom] = useState({ from: '', to: '' });
   const [source, setSource] = useState(ALL);
   const [proc, setProc] = useState(ALL);
-  const [channel, setChannel] = useState<'all' | 'bot'>('all');
-  const [measure, setMeasure] = useState<'count' | 'money'>('count');
+  const [channel, setChannel] = useState<Channel>('all');
+  const [measure, setMeasure] = useState<Measure>('count');
   const [leadsBy, setLeadsBy] = useState<Bucket | null>(null);
   const [testsBy, setTestsBy] = useState<Bucket | null>(null);
   const [buysBy, setBuysBy] = useState<Bucket | null>(null);
@@ -112,6 +107,10 @@ export default function Dashboard() {
   const sources = useMemo(() => countBy(all, (l) => l.sourceGroup), [all]);
   const processes = useMemo(() => countBy(all, (l) => l.process), [all]);
 
+  const people = useMemo(() => (file ? withPurchasesAfterEntry(all, file.purchases) : []), [file, all]);
+  const health = useTrackingHealth(file?.leads ?? EMPTY, file?.generatedAt ?? '');
+  const rangeKey = `${preset}|${custom.from}|${custom.to}`;
+
   const view = useMemo(() => {
     if (!file) return null;
     const range = rangeFor(preset, new Date(), custom);
@@ -121,19 +120,19 @@ export default function Dashboard() {
     const filtered = source === ALL && proc === ALL;
     // רכישות לפי תאריך הרכישה. כשמסננים לפי מקור או תהליך, רק הרכישות של הלידים שנשארו
     const purchasesAll = inRange(file.purchases, range).filter((p) => filtered || (p.lead !== null && keep.has(p.lead)));
-    const ps = purchasesAll.filter((p) => channel === 'all' || byBot(p));
     const auto = autoBucket(leads);
     const lb = leadsBy ?? auto;
     const tb = testsBy ?? auto;
-    const pb = buysBy ?? autoBucket(purchasesAll);
-    const leadsSeries = timeSeries(leads, (l) => l.at, lb, 1, () => [1]);
     return {
+      range,
+      scoped,
+      purchasesAll,
       summary: summarize(leads, purchasesAll),
       funnel: funnel(leads),
       removed: removedIn(scoped, range),
       auto,
       leadsBy: lb,
-      leadsSeries,
+      leadsSeries: timeSeries(leads, (l) => l.at, lb, 1, () => [1]),
       exams: examSummary(leads),
       byFamily: examsByFamily(leads),
       bySize: examsBySize(leads),
@@ -142,22 +141,10 @@ export default function Dashboard() {
       passFail: passFailOverTime(leads, tb),
       passFailBy: tb,
       testMatrix: matrixByMonth(leads.filter((l) => l.test), (l) => l.test, (l) => l.at),
-      buys: purchaseSummary(ps),
-      buysAll: purchaseSummary(purchasesAll),
-      buysBy: pb,
-      buysSeries: timeSeries(ps, (p) => p.at, pb, 2, (p) => {
-        const v = measure === 'money' ? (p.amount ?? 0) : 1;
-        return byBot(p) ? [v, 0] : [0, v];
-      }),
-      families: productStats(ps, (p) => productFamily(p.product)),
-      products: productStats(ps),
-      buySources: purchaseSources(ps),
-      campaigns: campaigns(ps),
-      productMatrix: matrixByMonth(ps, (p) => productFamily(p.product), (p) => p.at),
       bySource: sourceRows(leads),
       bySourceRaw: sourceRows(leads, (l) => l.source),
     };
-  }, [file, all, preset, custom, source, proc, channel, measure, leadsBy, testsBy, buysBy]);
+  }, [file, all, preset, custom, source, proc, leadsBy, testsBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
   if (load.state === 'error' || !file || !view) {
@@ -171,7 +158,6 @@ export default function Dashboard() {
 
   const s = view.summary;
   const ex = view.exams;
-  const b = view.buys;
   const scanned = s.aiAnalyzed;
 
   return (
@@ -194,6 +180,11 @@ export default function Dashboard() {
       </header>
 
       {file.origin === 'demo' && <p className="notice" role="status">אלה נתוני הדגמה מומצאים, לא הטבלה האמיתית.</p>}
+      {health.last7 > 0 && (
+        <p className="notice error top-alert" role="alert">
+          {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking">לפרטים בכרטיס תקינות מעקב קמפיינים</a>
+        </p>
+      )}
 
       <section className="filters" aria-label="סינון">
         <div className="chips" role="group" aria-label="טווח תאריכים">
@@ -290,71 +281,25 @@ export default function Dashboard() {
         </Fold>
       </section>
 
-      <section className="card">
-        <div className="cardhead">
-          <h2>רכישות</h2>
-          <div className="chipsrow">
-            <Chips value={channel} onChange={setChannel} label="איזה רכישות" options={[{ id: 'all', label: 'כל הרכישות' }, { id: 'bot', label: 'רק בזכות הבוט' }]} />
-            <Chips value={measure} onChange={setMeasure} label="מה למדוד" options={[{ id: 'count', label: 'מספר' }, { id: 'money', label: 'סכום' }]} />
-            <BucketChips value={buysBy} auto={autoBucket(file.purchases)} onChange={setBuysBy} />
-          </div>
-        </div>
-        <Stats items={[
-          { label: 'רכישות', value: nf.format(b.purchases), sub: b.noAmount ? `${nf.format(b.noAmount)} בלי סכום` : undefined },
-          { label: 'סכום', value: money.format(b.totalPaid) },
-          { label: 'עסקה ממוצעת', value: b.avgDeal === null ? '-' : money.format(b.avgDeal) },
-          { label: 'קונים', value: nf.format(b.buyers), sub: `${nf.format(b.repeatBuyers)} קנו יותר מפעם` },
-          { label: 'בזכות הבוט', value: nf.format(view.buysAll.bot.purchases), sub: `${money.format(view.buysAll.bot.paid)} · ${nf.format(view.buysAll.undecided.purchases)} רכישות עוד לא הוכרעו` },
-          { label: 'לא בזכות הבוט', value: nf.format(view.buysAll.other.purchases), sub: money.format(view.buysAll.other.paid) },
-        ]} />
-        <Columns
-          labels={view.buysSeries.map((d) => fmtBucket(d.key, view.buysBy))}
-          values={view.buysSeries.map((d) => d.values)}
-          series={[{ key: 'bot', label: 'בזכות הבוט', color: '--series-1' }, { key: 'other', label: 'לא בזכות הבוט', color: '--series-2' }]}
-          isMoney={measure === 'money'}
-        />
-        <div className="three">
-          <div>
-            <h3>לפי סוג מוצר</h3>
-            <BarList items={view.families.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.families.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
-          </div>
-          <div>
-            <h3>בזכות הבוט</h3>
-            <BarList
-              items={[
-                { name: 'כן', count: view.buysAll.bot.purchases },
-                { name: 'לא', count: view.buysAll.other.purchases - view.buysAll.undecided.purchases },
-                { name: 'עוד לא הוכרעו', count: view.buysAll.undecided.purchases },
-              ]}
-              max={3}
-            />
-            <p className="hint tight">לפי העמודה &quot;של הבוט&quot; בלשונית הרכישות. רכישה שעוד לא הוכרעה לא נחשבת של הבוט.</p>
-          </div>
-          <div>
-            <h3>מקור הרכישה (utm)</h3>
-            <BarList items={view.buySources.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.buySources.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
-          </div>
-        </div>
-        {view.campaigns.length > 0 && (
-          <>
-            <h3>לפי קמפיין (utm_campaign)</h3>
-            <BarList items={view.campaigns.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = view.campaigns.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
-          </>
-        )}
-        <p className="hint">
-          בזכות הבוט: בעמודה &quot;של הבוט&quot; בלשונית הרכישות כתוב &quot;כן&quot;. את ההכרעה כותב הסוכן של המנהל בכל לילה, ותא ריק הוא רכישה שעוד לא הוכרעה.
-          מקור הרכישה נרשם מ-27/10 והלאה. רכישות בלי סכום נספרות אבל לא נכנסות לסכומים ולממוצע. שם מוצר שלא נרשם מופיע כ&quot;{NO_PRODUCT}&quot;.
-        </p>
-        <Fold title="כל המוצרים" count={view.products.length}>
-          <SimpleTable
-            headers={['מוצר', 'רכישות', 'בזכות הבוט', 'סכום', 'ממוצע', 'הכי נמוך', 'הכי גבוה']}
-            rows={view.products.map((p) => ({ key: p.name, cells: [p.name, nf.format(p.count), nf.format(p.bot), money.format(p.revenue), p.avg === null ? '-' : money.format(p.avg), p.min === null ? '-' : money.format(p.min), p.max === null ? '-' : money.format(p.max)] }))}
-          />
-        </Fold>
-        <Fold title="סוגי מוצרים לפי חודש">
-          <HeatTable {...view.productMatrix} nameHeader="סוג מוצר" />
-        </Fold>
-      </section>
+      <PurchasesSection
+        all={view.purchasesAll}
+        purchases={file.purchases}
+        leads={file.leads}
+        channel={channel}
+        setChannel={setChannel}
+        measure={measure}
+        setMeasure={setMeasure}
+        by={buysBy}
+        setBy={setBuysBy}
+      />
+
+      <CouponsSection people={view.scoped} leads={file.leads} all={view.purchasesAll} range={view.range} rangeKey={rangeKey} />
+
+      {file.mailings && file.mailingWaves && file.mailingWaves.length > 0 && <MailingsSection mailings={file.mailings} waves={file.mailingWaves} />}
+
+      <PopupSection people={people} leads={file.leads} range={view.range} rangeKey={rangeKey} />
+
+      <TrackingSection health={health} leads={file.leads} all={view.purchasesAll} />
 
       <section className="card">
         <h2>מקור הגעה</h2>

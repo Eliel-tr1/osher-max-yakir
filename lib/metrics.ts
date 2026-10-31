@@ -1,4 +1,4 @@
-import { BOT_COUPON_GROUP } from './leads/fromSheet';
+import { BOT_COUPON_GROUP, BOT_SOURCE } from './leads/fromSheet';
 import { israelDayStart } from './sheet/parse';
 import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from './leads/types';
 
@@ -21,7 +21,8 @@ export function monthKey(iso: string | Date): string {
   return dayKey(iso).slice(0, 7);
 }
 
-function inside(iso: string, range: Range): boolean {
+/** התאריך בתוך הטווח */
+export function inside(iso: string, range: Range): boolean {
   const t = new Date(iso).getTime();
   return (!range.from || t >= range.from.getTime()) && (!range.to || t < range.to.getTime());
 }
@@ -915,12 +916,21 @@ function compareRow(people: PopupPerson[]): CompareRow {
   return { people: people.length, scanned, real, realRate: scanned ? real / scanned : null, buyers, buyRate: people.length ? buyers / people.length : null };
 }
 
-/** הפופאפ מול מי שלא הגיע ממנו, באותה תקופה: נכנסו בטווח, ולא לפני שהפופאפ עלה */
-export function popupCompare(people: PopupPerson[], range: Range): { popup: CompareRow; others: CompareRow; from: string } {
+/**
+ * הפופאפ מול מי שלא הגיע ממנו, באותה תקופה: נכנסו בטווח, ולא לפני שהפופאפ עלה.
+ * bot: מי שנכנס לבוט בוואטסאפ בלי הפופאפ. others: כל מי שלא הגיע מהפופאפ, כולל מי שנכנס לטבלה ברכישה באתר.
+ */
+export function popupCompare(people: PopupPerson[], range: Range): { popup: CompareRow; bot: CompareRow; others: CompareRow; from: string } {
   const start = israelDayStart(POPUP_START);
   const from = range.from && range.from > start ? range.from : start;
   const inPeriod = people.filter((x) => inside(x.entry, { from, to: range.to }));
-  return { popup: compareRow(inPeriod.filter((x) => fromPopup(x.lead))), others: compareRow(inPeriod.filter((x) => !fromPopup(x.lead))), from: dayKey(from) };
+  const others = inPeriod.filter((x) => !fromPopup(x.lead));
+  return {
+    popup: compareRow(inPeriod.filter((x) => fromPopup(x.lead))),
+    bot: compareRow(others.filter((x) => x.lead.sourceGroup === BOT_SOURCE)),
+    others: compareRow(others),
+    from: dayKey(from),
+  };
 }
 
 // ---------- תקינות מעקב קמפיינים (הנחיית המנהל, 31/10/2026) ----------

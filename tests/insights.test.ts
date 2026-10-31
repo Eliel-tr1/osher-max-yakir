@@ -122,7 +122,7 @@ describe('the popup funnel', () => {
     lead({ campaign: 'popup_website', at: '2026-10-22T07:00:00.000Z', messages: 2, aiConversation: 'yes', mode: 'שירותית' }),
     lead({ campaign: 'popup_website', at: '2026-10-23T07:00:00.000Z', messages: 1 }),
     // לא מהפופאפ
-    lead({ at: '2026-10-22T07:00:00.000Z', aiConversation: 'yes' }),
+    lead({ at: '2026-10-22T07:00:00.000Z', aiConversation: 'yes', sourceGroup: 'בוט וואטסאפ' }),
     lead({ at: '2026-10-02T07:00:00.000Z', aiConversation: 'yes' }),
   ];
   const purchases = [
@@ -150,6 +150,7 @@ describe('the popup funnel', () => {
     expect(c.from).toBe('2026-10-19');
     expect(c.popup).toMatchObject({ people: 4, scanned: 3, real: 2, buyers: 2, buyRate: 0.5 });
     expect(c.others).toMatchObject({ people: 1, scanned: 1, real: 1, buyers: 1 });
+    expect(c.bot).toMatchObject({ people: 1, real: 1 });
   });
 });
 

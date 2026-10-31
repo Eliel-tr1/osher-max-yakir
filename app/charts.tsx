@@ -4,6 +4,24 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export const nf = new Intl.NumberFormat('he-IL');
 export const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+/** סכום עם אגורות, לשורה אחת ברשימה */
+export const money2 = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const dec1 = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 1 });
+/** מספר עם ספרה אחת אחרי הנקודה, למשל רכישות לקונה */
+export function num1(v: number | null): string {
+  return v === null ? '-' : dec1.format(v);
+}
+// en-GB נותן יום/חודש/שנה עם לוכסנים, כמו בטבלה
+const dateTime = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' });
+const dateOnly = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Jerusalem' });
+/** "28/10/2026 12:15" בשעון ישראל */
+export function fmtDateTime(iso: string): string {
+  return dateTime.format(new Date(iso)).replace(',', '');
+}
+/** "28/10/2026" בשעון ישראל */
+export function fmtDate(iso: string): string {
+  return dateOnly.format(new Date(iso));
+}
 const monthName = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const monthShort = new Intl.DateTimeFormat('he-IL', { month: 'short', timeZone: 'UTC' });
 const dayShort = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric', timeZone: 'UTC' });
@@ -112,7 +130,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
                 <text x={x + bw / 2} y={y(totals[i]) - 4} className="cap" textAnchor="middle">{isMoney ? nf.format(Math.round(totals[i])) : nf.format(totals[i])}</text>
               )}
               {(i % every === 0 || i === n - 1) && (
-                <text x={x + bw / 2} y={H - 5} className="tick" textAnchor="middle">{labels[i]}</text>
+                <text x={x + bw / 2} y={H - 5} className="tick" textAnchor="middle" direction="rtl">{labels[i]}</text>
               )}
             </g>
           );
@@ -347,19 +365,129 @@ export function SimpleTable({ headers, rows, max: maxShown = 15 }: { headers: st
   );
 }
 
-/** משפך: שלבים עם אחוז מהשלב הראשון */
-export function FunnelStrip({ steps }: { steps: { label: string; value: number }[] }) {
+/**
+ * משפך: שלבים עם אחוז מהשלב הראשון. fromPrev: גם אחוז מהשלב הקודם.
+ * prev: בסיס אחר לאחוז מהקודם (למשל רכישות ולא קונים); first: false = בלי אחוז מהראשון.
+ * pctText: טקסט אחר במקום שני האחוזים, לשלב שלא מוכל בשלב שלפניו.
+ */
+export function FunnelStrip({ steps, fromPrev = false }: {
+  steps: { label: string; value: number; sub?: string; prev?: number; first?: boolean; pctText?: string }[];
+  fromPrev?: boolean;
+}) {
   const base = steps[0]?.value ?? 0;
   return (
-    <ol className="funnel">
+    <ol className={`funnel${fromPrev ? ' two-pct' : ''}`} style={{ ['--n' as string]: steps.length }}>
       {steps.map((s, i) => (
-        <li key={s.label} style={{ ['--w' as string]: `${base ? Math.max(6, (s.value / base) * 100) : 0}%` }}>
+        <li key={s.label} style={{ ['--w' as string]: `${base ? Math.min(100, Math.max(6, (s.value / base) * 100)) : 0}%` }}>
           <span className="bar" />
-          <span className="label">{s.label}</span>
+          <span className="label" title={s.label}>{s.label}</span>
           <span className="value">{nf.format(s.value)}</span>
-          <span className="pct">{i === 0 ? '' : pct(s.value, base)}</span>
+          {s.sub ? <span className="fsub">{s.sub}</span> : null}
+          {fromPrev ? (
+            <span className="pct">
+              {i === 0 ? '' : s.pctText ?? `${pct(s.value, s.prev ?? steps[i - 1].value)} מהשלב הקודם`}
+              {i > 0 && !s.pctText && s.first !== false ? <><br />{`${pct(s.value, base)} מהראשון`}</> : null}
+            </span>
+          ) : (
+            <span className="pct">{i === 0 ? '' : pct(s.value, base)}</span>
+          )}
         </li>
       ))}
     </ol>
+  );
+}
+
+/** מקרא: ריבוע צבע ושם לכל סדרה */
+export function Legend({ items }: { items: { label: string; color: string }[] }) {
+  return (
+    <div className="legend">
+      {items.map((s) => <span key={s.label}><i style={{ background: `var(${s.color})` }} />{s.label}</span>)}
+    </div>
+  );
+}
+
+export interface BarSegment {
+  value: number;
+  /** משתנה CSS של הצבע */
+  color: string;
+  label: string;
+}
+
+/** טבלה עם פס אופקי בכל שורה, מחולק לפי צבעים: שם, פס, ואז המספרים. */
+export function BarTable({ headers, rows, max: maxShown = 10 }: {
+  /** [שם, פס, ...עמודות המספרים] */
+  headers: string[];
+  rows: { key: string; name: ReactNode; title?: string; segments: BarSegment[]; cells: ReactNode[] }[];
+  max?: number;
+}) {
+  const [all, setAll] = useState(false);
+  if (!rows.length) return <p className="empty">אין נתונים בטווח הזה</p>;
+  const shown = all ? rows : rows.slice(0, maxShown);
+  const top = Math.max(...rows.map((r) => r.segments.reduce((x, g) => x + g.value, 0)), 1);
+  return (
+    <div className="heat simple bartable">
+      <div className="scroll">
+        <table>
+          <thead><tr>{headers.map((h, i) => <th key={i} scope="col">{h}</th>)}</tr></thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.key}>
+                <th scope="row" dir="auto" title={r.title}>{r.name}</th>
+                <td className="barcell">
+                  <span className="stack" title={r.segments.filter((g) => g.value).map((g) => `${g.label}: ${nf.format(g.value)}`).join(' · ')}>
+                    {r.segments.map((g) => (g.value ? <span key={g.label} style={{ width: `${(g.value / top) * 100}%`, background: `var(${g.color})` }} /> : null))}
+                  </span>
+                </td>
+                {r.cells.map((c, i) => <td key={i}>{c}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > maxShown && (
+        <button type="button" className="more" onClick={() => setAll(!all)}>
+          {all ? 'להציג פחות' : `להציג את כל ה-${nf.format(rows.length)}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** חלק מקופל שהתוכן שלו נבנה רק כשפותחים אותו, לרשימות ארוכות */
+export function LazyFold({ title, meta, children }: { title: string; meta?: string; children: () => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="fold" onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary><span className="ftitle" dir="auto">{title}</span>{meta ? <span className="count">{meta}</span> : null}</summary>
+      {open ? <div className="foldbody">{children()}</div> : null}
+    </details>
+  );
+}
+
+/** טבלה בעמודים, לרשימות ארוכות */
+export function PagedTable({ headers, rows, pageSize = 25 }: { headers: string[]; rows: { key: string; cells: ReactNode[] }[]; pageSize?: number }) {
+  const [page, setPage] = useState(0);
+  if (!rows.length) return <p className="empty">אין שורות</p>;
+  const pages = Math.ceil(rows.length / pageSize);
+  const p = Math.min(page, pages - 1);
+  const shown = rows.slice(p * pageSize, (p + 1) * pageSize);
+  return (
+    <div className="heat simple list">
+      <div className="scroll">
+        <table>
+          <thead><tr>{headers.map((h) => <th key={h} scope="col">{h}</th>)}</tr></thead>
+          <tbody>
+            {shown.map((r) => <tr key={r.key}>{r.cells.map((c, i) => <td key={i} dir="auto">{c}</td>)}</tr>)}
+          </tbody>
+        </table>
+      </div>
+      {pages > 1 && (
+        <div className="pager">
+          <button type="button" onClick={() => setPage(p - 1)} disabled={p === 0}>הקודם</button>
+          <span>עמוד {nf.format(p + 1)} מתוך {nf.format(pages)}</span>
+          <button type="button" onClick={() => setPage(p + 1)} disabled={p === pages - 1}>הבא</button>
+        </div>
+      )}
+    </div>
   );
 }
