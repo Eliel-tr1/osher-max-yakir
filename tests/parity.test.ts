@@ -95,7 +95,7 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
       const p: Record<string, string> = {
         'שם לקוח': v['שם לקוח'], תאריך: d, 'קוד מזהה': rnd() < 0.05 ? `OTHER${i}` : id, 'מקור הגעה': pick(SOURCES),
         'מוצר שנקנה': rnd() < 0.3 ? pick(['', '-']) : pick(PRODUCTS), 'סכום ששולם': rnd() < 0.3 ? amount : pick(['', '5', '14', '169']),
-        טלפון: v['טלפון'], 'קופון מהרכישה': pick(['', 'pass50', '{"code":"","discount":""}']), utm_campaign: pick(['', 'halloween_lightning']),
+        טלפון: v['טלפון'], utm_campaign: pick(['', 'halloween_lightning']),
         'של הבוט': pick(['', 'כן', ' כן ', 'לא', 'yes', 'כן.', '\u00a0כן\u00a0', 'כ ן']),
         'קופון מהרכישה': pick(COUPONS),
         סיבה: pick(['', 'שיחה מכירתית לפני הרכישה', 'לא כתב לבוט', ' קופון הבוט (נוצר לאיש קשר אחר של הלקוח) ']),

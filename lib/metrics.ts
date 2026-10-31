@@ -1,4 +1,6 @@
-import type { Lead, LeadsFile, Purchase } from './leads/types';
+import { BOT_COUPON_GROUP } from './leads/fromSheet';
+import { israelDayStart } from './sheet/parse';
+import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from './leads/types';
 
 export interface Range {
   /** כולל, או null = מההתחלה */
@@ -156,15 +158,9 @@ export function summarize(leads: LeadX[], purchases: Purchase[]): Summary {
   };
 }
 
-/** קונים שונים: לפי הליד, ורכישה בלי ליד נספרת כקונה בפני עצמה */
-export function buyersOf(purchases: Purchase[]): number {
-  const ids = new Set<number>();
-  let orphans = 0;
-  for (const p of purchases) {
-    if (p.lead === null) orphans++;
-    else ids.add(p.lead);
-  }
-  return ids.size + orphans;
+/** קונים שונים: קודים מזהים שונים (המספר הסידורי של הקונה), כולל קונים שלא נמצאים בלשונית הלידים (31/10/2026) */
+export function buyersOf(purchases: { buyer: number }[]): number {
+  return new Set(purchases.map((p) => p.buyer)).size;
 }
 
 /** משפך: ליד, שיחה, שאלון, רכישה */
@@ -351,7 +347,7 @@ export const NO_PRODUCT = 'לא צוין';
 export function productFamily(name: string | null): string {
   if (!name) return NO_PRODUCT;
   const n = name.toLowerCase();
-  if (/activation fee/.test(n)) return 'דמי הפעלה (activation fee)';
+  if (/activation/.test(n)) return ACTIVATION;
   if (/lightning pro/.test(n)) return 'Lightning Pro';
   if (/lightning access/.test(n)) return 'Lightning Access';
   if (/lightning/.test(n)) return 'Lightning challenge';
@@ -365,6 +361,23 @@ export function productFamily(name: string | null): string {
   if (/crypto/.test(n)) return 'Crypto';
   if (/challenge/.test(n)) return 'Challenge';
   return 'אחר';
+}
+
+/**
+ * דמי הפעלה: תשלום אחרי מעבר אתגר כדי לפתוח את החשבון הממומן (הנחיית המנהל, 31/10/2026).
+ * מוצר שמכיל "activation", או רכישה בלי שם מוצר באחד הסכומים האלה.
+ */
+export const ACTIVATION_AMOUNTS = [109, 139, 169, 249, 259, 349, 399];
+export const ACTIVATION = 'דמי הפעלה (activation fee)';
+
+export function isActivation(p: { product: string | null; amount: number | null }): boolean {
+  if (p.product) return /activation/i.test(p.product);
+  return p.amount !== null && ACTIVATION_AMOUNTS.includes(p.amount);
+}
+
+/** סוג המוצר של רכישה: כמו productFamily, ודמי הפעלה גם כששם המוצר לא נרשם */
+export function purchaseFamily(p: Purchase): string {
+  return isActivation(p) ? ACTIVATION : productFamily(p.product);
 }
 
 export interface ProductStat {
@@ -406,8 +419,14 @@ export function purchaseSources(ps: Purchase[]): ProductStat[] {
   return productStats(ps, (p) => p.sourceGroup ?? (p.fromLead ? 'מלשונית הלידים' : NO_PRODUCT));
 }
 
-export function campaigns(ps: Purchase[]): ProductStat[] {
-  return productStats(ps.filter((p) => p.campaign), (p) => p.campaign!);
+/** קמפיין של רכישה: utm_campaign של הרכישה (עמודה P), ואם הוא ריק, של הליד (עמודה BH) */
+export function campaignOf(p: Purchase, leads: Lead[]): string | null {
+  return p.campaign ?? (p.lead !== null ? (leads[p.lead]?.campaign ?? null) : null);
+}
+
+export function campaigns(ps: Purchase[], leads: Lead[] = []): ProductStat[] {
+  const named = ps.filter((p) => campaignOf(p, leads));
+  return productStats(named, (p) => campaignOf(p, leads)!);
 }
 
 // ---------- מקור הגעה ----------
@@ -525,4 +544,407 @@ export function countBy<T>(items: T[], key: (x: T) => string | null): { name: st
     if (k) m.set(k, (m.get(k) ?? 0) + 1);
   }
   return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+// ---------- רכישות לפי "של הבוט" ו"סיבה" (הנחיית המנהל, 31/10/2026) ----------
+
+/** yes = "של הבוט" הוא "כן"; no = ערך אחר; open = ריק, כלומר עוד לא הוכרע */
+export type BotSide = 'yes' | 'no' | 'open';
+export const BOT_SIDES: BotSide[] = ['yes', 'no', 'open'];
+export const SIDE_LABEL: Record<BotSide, string> = { yes: 'של הבוט', no: 'לא של הבוט', open: 'עוד לא הוכרעו' };
+export const UNDECIDED = 'עוד לא הוכרע';
+export const NO_REASON = 'בלי סיבה';
+
+export function botSide(p: { bot: 'yes' | 'no' | null }): BotSide {
+  return p.bot === 'yes' ? 'yes' : p.bot === 'no' ? 'no' : 'open';
+}
+
+function paidSum(ps: { amount: number | null }[]): number {
+  return ps.reduce((s, p) => s + (p.amount && p.amount > 0 ? p.amount : 0), 0);
+}
+
+export interface BuyRow {
+  purchases: number;
+  paid: number;
+  buyers: number;
+  perBuyer: number | null;
+  paidPerBuyer: number | null;
+  /** רק רכישות עם סכום (החלטת המנהל, 29/10) */
+  avgDeal: number | null;
+}
+
+export function buyRow(ps: Purchase[]): BuyRow {
+  const paid = paidSum(ps);
+  const withAmount = ps.filter((p) => (p.amount ?? 0) > 0).length;
+  const buyers = buyersOf(ps);
+  return {
+    purchases: ps.length, paid, buyers,
+    perBuyer: buyers ? ps.length / buyers : null,
+    paidPerBuyer: buyers ? paid / buyers : null,
+    avgDeal: withAmount ? paid / withAmount : null,
+  };
+}
+
+export interface BotBreakdown {
+  all: BuyRow;
+  yes: BuyRow;
+  no: BuyRow;
+  open: BuyRow;
+  /** החלק של הבוט: מהכמות ומהסכום */
+  share: { purchases: number | null; paid: number | null };
+}
+
+export function botBreakdown(ps: Purchase[]): BotBreakdown {
+  const all = buyRow(ps);
+  const yes = buyRow(ps.filter((p) => botSide(p) === 'yes'));
+  return {
+    all, yes,
+    no: buyRow(ps.filter((p) => botSide(p) === 'no')),
+    open: buyRow(ps.filter((p) => botSide(p) === 'open')),
+    share: { purchases: all.purchases ? yes.purchases / all.purchases : null, paid: all.paid ? yes.paid / all.paid : null },
+  };
+}
+
+/** סדרה לאורך זמן: [של הבוט, לא, עוד לא הוכרע], בכמות או בסכום */
+export function botSeries(ps: Purchase[], b: Bucket, measure: 'count' | 'money'): { key: string; values: number[] }[] {
+  return timeSeries(ps, (p) => p.at, b, 3, (p) => {
+    const v = measure === 'money' ? (p.amount && p.amount > 0 ? p.amount : 0) : 1;
+    const side = botSide(p);
+    return [side === 'yes' ? v : 0, side === 'no' ? v : 0, side === 'open' ? v : 0];
+  });
+}
+
+export interface ReasonRow {
+  name: string;
+  /** הצד של רוב הרכישות בשורה */
+  side: BotSide;
+  yes: number;
+  no: number;
+  open: number;
+  purchases: number;
+  paid: number;
+  buyers: number;
+}
+
+/** השם של "סיבה" לתצוגה: ריק בלי הכרעה = "עוד לא הוכרע"; ריק עם הכרעה = "בלי סיבה" */
+export function reasonOf(p: { reason: string | null; bot: 'yes' | 'no' | null }): string {
+  return p.reason ?? (p.bot === null ? UNDECIDED : NO_REASON);
+}
+
+/** פילוח לפי "סיבה": קודם הסיבות של "כן", אחר כך של "לא", ובסוף מה שעוד לא הוכרע; בכל קבוצה מהגדולה לקטנה */
+export function byReason(ps: Purchase[]): ReasonRow[] {
+  const m = new Map<string, Purchase[]>();
+  for (const p of ps) {
+    const k = reasonOf(p);
+    const g = m.get(k);
+    if (g) g.push(p);
+    else m.set(k, [p]);
+  }
+  const order: Record<BotSide, number> = { yes: 0, no: 1, open: 2 };
+  return [...m.entries()]
+    .map(([name, g]) => {
+      const yes = g.filter((p) => botSide(p) === 'yes').length;
+      const no = g.filter((p) => botSide(p) === 'no').length;
+      const open = g.length - yes - no;
+      const side: BotSide = open >= yes && open >= no ? 'open' : yes >= no ? 'yes' : 'no';
+      return { name, side, yes, no, open, purchases: g.length, paid: paidSum(g), buyers: buyersOf(g) };
+    })
+    .sort((a, b) => order[a.side] - order[b.side] || b.purchases - a.purchases || a.name.localeCompare(b.name));
+}
+
+/** כמה רכישות לכל קונה: 1, 2, 3, 4, 5 ומעלה. בנפרד לרכישות של הבוט ולכל השאר */
+export const REPEAT_BUCKETS = ['1', '2', '3', '4', '5+'];
+
+export function repeatBuyers(ps: Purchase[]): { name: string; bot: number; other: number }[] {
+  const count = (xs: Purchase[]) => {
+    const per = new Map<number, number>();
+    for (const p of xs) per.set(p.buyer, (per.get(p.buyer) ?? 0) + 1);
+    const out = REPEAT_BUCKETS.map(() => 0);
+    for (const n of per.values()) out[Math.min(n, 5) - 1]++;
+    return out;
+  };
+  const bot = count(ps.filter((p) => botSide(p) === 'yes'));
+  const other = count(ps.filter((p) => botSide(p) !== 'yes'));
+  return REPEAT_BUCKETS.map((name, i) => ({ name, bot: bot[i], other: other[i] }));
+}
+
+/** שורה ברשימה נפתחת: בלי שם, טלפון, קוד מזהה או קישור */
+export interface BuyItem {
+  at: string;
+  product: string | null;
+  amount: number | null;
+  reason: string;
+  side: BotSide;
+  campaign: string | null;
+}
+
+/** הרשימה, מהחדש לישן */
+export function buyItems(ps: Purchase[], leads: Lead[]): BuyItem[] {
+  return ps
+    .map((p) => ({ at: p.at, product: p.product, amount: p.amount, reason: reasonOf(p), side: botSide(p), campaign: campaignOf(p, leads) }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** פער בנתונים: היום הראשון בלשונית הרכישות, וימים בלי אף שורה בין הראשון לאחרון */
+export function purchaseGaps(ps: Purchase[]): { first: string | null; missing: string[] } {
+  const days = new Set(ps.filter((p) => !p.fromLead).map((p) => dayKey(p.at)));
+  if (!days.size) return { first: null, missing: [] };
+  const sorted = [...days].sort();
+  const missing: string[] = [];
+  for (let d = sorted[0]; d < sorted[sorted.length - 1]; d = addDays(d, 1)) if (!days.has(d)) missing.push(d);
+  return { first: sorted[0], missing };
+}
+
+// ---------- קופונים (הנחיית המנהל, 31/10/2026) ----------
+
+export { BOT_COUPON_GROUP };
+/** הקופון של האתר להאלווין */
+export const SPOOKY = 'SPOOKY';
+
+/** רכישה עם הקופון האישי של הבוט, לפי "סיבה" שמתחילה ב"קופון הבוט" */
+export function usedBotCoupon(p: { reason: string | null }): boolean {
+  return p.reason?.startsWith('קופון הבוט') ?? false;
+}
+
+export interface CouponRow {
+  name: string;
+  purchases: number;
+  paid: number;
+  /** מתוכן "של הבוט" = כן */
+  bot: number;
+}
+
+/** קודים ברכישות, בלי רכישות בלי קופון. by: לפי כמות או לפי סכום */
+export function couponRows(ps: { coupon: string | null; amount: number | null; bot: 'yes' | 'no' | null }[], by: 'count' | 'money' = 'count'): CouponRow[] {
+  const m = new Map<string, CouponRow>();
+  for (const p of ps) {
+    if (!p.coupon) continue;
+    const r = m.get(p.coupon) ?? { name: p.coupon, purchases: 0, paid: 0, bot: 0 };
+    r.purchases++;
+    r.paid += p.amount && p.amount > 0 ? p.amount : 0;
+    if (p.bot === 'yes') r.bot++;
+    m.set(p.coupon, r);
+  }
+  return [...m.values()].sort((a, b) => (by === 'money' ? b.paid - a.paid : 0) || b.purchases - a.purchases || b.paid - a.paid || a.name.localeCompare(b.name));
+}
+
+export interface BotCoupons {
+  /** אנשים שהבוט הפיק להם קופון, לפי תאריך הקופון בטווח */
+  made: number;
+  /** מתוך כל מי שיש לו קופון: בלי תאריך קופון (נספרים רק כשאין סינון תאריכים) */
+  undated: number;
+  /** רכישות עם הקופון, לפי תאריך הרכישה בטווח */
+  used: number;
+  usedPaid: number;
+  /** used / made */
+  rate: number | null;
+}
+
+/** הקופון האישי של הבוט. העמודה שומרת רק את הקופון האחרון של כל אדם, ולכן made הוא מינימום. */
+export function botCoupons(leads: Lead[], ps: Purchase[], range: Range): BotCoupons {
+  const withCoupon = leads.filter((l) => l.botCoupon);
+  const open = !range.from && !range.to;
+  const undated = withCoupon.filter((l) => !l.couponAt).length;
+  const made = withCoupon.filter((l) => l.couponAt && inside(l.couponAt, range)).length + (open ? undated : 0);
+  const used = ps.filter(usedBotCoupon);
+  return { made, undated, used: used.length, usedPaid: paidSum(used), rate: made ? used.length / made : null };
+}
+
+/** כמה קופונים הבוט הפיק בכל יום (לפי "תאריך קופון") */
+export function botCouponSeries(leads: Lead[], range: Range, b: Bucket): { key: string; values: number[] }[] {
+  return timeSeries(leads.filter((l) => l.botCoupon && l.couponAt && inside(l.couponAt, range)), (l) => l.couponAt!, b, 1, () => [1]);
+}
+
+// ---------- דיוורים (הנחיית המנהל, 31/10/2026) ----------
+
+export interface MailingView {
+  campaign: string;
+  waves: MailingWave[];
+  /** שורת הסה"כ, או סכום הגלים כשאין אותה */
+  total: MailingWave;
+  others: MailingWave | null;
+  /** רכישות של נמענים אחרי השליחה */
+  recipients: MailingPurchase[];
+  /** רכישות של מי שלא היה נמען, או קנה לפני השליחה */
+  nonRecipients: MailingPurchase[];
+  /** קונים שונים מבין הנמענים שקנו דרך קישור הקמפיין */
+  linkBuyers: number;
+  coupons: { spooky: number; other: number; none: number };
+}
+
+/** הקמפיינים בלשוניות הדיוורים, לפי הסדר שבו הם מופיעים */
+export function mailingCampaigns(waves: MailingWave[], ms: MailingPurchase[]): string[] {
+  return [...new Set([...waves.map((w) => w.campaign), ...ms.map((m) => m.campaign)].filter(Boolean))];
+}
+
+export function mailingView(campaign: string, allWaves: MailingWave[], allMs: MailingPurchase[]): MailingView {
+  const rows = allWaves.filter((w) => w.campaign === campaign);
+  const waves = rows.filter((w) => w.kind === 'wave');
+  const add = (k: keyof MailingWave) => (waves.some((w) => w[k] !== null) ? waves.reduce((s, w) => s + ((w[k] as number | null) ?? 0), 0) : null);
+  const total = rows.find((w) => w.kind === 'total') ?? {
+    campaign, wave: 'סה"כ', kind: 'total' as const, sentDay: null, sent: add('sent'), undelivered: add('undelivered'), delivered: add('delivered'), buyers: null,
+    purchases: add('purchases'), amount: add('amount'), viaLinkPurchases: add('viaLinkPurchases'), viaLinkAmount: add('viaLinkAmount'), spooky: add('spooky'), bot: add('bot'), note: null,
+  };
+  const ms = allMs.filter((m) => m.campaign === campaign).sort((a, b) => b.at.localeCompare(a.at));
+  const recipients = ms.filter((m) => m.sentAt !== null);
+  return {
+    campaign, waves, total, others: rows.find((w) => w.kind === 'others') ?? null,
+    recipients, nonRecipients: ms.filter((m) => m.sentAt === null),
+    linkBuyers: buyersOf(recipients.filter((m) => m.viaLink)),
+    coupons: {
+      spooky: recipients.filter((m) => m.coupon === SPOOKY).length,
+      other: recipients.filter((m) => m.coupon && m.coupon !== SPOOKY).length,
+      none: recipients.filter((m) => !m.coupon).length,
+    },
+  };
+}
+
+// ---------- הפופאפ באתר (הנחיית המנהל, 31/10/2026) ----------
+
+/** BH של מי שנכנס מהפופאפ באתר */
+export const POPUP = 'popup_website';
+/** הפופאפ עלה בשבוע של 19/10/2026 (הנחיית המנהל). ההשוואה למי שלא הגיע מהפופאפ מתחילה מכאן */
+export const POPUP_START = '2026-10-19';
+
+/** זמן הכניסה של אדם: "תאריך כניסה" המוקדם ביותר שלו */
+export function entryOf(l: Lead): string {
+  return l.firstAt ?? l.at;
+}
+
+export function fromPopup(l: Lead): boolean {
+  return l.campaign === POPUP;
+}
+
+/** אדם עם הרכישות שלו מתאריך הכניסה והלאה */
+export interface PopupPerson {
+  lead: LeadX;
+  entry: string;
+  /** רכישות ביום הכניסה או אחריו */
+  after: Purchase[];
+  /** קנה גם לפני יום הכניסה */
+  boughtBefore: boolean;
+}
+
+export function withPurchasesAfterEntry(leads: LeadX[], purchases: Purchase[]): PopupPerson[] {
+  const byLead = new Map<number, Purchase[]>();
+  for (const p of purchases) {
+    if (p.lead === null) continue;
+    const g = byLead.get(p.lead);
+    if (g) g.push(p);
+    else byLead.set(p.lead, [p]);
+  }
+  return leads.map((l) => {
+    const entry = entryOf(l);
+    const day = dayKey(entry);
+    const mine = byLead.get(l.i) ?? [];
+    return { lead: l, entry, after: mine.filter((p) => dayKey(p.at) >= day), boughtBefore: mine.some((p) => dayKey(p.at) < day) };
+  });
+}
+
+export interface PopupFunnel {
+  entered: number;
+  /** BI = 1: שלחו רק את המשפט המוכן */
+  onlySentence: number;
+  /** BI = 2 */
+  twoMessages: number;
+  /** BD = כן */
+  real: number;
+  realSales: number;
+  realService: number;
+  /** קנו ביום הכניסה או אחריו */
+  buyers: number;
+  newBuyers: number;
+  returningBuyers: number;
+  purchases: number;
+  paid: number;
+  avgDeal: number | null;
+  /** מתוך הרכישות האלה, "של הבוט" = כן */
+  botPurchases: number;
+  botPaid: number;
+  /** הזמן מהכניסה לרכישה הראשונה אחריה */
+  timeToBuy: { name: string; count: number }[];
+}
+
+export const TIME_TO_BUY = ['פחות מיום', '1 עד 7 ימים', '7 עד 30 ימים', 'יותר מ-30 ימים'];
+
+export function popupFunnel(people: PopupPerson[]): PopupFunnel {
+  const buyers = people.filter((x) => x.after.length > 0);
+  const after = buyers.flatMap((x) => x.after);
+  const bot = after.filter((p) => botSide(p) === 'yes');
+  const real = people.filter((x) => realConversation(x.lead));
+  const withAmount = after.filter((p) => (p.amount ?? 0) > 0).length;
+  const time = TIME_TO_BUY.map(() => 0);
+  for (const x of buyers) {
+    const first = Math.min(...x.after.map((p) => new Date(p.at).getTime()));
+    const days = (first - new Date(x.entry).getTime()) / 86_400_000;
+    time[days < 1 ? 0 : days < 7 ? 1 : days < 30 ? 2 : 3]++;
+  }
+  return {
+    entered: people.length,
+    onlySentence: people.filter((x) => x.lead.messages === 1).length,
+    twoMessages: people.filter((x) => x.lead.messages === 2).length,
+    real: real.length,
+    realSales: real.filter((x) => salesConversation(x.lead)).length,
+    realService: real.filter((x) => normalizeMode(x.lead.mode) === MODE_SERVICE).length,
+    buyers: buyers.length,
+    newBuyers: buyers.filter((x) => !x.boughtBefore).length,
+    returningBuyers: buyers.filter((x) => x.boughtBefore).length,
+    purchases: after.length,
+    paid: paidSum(after),
+    avgDeal: withAmount ? paidSum(after) / withAmount : null,
+    botPurchases: bot.length,
+    botPaid: paidSum(bot),
+    timeToBuy: TIME_TO_BUY.map((name, i) => ({ name, count: time[i] })),
+  };
+}
+
+export interface CompareRow {
+  people: number;
+  /** שיחה אמיתית מתוך מי שהסוכן כבר סרק */
+  scanned: number;
+  real: number;
+  realRate: number | null;
+  buyers: number;
+  buyRate: number | null;
+}
+
+function compareRow(people: PopupPerson[]): CompareRow {
+  const scanned = people.filter((x) => aiAnalyzed(x.lead)).length;
+  const real = people.filter((x) => realConversation(x.lead)).length;
+  const buyers = people.filter((x) => x.after.length > 0).length;
+  return { people: people.length, scanned, real, realRate: scanned ? real / scanned : null, buyers, buyRate: people.length ? buyers / people.length : null };
+}
+
+/** הפופאפ מול מי שלא הגיע ממנו, באותה תקופה: נכנסו בטווח, ולא לפני שהפופאפ עלה */
+export function popupCompare(people: PopupPerson[], range: Range): { popup: CompareRow; others: CompareRow; from: string } {
+  const start = israelDayStart(POPUP_START);
+  const from = range.from && range.from > start ? range.from : start;
+  const inPeriod = people.filter((x) => inside(x.entry, { from, to: range.to }));
+  return { popup: compareRow(inPeriod.filter((x) => fromPopup(x.lead))), others: compareRow(inPeriod.filter((x) => !fromPopup(x.lead))), from: dayKey(from) };
+}
+
+// ---------- תקינות מעקב קמפיינים (הנחיית המנהל, 31/10/2026) ----------
+
+/** utm_campaign שהוא קוד של מודעה שלא מולא, למשל {campaignname} */
+export const UNFILLED_CAMPAIGN = /^\{.*\}$|^(campaign_?name|campaign\.name|adset_?name|adset\.name|ad_?name|ad\.name)$/i;
+
+export interface TrackingHealth {
+  total: number;
+  last7: number;
+  byValue: { name: string; count: number; last7: number }[];
+}
+
+/** אנשים שה-BH שלהם לא מולא, בסך הכול וב-7 הימים האחרונים (לפי תאריך הכניסה) */
+export function trackingHealth(leads: Lead[], now: Date): TrackingHealth {
+  const since = now.getTime() - 7 * 86_400_000;
+  const bad = leads.filter((l) => l.campaign && UNFILLED_CAMPAIGN.test(l.campaign));
+  const recent = (l: Lead) => new Date(l.at).getTime() >= since;
+  const m = new Map<string, { name: string; count: number; last7: number }>();
+  for (const l of bad) {
+    const r = m.get(l.campaign!) ?? { name: l.campaign!, count: 0, last7: 0 };
+    r.count++;
+    if (recent(l)) r.last7++;
+    m.set(l.campaign!, r);
+  }
+  return { total: bad.length, last7: bad.filter(recent).length, byValue: [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) };
 }
