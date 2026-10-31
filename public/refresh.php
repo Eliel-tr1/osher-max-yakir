@@ -15,6 +15,9 @@ require __DIR__ . '/_leads.php';
 const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
 const SHEET_GID = '0';            // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
 const PURCHASES_GID = '282711056'; // הלשונית "רכישות": שורה לכל רכישה (החלטת המנהל, 2026-10-29)
+const MAILINGS_GID = '704173708';  // הלשונית "דיוורים": שורה לכל רכישה בקמפיין (31/10/2026). חסרה = הסקשן מוסתר
+const WAVES_GID = '359996576';     // הלשונית "דיוורים - סיכום"
+
 const MIN_GAP = 10;
 
 $dataDir = __DIR__ . '/data';
@@ -83,8 +86,13 @@ if ($err) out(502, ['ok' => false, 'error' => $err]);
 [$purchasesCsv, $err] = fetch_tab(PURCHASES_GID);
 if ($err) out(502, ['ok' => false, 'error' => $err]);
 
+// לשוניות הדיוורים לא חובה: כשהקריאה נכשלת הסקשן מוסתר, והשאר מתעדכן
+[$mailingsCsv] = fetch_tab(MAILINGS_GID);
+[$wavesCsv] = fetch_tab(WAVES_GID);
+
 try {
-    $file = osher_leads_from_rows(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')));
+    $file = osher_leads_from_rows(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')),
+        $mailingsCsv !== null ? osher_parse_csv($mailingsCsv) : null, $wavesCsv !== null ? osher_parse_csv($wavesCsv) : null);
 } catch (RuntimeException $e) {
     out(422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']);
 }
@@ -104,4 +112,6 @@ out(200, [
     'purchaseRows' => $file['purchaseRows'],
     'leads' => count($file['leads']),
     'purchases' => count($file['purchases']),
+    'mailings' => $file['mailings'] === null ? null : count($file['mailings']),
+    'mailingWaves' => $file['mailingWaves'] === null ? null : count($file['mailingWaves']),
 ]);

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { pack } from '../lib/leads/file';
-import { leadsFromRows, OPTIONAL_COLUMNS, PURCHASE_COLUMNS, REQUIRED_COLUMNS } from '../lib/leads/fromSheet';
+import { leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS, REQUIRED_COLUMNS } from '../lib/leads/fromSheet';
 import { parseCsv } from '../lib/sheet/parse';
 
 /**
@@ -35,11 +35,14 @@ const TESTS = ['', 'One Step Assessment - 100K - MT5', 'Freedom Challenge - MT5 
 const SOURCES = ["אורגני - צ'אטבוט וואטסאפ", 'צאטבוט', '  ריווח מיוחד  ', 'Lightning Pro', 'ig', 'vitrue', 'One Step Assessment - 100K - MT5', ''];
 
 /** טבלת לידים מדומה עם כל המקרים הקשים: מרכאות, שורות בתוך תא, HTML, כפילויות, תאריכים שבורים וישנים, רווחים מיוחדים */
+const COUPONS = ['', '-', 'empty', 'EMPTY', ' pass50 ', '{"code":"spooky","discount":"10"}', '{"code":"","discount":""}', '{"discount":"5"}', '{bad json',
+  'PTB-1A2B3C4D5E', 'ptb-1a2b3c4d5e', 'PTB-FLASH25', '{"code":"PTB-00FF00FF00"}', '{"code":null}'];
+
 function fixture(n: number, extraHeader = true): { leads: string; purchases: string } {
   const rnd = seeded(42);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const header = ['שם לקוח', ...REQUIRED_COLUMNS, 'טלפון', 'מייל', 'הערות', ...(extraHeader ? ['עמודה עתידית', ...OPTIONAL_COLUMNS] : [])];
-  const pheader = ['שם לקוח', ...PURCHASE_COLUMNS, 'טלפון', 'קופון מהרכישה', ...(extraHeader ? ['utm_campaign', 'של הבוט'] : [])];
+  const pheader = ['שם לקוח', ...PURCHASE_COLUMNS, 'טלפון', ...(extraHeader ? ['קופון מהרכישה', 'utm_campaign', 'של הבוט', 'סיבה'] : [])];
   const lines = [`﻿${header.map(q).join(',')}`];
   const plines = [pheader.map(q).join(',')];
   const date = (year = 2026) => {
@@ -71,11 +74,17 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
       'עמודה עתידית': 'x',
       'התחיל שיחה': pick(['', 'כן', 'לא', 'TRUE', 'false', '0']),
       'אופן שיחה': pick(['', 'שירותית', 'מכירתי', 'מכירתית', 'אין שיחה']),
+      utm_campaign: pick(['', '', 'popup_website', 'campaignname', '{campaignname}', ' [UK] - CBO - 27/07 ']),
+      'הודעות לקוח': pick(['', '0', '1', '2', '17', 'x']),
+      'קופון הבוט': pick(['', '', '', 'PTB-1A2B3C4D5E']),
+      'תאריך קופון': pick(['', '28/10/2026', '1/9/2026', 'לא תאריך']),
     };
     lines.push(header.map((h) => q(v[h] ?? '')).join(','));
     if (rnd() < 0.15) {
       // כפילות: אותו קוד מזהה, אותה שנייה או כמה שניות אחרי, עם פחות או יותר נתונים
-      const copy: Record<string, string> = { ...v, הערות: rnd() < 0.5 ? '' : 'עוד', 'סטטוס שאלון': pick([v['סטטוס שאלון'], 'converted']) };
+      const copy: Record<string, string> = {
+        ...v, הערות: rnd() < 0.5 ? '' : 'עוד', 'סטטוס שאלון': pick([v['סטטוס שאלון'], 'converted']), 'תאריך כניסה': rnd() < 0.5 ? v['תאריך כניסה'] : date(),
+      };
       lines.push(header.map((h) => q(copy[h] ?? '')).join(','));
     }
     if (rnd() < 0.03) lines.push(header.map(() => '').join(','));
@@ -88,6 +97,8 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
         'מוצר שנקנה': rnd() < 0.3 ? pick(['', '-']) : pick(PRODUCTS), 'סכום ששולם': rnd() < 0.3 ? amount : pick(['', '5', '14', '169']),
         טלפון: v['טלפון'], 'קופון מהרכישה': pick(['', 'pass50', '{"code":"","discount":""}']), utm_campaign: pick(['', 'halloween_lightning']),
         'של הבוט': pick(['', 'כן', ' כן ', 'לא', 'yes', 'כן.', '\u00a0כן\u00a0', 'כ ן']),
+        'קופון מהרכישה': pick(COUPONS),
+        סיבה: pick(['', 'שיחה מכירתית לפני הרכישה', 'לא כתב לבוט', ' קופון הבוט (נוצר לאיש קשר אחר של הלקוח) ']),
       };
       plines.push(pheader.map((h) => q(p[h] ?? '')).join(','));
       if (rnd() < 0.2) {
@@ -101,16 +112,38 @@ function fixture(n: number, extraHeader = true): { leads: string; purchases: str
   return { leads: lines.join(rnd() < 0.5 ? '\r\n' : '\n'), purchases: plines.join('\r\n') };
 }
 
-function viaPhp(leads: string, at: string, purchases?: string): unknown {
-  const dir = mkdtempSync(join(tmpdir(), 'parity-'));
-  const file = join(dir, 'leads.csv');
-  writeFileSync(file, leads);
-  const args = [file, at];
-  if (purchases !== undefined) {
-    const pfile = join(dir, 'purchases.csv');
-    writeFileSync(pfile, purchases);
-    args.push(pfile);
+/** לשוניות "דיוורים" ו"דיוורים - סיכום" מדומות */
+function mailingFixture(): { mailings: string; waves: string } {
+  const rnd = seeded(7);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+  const mh = [...MAILING_COLUMNS, 'לינק לשיחה'];
+  const ml = [mh.map(q).join(',')];
+  for (let i = 0; i < 80; i++) {
+    const recipient = rnd() < 0.9;
+    const v: Record<string, string> = {
+      קמפיין: pick(['halloween_lightning', 'halloween_lightning', 'black_friday']), גל: recipient ? pick(['גל 1 · 28/10', 'גל 2 · 29/10']) : 'לא נמען / לפני השליחה שלו',
+      'תאריך שליחה': recipient ? pick(['28/10/2026 11:00', '29/10/2026 09:30']) : '', 'תאריך רכישה': pick(['28/10/2026 12:15', '30/10/2026 08:01', '', 'שבור']),
+      'קוד מזהה': pick(['A', 'B', 'C', '', 'D']), מוצר: pick(['Lightning Pro', 'Instant Funding account<span> - </span>MT5, 5k', '']), סכום: pick(['169', '19.37', '', '€2,400']),
+      'דרך קישור הקמפיין': pick(['כן', 'לא', '']), קופון: pick(COUPONS), 'של הבוט': pick(['כן', 'לא', '']), סיבה: pick(['קישור הבוט (vitrue)', '']), 'לינק לשיחה': 'https://example.com/x',
+    };
+    ml.push(mh.map((h) => q(v[h] ?? '')).join(','));
   }
+  const wl = [MAILING_WAVE_COLUMNS.map(q).join(',')];
+  wl.push(['halloween_lightning', 'גל 1 · 28/10', '28/10/2026', '200', '14', '186', '18', '23', '2367.22', '3', '93.55', '5', '22', 'שידור אחד, "מהיר"'].map(q).join(','));
+  wl.push(['halloween_lightning', 'לא נמען / לפני השליחה שלו', '', '', '', '', '2', '2', '85.5', '2', '85.5', '2', '2', ''].map(q).join(','));
+  wl.push(['halloween_lightning', 'סה"כ נמענים', '28-31/10/2026', '900', '121', '779', '47', '58', '5436.28', '18', '630.99', '20', '54', 'הערה'].map(q).join(','));
+  return { mailings: ml.join('\r\n'), waves: wl.join('\n') };
+}
+
+function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string): unknown {
+  const dir = mkdtempSync(join(tmpdir(), 'parity-'));
+  const write = (name: string, text: string | undefined) => {
+    if (text === undefined) return '-';
+    const f = join(dir, name);
+    writeFileSync(f, text);
+    return f;
+  };
+  const args = [write('leads.csv', leads), at, write('purchases.csv', purchases), write('mailings.csv', mailings), write('waves.csv', waves)];
   return JSON.parse(execFileSync('php', ['scripts/php-leads.php', ...args], { encoding: 'utf8', maxBuffer: 50e6 }));
 }
 
@@ -127,7 +160,24 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     expect(ts.purchases.some((p: { campaign?: string }) => p.campaign)).toBe(true);
     for (const v of ['yes', 'no']) expect(ts.purchases.some((p: { bot?: string }) => p.bot === v)).toBe(true);
     expect(ts.purchases.some((p: { bot?: string }) => p.bot === undefined)).toBe(true);
+    expect(ts.purchases.some((p: { coupon?: string }) => p.coupon === 'קופון אישי של הבוט')).toBe(true);
+    expect(ts.leads.some((l: { firstAt?: string }) => l.firstAt)).toBe(true);
     expect(ph).toEqual(ts);
+  });
+
+  it('with the mailing tabs, and when one of them is missing or broken', () => {
+    const { leads, purchases } = fixture(150);
+    const { mailings, waves } = mailingFixture();
+    const ts = (m: string | null, w: string | null) =>
+      JSON.parse(pack(leadsFromRows(parseCsv(leads), parseCsv(purchases), new Date(at), m === null ? null : parseCsv(m), w === null ? null : parseCsv(w))));
+    const full = ts(mailings, waves);
+    expect(full.mailings.length).toBeGreaterThan(25);
+    expect(full.mailingWaves.map((w: { kind: string }) => w.kind)).toEqual(['wave', 'others', 'total']);
+    expect(viaPhp(leads, at, purchases, mailings, waves)).toEqual(full);
+    expect(viaPhp(leads, at, purchases, undefined, waves)).toEqual(ts(null, waves));
+    const broken = mailings.replace('תאריך רכישה', 'תאריך');
+    expect(viaPhp(leads, at, purchases, broken, waves)).toEqual(ts(broken, waves));
+    expect(ts(broken, waves).mailings).toBeUndefined();
   });
 
   it('without the optional columns, and without a purchases tab', () => {

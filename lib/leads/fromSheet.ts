@@ -1,5 +1,5 @@
 import { cleanText, parseAmount, parseSheetDate, israelDayStart } from '../sheet/parse';
-import type { Lead, LeadsFile, Purchase } from './types';
+import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from './types';
 
 /** עמודות שהדשבורד צריך בלשונית הלידים. אם אחת מהן חסרה, הבנייה נכשלת בהודעה ברורה ולא מציגה מספרים שגויים. */
 export const REQUIRED_COLUMNS = [
@@ -11,7 +11,7 @@ export const REQUIRED_COLUMNS = [
  * עמודות שהדשבורד משתמש בהן אם הן קיימות. בלעדיהן השדה פשוט ריק.
  * הן ממולאות על ידי סוכן AI. עמודות חדשות אחרות בטבלה לא משפיעות על הדשבורד: הוא קורא לפי שם, לא לפי מיקום.
  */
-export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה'] as const;
+export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה', 'utm_campaign', 'הודעות לקוח', 'קופון הבוט', 'תאריך קופון'] as const;
 
 /** עמודות שהדשבורד צריך בלשונית הרכישות. */
 export const PURCHASE_COLUMNS = ['תאריך', 'קוד מזהה', 'מקור הגעה', 'מוצר שנקנה', 'סכום ששולם'] as const;
@@ -19,7 +19,39 @@ export const PURCHASE_COLUMNS = ['תאריך', 'קוד מזהה', 'מקור הג
  * עמודות של רכישות שהדשבורד קורא אם הן קיימות. בלעדיהן הרענון לא נכשל.
  * "של הבוט": ההכרעה אם הרכישה של הבוט, נכתבת רק על ידי הסוכן של המנהל (החלטת המנהל, 29/10/2026).
  */
-export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign', 'של הבוט'] as const;
+export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign', 'של הבוט', 'סיבה', 'קופון מהרכישה'] as const;
+
+/** לשונית "דיוורים": שורה לכל רכישה בקמפיין. כשחסרה עמודה, הלשונית נחשבת חסרה והסקשן מוסתר. */
+export const MAILING_COLUMNS = ['קמפיין', 'גל', 'תאריך שליחה', 'תאריך רכישה', 'קוד מזהה', 'מוצר', 'סכום', 'דרך קישור הקמפיין', 'קופון', 'של הבוט', 'סיבה'] as const;
+/** לשונית "דיוורים - סיכום": שורה לכל גל, שורה למי שלא היה נמען ושורת סה"כ */
+export const MAILING_WAVE_COLUMNS = [
+  'קמפיין', 'גל', 'תאריך שליחה', 'נשלחו', 'לא נמסרו (WhatsApp)', 'נמסרו', 'קונים', 'רכישות', 'סכום',
+  'רכישות דרך הקישור', 'סכום דרך הקישור', 'רכישות עם SPOOKY', 'של הבוט = כן', 'הערה',
+] as const;
+
+/** קבוצת הקופונים האישיים שהבוט מפיק. הקודים עצמם לא נשמרים ולא מוצגים. */
+export const BOT_COUPON_GROUP = 'קופון אישי של הבוט';
+const BOT_COUPON = /^PTB-[0-9A-F]{10}$/;
+
+/**
+ * "קופון מהרכישה" לקוד אחד: לפעמים JSON עם השדה code ולפעמים טקסט. אותיות גדולות.
+ * ריק, "-" ו-empty = בלי קופון (null). קופון אישי של הבוט = BOT_COUPON_GROUP.
+ */
+export function couponCode(v: string): string | null {
+  let t = v.trim();
+  if (t.startsWith('{')) {
+    try {
+      const j: unknown = JSON.parse(t);
+      const code = j && typeof j === 'object' && !Array.isArray(j) ? (j as Record<string, unknown>).code : undefined;
+      t = typeof code === 'string' ? code : '';
+    } catch {
+      // לא JSON תקין: נשאר כטקסט
+    }
+  }
+  t = t.trim().toUpperCase();
+  if (t === '' || t === '-' || t === 'EMPTY') return null;
+  return BOT_COUPON.test(t) ? BOT_COUPON_GROUP : t;
+}
 
 /** הערך של "של הבוט" שאומר שהרכישה של הבוט. רק הוא, בדיוק, אחרי הסרת רווחים בקצוות. */
 export const BOT_YES = 'כן';
@@ -64,6 +96,8 @@ export function sourceGroupOf(source: string | null, productNames: Set<string>):
 
 type LeadColumn = (typeof REQUIRED_COLUMNS)[number] | (typeof OPTIONAL_COLUMNS)[number];
 type PurchaseColumn = (typeof PURCHASE_COLUMNS)[number] | (typeof OPTIONAL_PURCHASE_COLUMNS)[number];
+type MailingColumn = (typeof MAILING_COLUMNS)[number];
+type WaveColumn = (typeof MAILING_WAVE_COLUMNS)[number];
 
 export class SheetShapeError extends Error {}
 
@@ -90,7 +124,10 @@ function indexer(rows: string[][], required: readonly string[], tabName: string)
  * מהשורות של שתי הלשוניות לקובץ הנתונים. purchaseRows = null כשאין לשונית רכישות: אז הרכישות נלקחות
  * משורות הלידים בלבד (הרכישה האחרונה של כל אדם).
  */
-export function leadsFromRows(leadRows: string[][], purchaseRows: string[][] | null = null, generatedAt = new Date()): LeadsFile {
+export function leadsFromRows(
+  leadRows: string[][], purchaseRows: string[][] | null = null, generatedAt = new Date(),
+  mailingRows: string[][] | null = null, waveRows: string[][] | null = null,
+): LeadsFile {
   const L = indexer(leadRows, REQUIRED_COLUMNS, 'הלידים');
   const lcol = (r: string[], name: LeadColumn) => L.col(r, name);
   const start = israelDayStart(START_DAY).getTime();
@@ -103,6 +140,13 @@ export function leadsFromRows(leadRows: string[][], purchaseRows: string[][] | n
   });
 
   const kept = dedupeByNs(raws).sort((a, b) => a.at.getTime() - b.at.getTime() || a.index - b.index);
+  // תאריך הכניסה המוקדם ביותר של כל אדם
+  const firstOfNs = new Map<string, Date>();
+  for (const r of raws) {
+    if (r.ns === '') continue;
+    const f = firstOfNs.get(r.ns);
+    if (!f || r.at.getTime() < f.getTime()) firstOfNs.set(r.ns, r.at);
+  }
 
   // שמות של מוצרים ומבחנים, כדי לזהות "מקור הגעה" שהוא בעצם שם מוצר
   const productNames = new Set<string>();
@@ -119,19 +163,34 @@ export function leadsFromRows(leadRows: string[][], purchaseRows: string[][] | n
     if (p) productNames.add(p);
   }
 
-  const leads = kept.map((r) => toLead(r, lcol, productNames));
+  const leads = kept.map((r) => toLead(r, lcol, productNames, firstOfNs.get(r.ns) ?? null));
   const leadOfNs = new Map<string, number>();
   kept.forEach((r, i) => {
     if (r.ns !== '') leadOfNs.set(r.ns, i);
   });
 
-  const purchases = P ? purchasesFromRows(P.data, pcol, leads, leadOfNs, productNames, start) : [];
+  // מספר סידורי לכל קונה: קוד מזהה שונה = מספר שונה; בלי קוד מזהה = קונה בפני עצמו
+  const buyerOfNs = new Map<string, number>();
+  let nextBuyer = 0;
+  const buyerId = (ns: string) => {
+    if (ns === '') return nextBuyer++;
+    let id = buyerOfNs.get(ns);
+    if (id === undefined) {
+      id = nextBuyer++;
+      buyerOfNs.set(ns, id);
+    }
+    return id;
+  };
+  const purchases = P ? purchasesFromRows(P.data, pcol, leads, leadOfNs, productNames, start, buyerId) : [];
   // קונים שמסומנים בלשונית הלידים ואין להם אף שורה בלשונית הרכישות: הרכישה האחרונה שלהם נלקחת משם
   const withRows = new Set(purchases.map((p) => p.lead).filter((l): l is number => l !== null));
   leads.forEach((l, i) => {
     if ((l.qStatus === 'converted' || l.qStatus === 'payment') && !withRows.has(i)) {
       // רכישה משורת ליד: אין לה תא "של הבוט", ולכן היא עוד לא הוכרעה
-      purchases.push({ at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null });
+      purchases.push({
+        at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null,
+        reason: null, coupon: null, buyer: buyerId(kept[i].ns),
+      });
     }
   });
   purchases.sort((a, b) => a.at.localeCompare(b.at) || (a.lead ?? -1) - (b.lead ?? -1));
@@ -144,7 +203,66 @@ export function leadsFromRows(leadRows: string[][], purchaseRows: string[][] | n
     purchaseRows: P ? P.data.length : 0,
     leads,
     purchases,
+    mailings: mailingRows ? mailingsFromRows(mailingRows) : null,
+    mailingWaves: waveRows ? wavesFromRows(waveRows) : null,
   };
+}
+
+/** כמו indexer, אבל לשונית שחסרה בה עמודה מחזירה null במקום לזרוק: הסקשן מוסתר והדשבורד ממשיך */
+function optionalIndexer(rows: string[][], required: readonly string[]) {
+  try {
+    return indexer(rows, required, '');
+  } catch {
+    return null;
+  }
+}
+
+/** לשונית "דיוורים" */
+export function mailingsFromRows(rows: string[][]): MailingPurchase[] | null {
+  const M = optionalIndexer(rows, MAILING_COLUMNS);
+  if (!M) return null;
+  const c = (r: string[], name: MailingColumn) => M.col(r, name);
+  const ids = new Map<string, number>();
+  let next = 0;
+  const out: MailingPurchase[] = [];
+  for (const r of M.data) {
+    const at = parseSheetDate(c(r, 'תאריך רכישה'));
+    if (!at) continue;
+    const ns = c(r, 'קוד מזהה');
+    let buyer: number;
+    if (ns === '') buyer = next++;
+    else {
+      const id = ids.get(ns);
+      if (id === undefined) {
+        buyer = next++;
+        ids.set(ns, buyer);
+      } else buyer = id;
+    }
+    out.push({
+      campaign: c(r, 'קמפיין'), wave: c(r, 'גל'), sentAt: parseSheetDate(c(r, 'תאריך שליחה'))?.toISOString() ?? null, at: at.toISOString(), buyer,
+      product: cleanText(c(r, 'מוצר')), amount: parseAmount(c(r, 'סכום')), viaLink: c(r, 'דרך קישור הקמפיין') === BOT_YES,
+      coupon: couponCode(c(r, 'קופון')), bot: botFlag(c(r, 'של הבוט')), reason: cleanText(c(r, 'סיבה')),
+    });
+  }
+  return out;
+}
+
+/** לשונית "דיוורים - סיכום". שורת סה"כ מזוהה לפי "סה"כ" בעמודה "גל"; שורה בלי "נשלחו" היא של מי שלא היה נמען. */
+export function wavesFromRows(rows: string[][]): MailingWave[] | null {
+  const W = optionalIndexer(rows, MAILING_WAVE_COLUMNS);
+  if (!W) return null;
+  const c = (r: string[], name: WaveColumn) => W.col(r, name);
+  const n = (r: string[], name: WaveColumn) => parseAmount(c(r, name));
+  return W.data.map((r) => {
+    const wave = c(r, 'גל');
+    const sent = n(r, 'נשלחו');
+    return {
+      campaign: c(r, 'קמפיין'), wave, kind: wave.includes('סה"כ') ? 'total' : sent !== null ? 'wave' : 'others', sentDay: cleanText(c(r, 'תאריך שליחה')),
+      sent, undelivered: n(r, 'לא נמסרו (WhatsApp)'), delivered: n(r, 'נמסרו'), buyers: n(r, 'קונים'), purchases: n(r, 'רכישות'), amount: n(r, 'סכום'),
+      viaLinkPurchases: n(r, 'רכישות דרך הקישור'), viaLinkAmount: n(r, 'סכום דרך הקישור'), spooky: n(r, 'רכישות עם SPOOKY'), bot: n(r, 'של הבוט = כן'),
+      note: cleanText(c(r, 'הערה')),
+    };
+  });
 }
 
 /** אדם אחד = קוד מזהה אחד. מכמה שורות של אותו קוד נשארת השורה עם יותר תאים מלאים, ובשוויון הראשונה (#13, #21). */
@@ -164,7 +282,7 @@ export function dedupeByNs(raws: Raw[]): Raw[] {
 
 function purchasesFromRows(
   data: string[][], col: (r: string[], name: PurchaseColumn) => string, leads: Lead[], leadOfNs: Map<string, number>,
-  productNames: Set<string>, start: number,
+  productNames: Set<string>, start: number, buyerId: (ns: string) => number,
 ): Purchase[] {
   const rows: { at: Date; ns: string; p: Purchase }[] = [];
   data.forEach((cells) => {
@@ -186,6 +304,7 @@ function purchasesFromRows(
       p: {
         at: at.toISOString(), lead, product, amount, source, sourceGroup: sourceGroupOf(source, productNames),
         campaign: cleanText(col(cells, 'utm_campaign')), fromLead: false, bot: botFlag(col(cells, 'של הבוט')),
+        reason: cleanText(col(cells, 'סיבה')), coupon: couponCode(col(cells, 'קופון מהרכישה')), buyer: buyerId(ns),
       },
     });
   });
@@ -208,7 +327,7 @@ function purchasesFromRows(
   return rows.filter((r) => !dropped.has(r)).map((r) => r.p);
 }
 
-function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productNames: Set<string>): Lead {
+function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productNames: Set<string>, first: Date | null): Lead {
   const c = (name: LeadColumn) => col(r.cells, name);
   const num = (v: string) => (v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
   const removedRaw = c('הסיר את עצמו?');
@@ -230,5 +349,10 @@ function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productN
     amount: parseAmount(c('סכום ששולם')),
     removedAt,
     mode: cleanText(c('אופן שיחה')),
+    campaign: cleanText(c('utm_campaign')),
+    messages: num(c('הודעות לקוח')),
+    botCoupon: c('קופון הבוט') !== '',
+    couponAt: parseSheetDate(c('תאריך קופון'))?.toISOString() ?? null,
+    firstAt: first && first.getTime() < r.at.getTime() ? first.toISOString() : null,
   };
 }

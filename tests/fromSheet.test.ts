@@ -23,7 +23,7 @@ describe('leadsFromRows', () => {
     const json = JSON.stringify(file);
     for (const secret of ['0500000001', 'x@example.com', 'לקוח בדיקה', 'פרטי', '"u1"']) expect(json).not.toContain(secret);
     expect(file.leads[0]).toMatchObject({ qStatus: 'converted', amount: 99, test: 'Test 20K', product: null, process: 'תהליך ראשי', sourceGroup: 'בוט וואטסאפ' });
-    expect(file.purchases).toEqual([{ at: '2026-10-02T08:00:00.000Z', lead: 0, product: 'Lightning Pro', amount: 99, source: 'ig', sourceGroup: 'ig', campaign: null, fromLead: false, bot: null }]);
+    expect(file.purchases).toEqual([{ at: '2026-10-02T08:00:00.000Z', lead: 0, product: 'Lightning Pro', amount: 99, source: 'ig', sourceGroup: 'ig', campaign: null, fromLead: false, bot: null, reason: null, coupon: null, buyer: 0 }]);
   });
 
   it('one person per id: keeps the fuller row, and the first when equally full', () => {
@@ -112,7 +112,7 @@ describe('leadsFromRows', () => {
     const withCols = leadsFromRows([header, r('כן')]);
     expect(withCols.leads[0]).toMatchObject({ aiConversation: 'yes', mode: 'מכירתית', removedAt: '2026-10-06T13:47:00.000Z' });
     expect(withCols.purchaseRows).toBe(0);
-    expect(withCols.purchases).toEqual([{ at: '2026-10-01T07:00:00.000Z', lead: 0, product: null, amount: 20, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null }]);
+    expect(withCols.purchases).toEqual([{ at: '2026-10-01T07:00:00.000Z', lead: 0, product: null, amount: 20, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null, reason: null, coupon: null, buyer: 0 }]);
     expect(leadsFromRows([header, r('לא')]).leads[0].aiConversation).toBe('no');
     expect(leadsFromRows([header, r('')]).leads[0].aiConversation).toBeNull();
     const without = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })]);
