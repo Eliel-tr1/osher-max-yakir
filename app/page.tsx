@@ -159,6 +159,7 @@ export default function Dashboard() {
       range,
       scoped,
       purchasesAll,
+      purchasesEver: pick({ from: null, to: null }),
       purchasesBefore: before ? pick(before) : null,
       dupes: dupesIn(file.dupes, range),
       summary: summarize(leads, purchasesAll),
@@ -306,7 +307,7 @@ export default function Dashboard() {
 
           <PurchasesSection all={view.purchasesAll} dupes={view.dupes} channel={channel} setChannel={setChannel} />
 
-          <CouponsSection people={view.scoped} all={view.purchasesAll} range={view.range} rangeKey={rangeKey} />
+          <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} />
 
           {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} />}
 

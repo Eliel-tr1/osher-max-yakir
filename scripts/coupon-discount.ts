@@ -47,5 +47,18 @@ for (const p of parsed) {
 }
 const both = [...byProduct.entries()].filter(([, m]) => m.has('קוד אישי של הבוט') && m.size > 1).slice(0, 8);
 for (const [prod, m] of both) out.push(`הנחה לפי מוצר: ${prod}: ${[...m.entries()].map(([g, s]) => `${g} ${[...s].join('/')}`).join(' · ')}`);
+// אחוז ההנחה: discount הוא סכום באירו, ולכן אחוז = הנחה / (ששולם + הנחה)
+const pcts = new Map<string, number[]>();
+for (const p of parsed) {
+  const d = Number(p.discount);
+  if (!Number.isFinite(d) || p.amount === null || d <= 0) continue;
+  const g = group(p.code);
+  (pcts.get(g) ?? pcts.set(g, []).get(g)!).push(Math.round((d / (p.amount + d)) * 100));
+}
+for (const [g, xs] of [...pcts.entries()].sort((a, b) => b[1].length - a[1].length)) {
+  const m = new Map<number, number>();
+  for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+  out.push(`אחוז הנחה: ${g}: ${[...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k}% (${v})`).join(', ')} מתוך ${xs.length}`);
+}
 void parseSheetDate;
 console.log(out.join('\n'));
