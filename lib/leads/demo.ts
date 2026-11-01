@@ -80,6 +80,7 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
       botCoupon,
       couponAt: botCoupon ? new Date(at.getTime() + Math.floor(rnd() * 2 * 86_400_000)).toISOString().slice(0, 10) + 'T00:00:00.000Z' : null,
       firstAt: null,
+      person: i,
     });
     for (let k = 0; k < buys; k++) {
       const pAt = new Date(at.getTime() + Math.floor(rnd() * 5 * 86_400_000));
@@ -98,6 +99,7 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
         reason: null,
         coupon: rnd() < 0.55 ? null : pick(CODES),
         buyer: i,
+        person: i,
       });
       const p = purchases[purchases.length - 1];
       if (rnd() > 0.06 || pAt.getTime() < until.getTime() - 2 * 86_400_000) {
@@ -113,6 +115,7 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
   for (const p of purchases) {
     p.lead = newIndex.get(p.lead!)!;
     p.buyer = p.lead;
+    p.person = sortedLeads[p.lead].person;
   }
   purchases.sort((a, b) => a.at.localeCompare(b.at) || (a.lead ?? -1) - (b.lead ?? -1));
   return {

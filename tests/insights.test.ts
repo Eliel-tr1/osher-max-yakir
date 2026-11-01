@@ -10,16 +10,19 @@ function lead(p: Partial<Lead>): Lead {
   return {
     at: '2026-10-20T07:00:00.000Z', source: null, sourceGroup: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
     step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null, campaign: null, messages: null, botCoupon: false, couponAt: null,
-    firstAt: null, ...p,
+    firstAt: null, ...p, person: p.person ?? -1,
   };
 }
 function buy(p: Partial<Purchase> & { buyer: number }): Purchase {
   return {
     at: '2026-10-22T07:00:00.000Z', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, bot: null,
-    reason: null, coupon: null, ...p,
+    reason: null, coupon: null, ...p, person: p.person ?? -1,
   };
 }
+/** אדם = הליד, אלא אם נקבע אחרת בבדיקה */
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
+  leads.forEach((l, i) => { if (l.person === -1) l.person = i; });
+  purchases.forEach((p, k) => { if (p.person === -1) p.person = p.lead ?? 100_000 + k; });
   return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [] };
 }
 const all = { from: null, to: null };
@@ -135,6 +138,17 @@ describe('the popup funnel', () => {
     buy({ buyer: 4, lead: 4, at: '2026-10-23T07:00:00.000Z', amount: 10 }),
   ];
   const people = withPurchasesAfterEntry(annotate(file(leads, purchases)), purchases);
+
+  it('finds a returning buyer who bought before under another id with the same phone', () => {
+    const ls = [lead({ campaign: 'popup_website', at: '2026-10-25T07:00:00.000Z', person: 7 })];
+    const ps = [
+      // קוד מזהה אחר (לא בלשונית הלידים), אותו אדם
+      buy({ buyer: 1, lead: null, person: 7, at: '2026-10-15T07:00:00.000Z', amount: 50 }),
+      buy({ buyer: 0, lead: 0, person: 7, at: '2026-10-26T07:00:00.000Z', amount: 20 }),
+    ];
+    const x = withPurchasesAfterEntry(annotate(file(ls, ps)), ps);
+    expect(popupFunnel(x)).toMatchObject({ buyers: 1, newBuyers: 0, returningBuyers: 1, purchases: 1, paid: 20 });
+  });
   const popup = people.filter((x) => x.lead.campaign === 'popup_website');
 
   it('counts every step', () => {

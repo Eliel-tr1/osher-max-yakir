@@ -8,10 +8,10 @@ export function pack(file: LeadsFile): string {
 const EMPTY_LEAD: Lead = {
   at: '', source: null, sourceGroup: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
   step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null,
-  campaign: null, messages: null, botCoupon: false, couponAt: null, firstAt: null,
+  campaign: null, messages: null, botCoupon: false, couponAt: null, firstAt: null, person: -1,
 };
 
-const EMPTY_PURCHASE: Omit<Purchase, 'buyer'> = {
+const EMPTY_PURCHASE: Omit<Purchase, 'buyer' | 'person'> = {
   at: '', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, bot: null, reason: null, coupon: null,
 };
 
@@ -33,9 +33,10 @@ export function unpack(json: unknown): LeadsFile {
     generatedAt: f.generatedAt ?? '',
     sheetRows: f.sheetRows ?? f.leads.length,
     purchaseRows: f.purchaseRows ?? f.purchases.length,
-    leads: f.leads.map((l) => ({ ...EMPTY_LEAD, ...l })),
+    // קובץ ישן בלי מספר אדם: כל ליד ורכישה אדם בפני עצמו
+    leads: f.leads.map((l, i) => ({ ...EMPTY_LEAD, ...l, person: l.person ?? -1e6 - i })),
     // קובץ ישן בלי מספר קונה: כל רכישה קונה בפני עצמה
-    purchases: f.purchases.map((p, i) => ({ ...EMPTY_PURCHASE, ...p, buyer: p.buyer ?? -1 - i })),
+    purchases: f.purchases.map((p, i) => ({ ...EMPTY_PURCHASE, ...p, buyer: p.buyer ?? -1 - i, person: p.person ?? -2e6 - i })),
     mailings: Array.isArray(f.mailings) ? f.mailings.map((m, i) => ({ ...EMPTY_MAILING, ...m, buyer: m.buyer ?? -1 - i })) : null,
     mailingWaves: Array.isArray(f.mailingWaves) ? f.mailingWaves.map((w) => ({ ...EMPTY_WAVE, ...w })) : null,
     dupes: Array.isArray(f.dupes) ? f.dupes : [],

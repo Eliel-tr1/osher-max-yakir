@@ -877,18 +877,21 @@ export interface PopupPerson {
   boughtBefore: boolean;
 }
 
+/**
+ * לכל ליד, הרכישות של אותו אדם מרגע הכניסה והלאה, ואם קנה גם לפני. אותו אדם = אותו מספר אדם, כלומר גם רכישות
+ * תחת קוד מזהה אחר עם אותו טלפון. לפי השעה ולא לפי היום (הנחיית המנהל, 1/11/2026).
+ */
 export function withPurchasesAfterEntry(leads: LeadX[], purchases: Purchase[]): PopupPerson[] {
-  const byLead = new Map<number, Purchase[]>();
+  const byPerson = new Map<number, Purchase[]>();
   for (const p of purchases) {
-    if (p.lead === null) continue;
-    const g = byLead.get(p.lead);
+    if (p.fromLead) continue;
+    const g = byPerson.get(p.person);
     if (g) g.push(p);
-    else byLead.set(p.lead, [p]);
+    else byPerson.set(p.person, [p]);
   }
-  // לפי השעה ולא לפי היום: מי שקנה באתר ואז נכנס מהפופאפ באותו יום הוא קונה חוזר (הנחיית המנהל, 1/11/2026)
   return leads.map((l) => {
     const entry = entryOf(l);
-    const mine = (byLead.get(l.i) ?? []).filter((p) => !p.fromLead);
+    const mine = byPerson.get(l.person) ?? [];
     return { lead: l, entry, after: mine.filter((p) => p.at >= entry), boughtBefore: mine.some((p) => p.at < entry) };
   });
 }

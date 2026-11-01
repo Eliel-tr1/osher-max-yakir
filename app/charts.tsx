@@ -1,30 +1,32 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export const nf = new Intl.NumberFormat('he-IL');
 export const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-/** סכום עם אגורות, לשורה אחת ברשימה */
-export const money2 = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const dec1 = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 1 });
 /** מספר עם ספרה אחת אחרי הנקודה, למשל רכישות לקונה */
 export function num1(v: number | null): string {
   return v === null ? '-' : dec1.format(v);
 }
-// en-GB נותן יום/חודש/שנה עם לוכסנים, כמו בטבלה
-const dateTime = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' });
-const dateOnly = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Jerusalem' });
-/** "28/10/2026 12:15" בשעון ישראל */
+const ymdIL = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit' });
+const hmIL = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+/** "1/11 10:41" בשעון ישראל */
 export function fmtDateTime(iso: string): string {
-  return dateTime.format(new Date(iso)).replace(',', '');
+  const d = new Date(iso);
+  return `${fmtDay(ymdIL.format(d))} ${hmIL.format(d)}`;
 }
-/** "28/10/2026" בשעון ישראל */
+/** "1/11" בשעון ישראל */
 export function fmtDate(iso: string): string {
-  return dateOnly.format(new Date(iso));
+  return fmtDay(ymdIL.format(new Date(iso)));
+}
+/** תאריך כמו שכתוב בגיליון ("28/10/2026", "28-31/10/2026") בלי השנה הנוכחית */
+export function fmtSheetDay(v: string | null): string {
+  if (!v) return '-';
+  return v.replace(new RegExp(`/${thisYear()}$`), '');
 }
 const monthName = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const monthShort = new Intl.DateTimeFormat('he-IL', { month: 'short', timeZone: 'UTC' });
-const dayShort = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'numeric', timeZone: 'UTC' });
 
 export function fmtMonth(m: string): string {
   return monthName.format(new Date(`${m}-15T12:00:00Z`));
@@ -34,8 +36,14 @@ export function fmtMonthShort(m: string): string {
   return monthShort.format(new Date(`${m}-15T12:00:00Z`));
 }
 
+/** "19/10" מתוך "2026-10-19". שנה רק כשהיא לא השנה הנוכחית (הנחיית המנהל, 1/11/2026) */
 export function fmtDay(d: string): string {
-  return dayShort.format(new Date(`${d}T12:00:00Z`));
+  const [y, m, day] = d.split('-').map(Number);
+  return y === thisYear() ? `${day}/${m}` : `${day}/${m}/${y}`;
+}
+
+function thisYear(): number {
+  return Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric' }).format(new Date()));
 }
 
 const pctFmt = new Intl.NumberFormat('he-IL', { style: 'percent', maximumFractionDigits: 0 });
@@ -58,6 +66,24 @@ export interface Series {
   label: string;
   /** משתנה CSS של הצבע */
   color: string;
+  /** פסים אלכסוניים (עוד לא הוכרע) */
+  hatch?: boolean;
+}
+
+/** מילוי של סדרה: צבע, או פסים אלכסוניים */
+function fillOf(s: Series, id: string): string {
+  return s.hatch ? `url(#${id}-hatch)` : `var(${s.color})`;
+}
+
+function HatchDef({ id }: { id: string }) {
+  return (
+    <defs>
+      <pattern id={`${id}-hatch`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="var(--open-a)" />
+        <rect width="2" height="6" fill="var(--open-b)" />
+      </pattern>
+    </defs>
+  );
 }
 
 function useWidth(initial = 640) {
@@ -77,7 +103,7 @@ function useWidth(initial = 640) {
  * עמודות לאורך זמן, אחת או כמה סדרות זו על זו. הזמן זורם משמאל לימין, כמו בכל ציר זמן.
  * ריחוף על עמודה מראה את הערכים המדויקים. money: הערכים הם כסף.
  */
-export function Columns({ labels, series, values, height = 150, labelEvery, isMoney }: {
+export function Columns({ labels, series, values, height = 150, labelEvery, isMoney, note, extraTip }: {
   labels: string[];
   series: Series[];
   /** values[i][s] = ערך העמודה i בסדרה s */
@@ -85,9 +111,14 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   height?: number;
   labelEvery?: number;
   isMoney?: boolean;
+  /** כיתוב קטן בתוך הגרף, בפינה העליונה */
+  note?: string;
+  /** שורה נוספת בחלונית הריחוף, לפי העמודה */
+  extraTip?: (i: number) => string | null;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth();
+  const uid = useId().replace(/:/g, '');
   const n = labels.length;
   if (!n) return <div ref={box}><p className="empty">אין נתונים בטווח הזה</p></div>;
   const f = isMoney ? money : nf;
@@ -105,6 +136,8 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   return (
     <div className="chart" dir="ltr" ref={box}>
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={series.map((s) => s.label).join(', ')} onMouseLeave={() => setHover(null)}>
+        {series.some((s) => s.hatch) && <HatchDef id={uid} />}
+        {note && <text x={W - 4} y={11} className="tick" textAnchor="end" direction="rtl">{note}</text>}
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="grid" />
@@ -124,7 +157,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
                 acc += val;
                 const isTop = v.slice(s + 1).every((z) => !z);
                 const h = Math.max(1, bottom - top - (s > 0 ? 1.5 : 0));
-                return <path key={s} d={barPath(x, top, bw, h, isTop)} fill={`var(${series[s].color})`} opacity={hover === null || hover === i ? 1 : 0.55} />;
+                return <path key={s} d={barPath(x, top, bw, h, isTop)} fill={fillOf(series[s], uid)} opacity={hover === null || hover === i ? 1 : 0.55} />;
               })}
               {slot >= 34 && totals[i] > 0 && (
                 <text x={x + bw / 2} y={y(totals[i]) - 4} className="cap" textAnchor="middle">{isMoney ? nf.format(Math.round(totals[i])) : nf.format(totals[i])}</text>
@@ -140,16 +173,13 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
         <div className="tip" dir="rtl" style={{ left: `${((padL + slot * hover + slot / 2) / W) * 100}%` }}>
           <strong>{labels[hover]}</strong>
           {series.map((s, k) => (
-            <span key={s.key}><i style={{ background: `var(${s.color})` }} />{s.label}: {f.format(values[hover][k])}</span>
+            <span key={s.key}><i className={s.hatch ? 'hatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}: {f.format(values[hover][k])}</span>
           ))}
           {series.length > 1 && <span>סך הכול: {f.format(totals[hover])}</span>}
+          {extraTip?.(hover) ? <span>{extraTip(hover)}</span> : null}
         </div>
       )}
-      {series.length > 1 && (
-        <div className="legend" dir="rtl">
-          {series.map((s) => <span key={s.key}><i style={{ background: `var(${s.color})` }} />{s.label}</span>)}
-        </div>
-      )}
+      {series.length > 1 && <Legend items={series} />}
     </div>
   );
 }
@@ -398,10 +428,10 @@ export function FunnelStrip({ steps, fromPrev = false }: {
 }
 
 /** מקרא: ריבוע צבע ושם לכל סדרה */
-export function Legend({ items }: { items: { label: string; color: string }[] }) {
+export function Legend({ items }: { items: { label: string; color: string; hatch?: boolean }[] }) {
   return (
-    <div className="legend">
-      {items.map((s) => <span key={s.label}><i style={{ background: `var(${s.color})` }} />{s.label}</span>)}
+    <div className="legend" dir="rtl">
+      {items.map((s) => <span key={s.label}><i className={s.hatch ? 'hatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}</span>)}
     </div>
   );
 }
@@ -411,6 +441,7 @@ export interface BarSegment {
   /** משתנה CSS של הצבע */
   color: string;
   label: string;
+  hatch?: boolean;
 }
 
 /** טבלה עם פס אופקי בכל שורה, מחולק לפי צבעים: שם, פס, ואז המספרים. */
@@ -435,7 +466,7 @@ export function BarTable({ headers, rows, max: maxShown = 10 }: {
                 <th scope="row" dir="auto" title={r.title}>{r.name}</th>
                 <td className="barcell">
                   <span className="stack" title={r.segments.filter((g) => g.value).map((g) => `${g.label}: ${nf.format(g.value)}`).join(' · ')}>
-                    {r.segments.map((g) => (g.value ? <span key={g.label} style={{ width: `${(g.value / top) * 100}%`, background: `var(${g.color})` }} /> : null))}
+                    {r.segments.map((g) => (g.value ? <span key={g.label} className={g.hatch ? 'hatch' : undefined} style={{ width: `${(g.value / top) * 100}%`, ...(g.hatch ? {} : { background: `var(${g.color})` }) }} /> : null))}
                   </span>
                 </td>
                 {r.cells.map((c, i) => <td key={i}>{c}</td>)}
@@ -490,4 +521,249 @@ export function PagedTable({ headers, rows, pageSize = 25 }: { headers: string[]
       )}
     </div>
   );
+}
+
+/**
+ * ⓘ ליד מספר או כותרת: ההגדרה מופיעה במעבר עכבר או בלחיצה (גם בטלפון). Esc או לחיצה בחוץ סוגרים.
+ * החלונית במיקום קבוע על המסך, כדי שלא תגרום לגלילה לצד בטלפון.
+ */
+export function Info({ children, label = 'הסבר' }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  const close = useCallback(() => {
+    setOpen(false);
+    setPinned(false);
+  }, []);
+  useLayoutEffect(() => {
+    if (!open || !btn.current) return;
+    const r = btn.current.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth - 24);
+    const left = Math.min(Math.max(12, r.left + r.width / 2 - width / 2), window.innerWidth - width - 12);
+    setPos({ left, top: r.bottom + 6, width });
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!btn.current?.contains(e.target as Node) && !tip.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        close();
+        btn.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, { passive: true });
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close);
+      window.removeEventListener('resize', close);
+    };
+  }, [open, close]);
+  const hoverable = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+  return (
+    <span className="info">
+      <button
+        ref={btn}
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-describedby={open ? id : undefined}
+        onClick={() => {
+          const next = !pinned;
+          setPinned(next);
+          setOpen(next);
+        }}
+        onMouseEnter={() => hoverable() && setOpen(true)}
+        onMouseLeave={() => hoverable() && !pinned && setOpen(false)}
+      >
+        ⓘ
+      </button>
+      {open && pos && (
+        <span ref={tip} id={id} role="tooltip" className="infotip" style={{ left: pos.left, top: pos.top, width: pos.width }}>
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** שינוי מול התקופה הקודמת: ▲ או ▼ באחוזים. null = אין למה להשוות */
+export function Delta({ value }: { value: number | null }) {
+  if (value === null || !Number.isFinite(value)) return null;
+  const up = value >= 0;
+  return (
+    <span className="delta" title="מול התקופה הקודמת באותו אורך">
+      {up ? '▲' : '▼'} {pctFmt.format(Math.abs(value))}
+    </span>
+  );
+}
+
+/** פס של 100%: חלק לכל צד, עם האחוז כתוב על החלק כשיש לו מקום */
+export function Bars100({ label, parts }: { label: string; parts: { value: number; color: string; hatch?: boolean; text: string }[] }) {
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  return (
+    <div className="bar100">
+      <span className="b100label">{label}</span>
+      <span className="b100track" role="img" aria-label={parts.map((p) => `${p.text}`).join(', ')}>
+        {parts.map((p) => {
+          const w = total ? (p.value / total) * 100 : 0;
+          if (!w) return null;
+          return (
+            <span key={p.text} className={`b100part${p.hatch ? ' hatch' : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={p.text}>
+              {w >= 14 ? <span className="b100text">{p.text}</span> : null}
+            </span>
+          );
+        })}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * קו של אחוז לאורך זמן, ביישור לעמודות שמעליו (אותו רוחב ואותן עמודות). ציר אחד, מ-0% עד 100%.
+ * במקום ציר משני בגרף העמודות: שני גרפים זה מעל זה, כדי שלא יהיו שני סולמות על אותו גרף.
+ */
+export function ShareStrip({ labels, values, color = '--series-1', height = 64, label }: { labels: string[]; values: (number | null)[]; color?: string; height?: number; label: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const { box, W } = useWidth();
+  const n = values.length;
+  if (!n) return <div ref={box} />;
+  const padL = 34;
+  const padT = 8;
+  const padB = 6;
+  const slot = (W - padL - 4) / n;
+  const x = (i: number) => padL + slot * i + slot / 2;
+  const y = (v: number) => padT + (height - padT - padB) * (1 - v);
+  const pts = values.map((v, i) => (v === null ? null : [x(i), y(v)] as const));
+  let d = '';
+  pts.forEach((p, i) => {
+    if (!p) return;
+    d += `${!pts[i - 1] ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)} `;
+  });
+  return (
+    <div className="chart share" dir="ltr" ref={box}>
+      <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
+        {[0, 0.5, 1].map((t) => (
+          <g key={t}>
+            <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="grid" />
+            <text x={padL - 6} y={y(t) + 4} className="tick" textAnchor="end">{pctFmt.format(t)}</text>
+          </g>
+        ))}
+        <path d={d} fill="none" stroke={`var(${color})`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {pts.map((p, i) => (
+          <g key={labels[i]} onMouseEnter={() => setHover(i)}>
+            <rect x={padL + slot * i} y={0} width={slot} height={height} fill="transparent" />
+            {p && hover === i ? <circle cx={p[0]} cy={p[1]} r={4} fill={`var(${color})`} stroke="var(--surface)" strokeWidth={2} /> : null}
+          </g>
+        ))}
+      </svg>
+      <div className="sparkfoot" dir="rtl">
+        <span>{label}</span>
+        {hover !== null ? <strong>{labels[hover]}: {values[hover] === null ? '-' : pctFmt.format(values[hover]!)}</strong> : null}
+      </div>
+    </div>
+  );
+}
+
+/** טבלה ארוכה: 50 השורות הראשונות, וכפתור "עוד 50" (הנחיית המנהל, 1/11/2026) */
+export function MoreTable({ headers, rows, step = 50 }: { headers: string[]; rows: { key: string; cells: ReactNode[] }[]; step?: number }) {
+  const [shown, setShown] = useState(step);
+  if (!rows.length) return <p className="empty">אין שורות</p>;
+  return (
+    <div className="heat simple list">
+      <div className="scroll">
+        <table>
+          <thead><tr>{headers.map((h) => <th key={h} scope="col">{h}</th>)}</tr></thead>
+          <tbody>
+            {rows.slice(0, shown).map((r) => <tr key={r.key}>{r.cells.map((c, i) => <td key={i} dir="auto">{c}</td>)}</tr>)}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > shown && (
+        <button type="button" className="more" onClick={() => setShown(shown + step)}>
+          עוד {nf.format(Math.min(step, rows.length - shown))} (מתוך {nf.format(rows.length)})
+        </button>
+      )}
+    </div>
+  );
+}
+
+export interface ListItem {
+  id: string;
+  title: string;
+  /** "587 רכישות" או "481 אנשים" */
+  count?: string;
+  sum?: string;
+  render: () => ReactNode;
+}
+
+/** כמה בלוקים של רשימות פתוחים יחד: כל אחד שומר רק רשימה אחת פתוחה */
+const ListOpenContext = createContext<{ open: string | null; setOpen: (id: string | null) => void } | null>(null);
+
+/**
+ * בלוק "רשימות" בסוף סקשן: שורה לכל רשימה (שם, כמה, סכום, חץ), הכול סגור, ופתיחה של רשימה סוגרת את הקודמת.
+ * Enter פותח וסוגר, Esc סוגר. כל רשימות הדף משתמשות ברכיב הזה (הנחיית המנהל, 1/11/2026).
+ */
+export function ListBlock({ items, title = 'רשימות', note }: { items: ListItem[]; title?: string; note?: ReactNode }) {
+  const [own, setOwn] = useState<string | null>(null);
+  const shared = useContext(ListOpenContext);
+  const open = shared ? shared.open : own;
+  const setOpen = shared ? shared.setOpen : setOwn;
+  const base = useId().replace(/:/g, '');
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && open && items.some((i) => i.id === open)) {
+      const btn = rowRefs.current.get(open);
+      setOpen(null);
+      btn?.focus();
+    }
+  };
+  if (!items.length) return null;
+  return (
+    <div className="lists" onKeyDown={onKey}>
+      <div className="listshead">
+        <h3>{title}</h3>
+        {note ? <span className="listsnote">{note}</span> : null}
+      </div>
+      {items.map((it) => {
+        const isOpen = open === it.id;
+        const panel = `${base}-${it.id}`.replace(/[^\w-]/g, '_');
+        return (
+          <div key={it.id} className={`lrow${isOpen ? ' open' : ''}`}>
+            <button
+              ref={(el) => { if (el) rowRefs.current.set(it.id, el); }}
+              type="button"
+              aria-expanded={isOpen}
+              aria-controls={panel}
+              onClick={() => setOpen(isOpen ? null : it.id)}
+            >
+              <span className="ltitle" dir="auto">{it.title}</span>
+              {it.count ? <span className="lcount">{it.count}</span> : null}
+              {it.sum ? <span className="lsum">{it.sum}</span> : null}
+              <span className="lchev" aria-hidden="true">⌄</span>
+            </button>
+            {isOpen ? <div id={panel} role="region" aria-label={it.title} className="lpanel">{it.render()}</div> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** רשימה אחת פתוחה בכל קבוצה של בלוקים (למשל רשימות הסיבות והצ'יפים שפותחים אותן) */
+export function ListGroup({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return <ListOpenContext.Provider value={{ open, setOpen }}>{children}</ListOpenContext.Provider>;
+}
+
+export function useListGroup() {
+  return useContext(ListOpenContext);
 }

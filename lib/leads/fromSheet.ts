@@ -11,7 +11,7 @@ export const REQUIRED_COLUMNS = [
  * עמודות שהדשבורד משתמש בהן אם הן קיימות. בלעדיהן השדה פשוט ריק.
  * הן ממולאות על ידי סוכן AI. עמודות חדשות אחרות בטבלה לא משפיעות על הדשבורד: הוא קורא לפי שם, לא לפי מיקום.
  */
-export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה', 'utm_campaign', 'הודעות לקוח', 'קופון הבוט', 'תאריך קופון'] as const;
+export const OPTIONAL_COLUMNS = ['התחיל שיחה', 'אופן שיחה', 'utm_campaign', 'הודעות לקוח', 'קופון הבוט', 'תאריך קופון', 'טלפון'] as const;
 
 /** עמודות שהדשבורד צריך בלשונית הרכישות. */
 export const PURCHASE_COLUMNS = ['תאריך', 'קוד מזהה', 'מקור הגעה', 'מוצר שנקנה', 'סכום ששולם'] as const;
@@ -19,7 +19,41 @@ export const PURCHASE_COLUMNS = ['תאריך', 'קוד מזהה', 'מקור הג
  * עמודות של רכישות שהדשבורד קורא אם הן קיימות. בלעדיהן הרענון לא נכשל.
  * "של הבוט": ההכרעה אם הרכישה של הבוט, נכתבת רק על ידי הסוכן של המנהל (החלטת המנהל, 29/10/2026).
  */
-export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign', 'של הבוט', 'סיבה', 'קופון מהרכישה'] as const;
+export const OPTIONAL_PURCHASE_COLUMNS = ['utm_campaign', 'של הבוט', 'סיבה', 'קופון מהרכישה', 'טלפון'] as const;
+
+/**
+ * טלפון, רק כדי לזהות את אותו אדם בכמה קודים מזהים (הנחיית המנהל, 1/11/2026). לא נשמר בשום קובץ:
+ * ספרות בלבד, בלי 972 ובלי אפסים בהתחלה, 9 הספרות האחרונות. פחות מ-7 ספרות = אין טלפון.
+ */
+export function phoneKey(v: string): string | null {
+  let d = v.replace(/\D/g, '');
+  if (d.startsWith('972')) d = d.slice(3);
+  d = d.replace(/^0+/, '');
+  return d.length >= 7 ? d.slice(-9) : null;
+}
+
+/** קבוצות של קודים מזהים עם אותו טלפון */
+class Groups {
+  private parent = new Map<string, string>();
+
+  find(x: string): string {
+    let r = x;
+    while (this.parent.has(r) && this.parent.get(r) !== r) r = this.parent.get(r)!;
+    let c = x;
+    while (c !== r) {
+      const n = this.parent.get(c)!;
+      this.parent.set(c, r);
+      c = n;
+    }
+    return r;
+  }
+
+  union(a: string, b: string) {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) this.parent.set(rb, ra);
+  }
+}
 
 /** לשונית "דיוורים": שורה לכל רכישה בקמפיין. כשחסרה עמודה, הלשונית נחשבת חסרה והסקשן מוסתר. */
 export const MAILING_COLUMNS = ['קמפיין', 'גל', 'תאריך שליחה', 'תאריך רכישה', 'קוד מזהה', 'מוצר', 'סכום', 'דרך קישור הקמפיין', 'קופון', 'של הבוט', 'סיבה'] as const;
@@ -201,6 +235,35 @@ export function buildData(
     }
     return id;
   };
+  // אדם = קוד מזהה, וקודים מזהים עם אותו טלפון הם אותו אדם
+  const groups = new Groups();
+  for (const r of L.data) {
+    const ns = lcol(r, 'קוד מזהה');
+    const ph = phoneKey(lcol(r, 'טלפון'));
+    if (ns !== '' && ph) groups.union(`n:${ns}`, `p:${ph}`);
+  }
+  if (P) for (const r of P.data) {
+    const ns = pcol(r, 'קוד מזהה');
+    const ph = phoneKey(pcol(r, 'טלפון'));
+    if (ns !== '' && ph) groups.union(`n:${ns}`, `p:${ph}`);
+  }
+  const personOfRoot = new Map<string, number>();
+  let nextPerson = 0;
+  const personId = (ns: string, phone: string | null) => {
+    const node = ns !== '' ? `n:${ns}` : phone ? `p:${phone}` : null;
+    if (node === null) return nextPerson++;
+    const root = groups.find(node);
+    let id = personOfRoot.get(root);
+    if (id === undefined) {
+      id = nextPerson++;
+      personOfRoot.set(root, id);
+    }
+    return id;
+  };
+  kept.forEach((r, i) => {
+    leads[i].person = personId(r.ns, phoneKey(lcol(r.cells, 'טלפון')));
+  });
+
   const fromTab = P ? purchasesFromRows(P.data, pcol, leads, leadOfNs, productNames, start, buyerId) : { rows: [], dupes: [] };
   const rows = fromTab.rows;
   // קונים שמסומנים בלשונית הלידים ואין להם אף שורה בלשונית הרכישות: הרכישה האחרונה שלהם נלקחת משם
@@ -210,14 +273,16 @@ export function buildData(
       // רכישה משורת ליד: אין לה תא "של הבוט", ולכן היא עוד לא הוכרעה
       rows.push({
         ns: kept[i].ns,
+        phone: null,
         p: {
           at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null,
-          reason: null, coupon: null, buyer: buyerId(kept[i].ns),
+          reason: null, coupon: null, buyer: buyerId(kept[i].ns), person: 0,
         },
       });
     }
   });
   rows.sort((a, b) => a.p.at.localeCompare(b.p.at) || (a.p.lead ?? -1) - (b.p.lead ?? -1));
+  for (const r of rows) r.p.person = personId(r.ns, r.phone);
   const mailings = mailingRows ? mailingsWithIds(mailingRows) : null;
   const at = generatedAt.toISOString();
 
@@ -320,8 +385,8 @@ export function dedupeByNs(raws: Raw[]): Raw[] {
 function purchasesFromRows(
   data: string[][], col: (r: string[], name: PurchaseColumn) => string, leads: Lead[], leadOfNs: Map<string, number>,
   productNames: Set<string>, start: number, buyerId: (ns: string) => number,
-): { rows: { ns: string; p: Purchase }[]; dupes: string[] } {
-  const rows: { at: Date; ns: string; p: Purchase }[] = [];
+): { rows: { ns: string; phone: string | null; p: Purchase }[]; dupes: string[] } {
+  const rows: { at: Date; ns: string; phone: string | null; p: Purchase }[] = [];
   data.forEach((cells) => {
     const at = parseSheetDate(col(cells, 'תאריך'));
     if (!at || at.getTime() < start) return;
@@ -337,11 +402,11 @@ function purchasesFromRows(
     }
     const source = cleanText(col(cells, 'מקור הגעה'));
     rows.push({
-      at, ns,
+      at, ns, phone: phoneKey(col(cells, 'טלפון')),
       p: {
         at: at.toISOString(), lead, product, amount, source, sourceGroup: sourceGroupOf(source, productNames),
         campaign: cleanText(col(cells, 'utm_campaign')), fromLead: false, bot: botFlag(col(cells, 'של הבוט')),
-        reason: cleanText(col(cells, 'סיבה')), coupon: couponCode(col(cells, 'קופון מהרכישה')), buyer: buyerId(ns),
+        reason: cleanText(col(cells, 'סיבה')), coupon: couponCode(col(cells, 'קופון מהרכישה')), buyer: buyerId(ns), person: 0,
       },
     });
   });
@@ -363,7 +428,7 @@ function purchasesFromRows(
   }
   // התאריכים של השורות הכפולות שלא נספרו, כדי להראות כמה הן בכל טווח (הנחיית המנהל, 1/11/2026)
   const dupes = rows.filter((r) => dropped.has(r)).map((r) => r.p.at).sort();
-  return { rows: rows.filter((r) => !dropped.has(r)).map((r) => ({ ns: r.ns, p: r.p })), dupes };
+  return { rows: rows.filter((r) => !dropped.has(r)).map((r) => ({ ns: r.ns, phone: r.phone, p: r.p })), dupes };
 }
 
 function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productNames: Set<string>, first: Date | null): Lead {
@@ -393,5 +458,6 @@ function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productN
     botCoupon: c('קופון הבוט') !== '',
     couponAt: parseSheetDate(c('תאריך קופון'))?.toISOString() ?? null,
     firstAt: first && first.getTime() < r.at.getTime() ? first.toISOString() : null,
+    person: 0,
   };
 }

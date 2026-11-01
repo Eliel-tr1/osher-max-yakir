@@ -124,6 +124,33 @@ function osher_coupon_code(string $v): ?string {
     return preg_match('/^PTB-[0-9A-F]{10}\z/', $t) ? OSHER_BOT_COUPON_GROUP : $t;
 }
 
+/** כמו phoneKey: ספרות בלבד, בלי 972 ואפסים בהתחלה, 9 הספרות האחרונות. פחות מ-7 ספרות = null */
+function osher_phone_key(string $v): ?string {
+    $d = preg_replace('/\D/', '', $v);
+    if (strncmp($d, '972', 3) === 0) $d = substr($d, 3);
+    $d = ltrim($d, '0');
+    return strlen($d) >= 7 ? substr($d, -9) : null;
+}
+
+/** כמו Groups.find, עם קיצור דרך */
+function osher_find(array &$parent, string $x): string {
+    $r = $x;
+    while (isset($parent[$r]) && $parent[$r] !== $r) $r = $parent[$r];
+    $c = $x;
+    while ($c !== $r) {
+        $n = $parent[$c];
+        $parent[$c] = $r;
+        $c = $n;
+    }
+    return $r;
+}
+
+function osher_union(array &$parent, string $a, string $b): void {
+    $ra = osher_find($parent, $a);
+    $rb = osher_find($parent, $b);
+    if ($ra !== $rb) $parent[$rb] = $ra;
+}
+
 /** כמו sourceGroupOf */
 function osher_source_group(?string $source, array $productNames): ?string {
     if ($source === null) return null;
@@ -205,17 +232,41 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
         if (!array_key_exists($ns, $buyerOfNs)) $buyerOfNs[$ns] = $nextBuyer++;
         return $buyerOfNs[$ns];
     };
+    // אדם = קוד מזהה, וקודים מזהים עם אותו טלפון הם אותו אדם
+    $parent = [];
+    foreach ($ldata as $r) {
+        $ns = $lcol($r, 'קוד מזהה');
+        $ph = osher_phone_key($lcol($r, 'טלפון'));
+        if ($ns !== '' && $ph !== null) osher_union($parent, "n:$ns", "p:$ph");
+    }
+    if ($pcol !== null) foreach ($pdata as $r) {
+        $ns = $pcol($r, 'קוד מזהה');
+        $ph = osher_phone_key($pcol($r, 'טלפון'));
+        if ($ns !== '' && $ph !== null) osher_union($parent, "n:$ns", "p:$ph");
+    }
+    $personOfRoot = [];
+    $nextPerson = 0;
+    $personId = function (string $ns, ?string $phone) use (&$parent, &$personOfRoot, &$nextPerson): int {
+        $node = $ns !== '' ? "n:$ns" : ($phone !== null ? "p:$phone" : null);
+        if ($node === null) return $nextPerson++;
+        $root = osher_find($parent, $node);
+        if (!array_key_exists($root, $personOfRoot)) $personOfRoot[$root] = $nextPerson++;
+        return $personOfRoot[$root];
+    };
+    foreach ($kept as $i => $r) $leads[$i]['person'] = $personId($r['ns'], osher_phone_key($lcol($r['cells'], 'טלפון')));
+
     [$rows, $dupes] = $pcol !== null ? osher_purchases_from_rows($pdata, $pcol, $leads, $leadOfNs, $productNames, $start, $buyerId) : [[], []];
     $withRows = [];
     foreach ($rows as $r) if ($r['p']['lead'] !== null) $withRows[$r['p']['lead']] = true;
     foreach ($leads as $i => $l) {
         if (($l['qStatus'] === 'converted' || $l['qStatus'] === 'payment') && !isset($withRows[$i])) {
-            $rows[] = ['ns' => $kept[$i]['ns'], 'p' => ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
+            $rows[] = ['ns' => $kept[$i]['ns'], 'phone' => null, 'p' => ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
                 'source' => null, 'sourceGroup' => null, 'campaign' => null, 'fromLead' => true, 'bot' => null,
-                'reason' => null, 'coupon' => null, 'buyer' => $buyerId($kept[$i]['ns'])]];
+                'reason' => null, 'coupon' => null, 'buyer' => $buyerId($kept[$i]['ns']), 'person' => 0]];
         }
     }
     usort($rows, fn ($a, $b) => strcmp($a['p']['at'], $b['p']['at']) ?: ($a['p']['lead'] ?? -1) <=> ($b['p']['lead'] ?? -1));
+    foreach ($rows as $k => $r) $rows[$k]['p']['person'] = $personId($r['ns'], $r['phone']);
     $mailings = $mailingRows !== null ? osher_mailings_with_ids($mailingRows) : null;
     $at = osher_iso($generatedAt);
 
@@ -328,11 +379,12 @@ function osher_purchases_from_rows(array $data, callable $col, array $leads, arr
             if ($l['amount'] !== null && $amount !== null && $l['amount'] == $amount) $product = $l['product'] ?? $l['test'];
         }
         $source = osher_clean($col($cells, 'מקור הגעה'));
-        $rows[] = ['ts' => $at->getTimestamp(), 'ns' => $ns, 'p' => [
+        $rows[] = ['ts' => $at->getTimestamp(), 'ns' => $ns, 'phone' => osher_phone_key($col($cells, 'טלפון')), 'p' => [
             'at' => osher_iso($at), 'lead' => $lead, 'product' => $product, 'amount' => $amount, 'source' => $source,
             'sourceGroup' => osher_source_group($source, $productNames), 'campaign' => osher_clean($col($cells, 'utm_campaign')), 'fromLead' => false,
             'bot' => osher_bot_flag($col($cells, 'של הבוט')),
             'reason' => osher_clean($col($cells, 'סיבה')), 'coupon' => osher_coupon_code($col($cells, 'קופון מהרכישה')), 'buyer' => $buyerId($ns),
+            'person' => 0,
         ]];
     }
     $byNs = [];
@@ -349,7 +401,7 @@ function osher_purchases_from_rows(array $data, callable $col, array $leads, arr
     $dupes = [];
     foreach ($rows as $i => $r) {
         if (isset($dropped[$i])) $dupes[] = $r['p']['at'];
-        else $out[] = ['ns' => $r['ns'], 'p' => $r['p']];
+        else $out[] = ['ns' => $r['ns'], 'phone' => $r['phone'], 'p' => $r['p']];
     }
     sort($dupes, SORT_STRING);
     return [$out, $dupes];
@@ -386,6 +438,7 @@ function osher_to_lead(array $r, callable $col, array $productNames, ?DateTimeIm
         'botCoupon' => $c('קופון הבוט') !== '',
         'couponAt' => ($cd = osher_parse_date($c('תאריך קופון'))) ? osher_iso($cd) : null,
         'firstAt' => $first !== null && $first->getTimestamp() < $r['ts'] ? osher_iso($first) : null,
+        'person' => 0,
     ];
 }
 

@@ -11,17 +11,20 @@ function lead(p: Partial<Lead>): Lead {
   return {
     at: '2026-10-01T07:00:00.000Z', source: null, sourceGroup: null, process: null, status: null, qStatus: null, answered: false, aiConversation: null,
     step: null, score: null, test: null, product: null, amount: null, removedAt: null, mode: null,
-    campaign: null, messages: null, botCoupon: false, couponAt: null, firstAt: null, ...p,
+    campaign: null, messages: null, botCoupon: false, couponAt: null, firstAt: null, ...p, person: p.person ?? -1,
   };
 }
 let orphan = 1000;
 function buy(p: Partial<Purchase>): Purchase {
   return {
     at: '2026-10-02T07:00:00.000Z', lead: null, product: null, amount: null, source: null, sourceGroup: null, campaign: null, fromLead: false, bot: null,
-    reason: null, coupon: null, ...p, buyer: p.buyer ?? p.lead ?? orphan++,
+    reason: null, coupon: null, ...p, buyer: p.buyer ?? p.lead ?? orphan++, person: p.person ?? -1,
   };
 }
+/** אדם = הליד, אלא אם נקבע אחרת בבדיקה */
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
+  leads.forEach((l, i) => { if (l.person === -1) l.person = i; });
+  purchases.forEach((p, k) => { if (p.person === -1) p.person = p.lead ?? 100_000 + k; });
   return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [] };
 }
 
