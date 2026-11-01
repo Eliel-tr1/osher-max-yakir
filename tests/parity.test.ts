@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { pack } from '../lib/leads/file';
-import { leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS, REQUIRED_COLUMNS } from '../lib/leads/fromSheet';
+import { buildData, leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS, REQUIRED_COLUMNS } from '../lib/leads/fromSheet';
 import { parseCsv } from '../lib/sheet/parse';
 
 /**
@@ -135,7 +135,7 @@ function mailingFixture(): { mailings: string; waves: string } {
   return { mailings: ml.join('\r\n'), waves: wl.join('\n') };
 }
 
-function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string): unknown {
+function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string, ids = false): unknown {
   const dir = mkdtempSync(join(tmpdir(), 'parity-'));
   const write = (name: string, text: string | undefined) => {
     if (text === undefined) return '-';
@@ -144,7 +144,7 @@ function viaPhp(leads: string, at: string, purchases?: string, mailings?: string
     return f;
   };
   const args = [write('leads.csv', leads), at, write('purchases.csv', purchases), write('mailings.csv', mailings), write('waves.csv', waves)];
-  return JSON.parse(execFileSync('php', ['scripts/php-leads.php', ...args], { encoding: 'utf8', maxBuffer: 50e6 }));
+  return JSON.parse(execFileSync('php', ['scripts/php-leads.php', ...args], { encoding: 'utf8', maxBuffer: 50e6, env: { ...process.env, OSHER_IDS: ids ? '1' : '' } }));
 }
 
 describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScript', () => {
@@ -184,6 +184,23 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     const { leads, purchases } = fixture(200, false);
     expect(viaPhp(leads, at, purchases)).toEqual(JSON.parse(pack(leadsFromRows(parseCsv(leads), parseCsv(purchases), new Date(at)))));
     expect(viaPhp(leads, at)).toEqual(JSON.parse(pack(leadsFromRows(parseCsv(leads), null, new Date(at)))));
+  });
+
+  it('gives the same private ids, in the same order as the public file', () => {
+    const { leads, purchases } = fixture(400);
+    const { mailings, waves } = mailingFixture();
+    const built = buildData(parseCsv(leads), parseCsv(purchases), new Date(at), parseCsv(mailings), parseCsv(waves));
+    expect(viaPhp(leads, at, purchases, mailings, waves, true)).toEqual(built.ids);
+    const { file, ids } = built;
+    expect(ids.leads).toHaveLength(file.leads.length);
+    expect(ids.purchases).toHaveLength(file.purchases.length);
+    expect(ids.mailings).toHaveLength(file.mailings!.length);
+    // רכישה שמצביעה על ליד: אותו קוד מזהה
+    file.purchases.forEach((p, i) => { if (p.lead !== null) expect(ids.purchases[i]).toBe(ids.leads[p.lead]); });
+    expect(file.dupes.length).toBeGreaterThan(0);
+    // הקובץ הציבורי בלי הקודים
+    const json = pack(file);
+    for (const ns of ids.leads.filter(Boolean).slice(0, 50)) expect(json).not.toContain(`"${ns}"`);
   });
 
   it('fails the same way when a needed column is missing', () => {

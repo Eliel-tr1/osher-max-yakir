@@ -38,5 +38,6 @@ export function unpack(json: unknown): LeadsFile {
     purchases: f.purchases.map((p, i) => ({ ...EMPTY_PURCHASE, ...p, buyer: p.buyer ?? -1 - i })),
     mailings: Array.isArray(f.mailings) ? f.mailings.map((m, i) => ({ ...EMPTY_MAILING, ...m, buyer: m.buyer ?? -1 - i })) : null,
     mailingWaves: Array.isArray(f.mailingWaves) ? f.mailingWaves.map((w) => ({ ...EMPTY_WAVE, ...w })) : null,
+    dupes: Array.isArray(f.dupes) ? f.dupes : [],
   };
 }

@@ -36,18 +36,39 @@ export interface LeadX extends Lead {
   purchases: number;
   /** כמה שילם בסך הכול */
   spent: number;
+  /** הרכישה הראשונה שלו בלשונית הרכישות (בלי רכישה משורת ליד, שאין לה תאריך אמיתי) */
+  firstBuy: string | null;
+  /** קנה באתר בלי לעבור בבוט: הליד נוצר עד 10 דקות לפני הרכישה הראשונה, או אחריה */
+  siteBuyer: boolean;
 }
 
+/**
+ * ליד שנוצר בלשונית הלידים ברגע הרכישה (עד 10 דקות לפני הרכישה הראשונה, או אחריה) הוא קונה מהאתר שלא עבר בבוט.
+ * הוא לא נכנס למשפך ולאחוז ההמרה, ונספר בנפרד (הנחיית המנהל, 1/11/2026).
+ */
+export const SITE_BUY_MINUTES = 10;
+
 export function annotate(file: LeadsFile): LeadX[] {
-  const leads: LeadX[] = file.leads.map((l, i) => ({ ...l, i, purchases: 0, spent: 0 }));
+  const leads: LeadX[] = file.leads.map((l, i) => ({ ...l, i, purchases: 0, spent: 0, firstBuy: null, siteBuyer: false }));
   for (const p of file.purchases) {
     if (p.lead === null) continue;
     const l = leads[p.lead];
     if (!l) continue;
     l.purchases++;
     l.spent += p.amount ?? 0;
+    if (!p.fromLead && (l.firstBuy === null || p.at < l.firstBuy)) l.firstBuy = p.at;
+  }
+  for (const l of leads) {
+    if (l.firstBuy === null) continue;
+    const entry = new Date(l.firstAt ?? l.at).getTime();
+    l.siteBuyer = entry >= new Date(l.firstBuy).getTime() - SITE_BUY_MINUTES * 60_000;
   }
   return leads;
+}
+
+/** הלידים של המשפך ושל אחוז ההמרה: בלי מי שקנה באתר בלי לעבור בבוט */
+export function botLeads<T extends LeadX>(leads: T[]): T[] {
+  return leads.filter((l) => !l.siteBuyer);
 }
 
 export function inRange<T extends { at: string }>(items: T[], range: Range): T[] {
@@ -122,7 +143,10 @@ export function undecided(p: Purchase): boolean {
 // ---------- מספרי מפתח ----------
 
 export interface Summary {
+  /** לידים בלי מי שקנה באתר בלי לעבור בבוט */
   leads: number;
+  /** קנו באתר בלי לעבור בבוט */
+  siteBuyers: number;
   startedJourney: number;
   /** כמה שיחות הסוכן כבר קרא */
   aiAnalyzed: number;
@@ -138,15 +162,17 @@ export interface Summary {
   totalPaid: number;
   /** עסקה ממוצעת: רק רכישות עם סכום (החלטת המנהל, 29/10) */
   avgDeal: number | null;
-  /** לידים בטווח שרכשו אי פעם */
+  /** לידים בטווח שרכשו אי פעם (בלי מי שקנה באתר) */
   leadsWhoBought: number;
 }
 
-export function summarize(leads: LeadX[], purchases: Purchase[]): Summary {
+export function summarize(all: LeadX[], purchases: Purchase[]): Summary {
   const paid = purchases.filter((p) => (p.amount ?? 0) > 0);
   const total = paid.reduce((s, p) => s + p.amount!, 0);
+  const leads = botLeads(all);
   return {
     leads: leads.length,
+    siteBuyers: all.length - leads.length,
     startedJourney: leads.filter(startedJourney).length,
     aiAnalyzed: leads.filter(aiAnalyzed).length,
     realConversations: leads.filter(realConversation).length,
@@ -173,7 +199,9 @@ export interface Funnel {
   bought: number;
 }
 
-export function funnel(leads: LeadX[]): Funnel {
+/** המשפך, בלי מי שקנה באתר בלי לעבור בבוט (הנחיית המנהל, 1/11/2026) */
+export function funnel(all: LeadX[]): Funnel {
+  const leads = botLeads(all);
   return {
     leads: leads.length,
     started: leads.filter(startedJourney).length,
@@ -425,9 +453,23 @@ export function campaignOf(p: Purchase, leads: Lead[]): string | null {
   return p.campaign ?? (p.lead !== null ? (leads[p.lead]?.campaign ?? null) : null);
 }
 
-export function campaigns(ps: Purchase[], leads: Lead[] = []): ProductStat[] {
-  const named = ps.filter((p) => campaignOf(p, leads));
-  return productStats(named, (p) => campaignOf(p, leads)!);
+/**
+ * "קמפיינים מובילים": רק utm_campaign של הרכישה עצמה (עמודה P), בלי לרשת את הקמפיין של האדם.
+ * רכישה בלי P נספרת תחת NO_CAMPAIGN (הנחיית המנהל, 1/11/2026).
+ */
+export const NO_CAMPAIGN = 'בלי קמפיין';
+
+export function campaigns(ps: Purchase[]): ProductStat[] {
+  return productStats(ps, (p) => p.campaign ?? NO_CAMPAIGN);
+}
+
+/** שם קריא לקמפיין: google_ads_<מספר>, google_ads, ומזהה מספרי ארוך של Meta */
+export function campaignLabel(name: string): string {
+  const g = name.match(/^google_ads_(\d+)$/i);
+  if (g) return `Google Ads · קמפיין ${g[1]}`;
+  if (/^google_ads$/i.test(name)) return 'Google Ads · קמפיין לא ידוע';
+  if (/^\d{15,}$/.test(name)) return `Meta · ${name}`;
+  return name;
 }
 
 // ---------- מקור הגעה ----------
@@ -820,9 +862,9 @@ export function fromPopup(l: Lead): boolean {
 export interface PopupPerson {
   lead: LeadX;
   entry: string;
-  /** רכישות ביום הכניסה או אחריו */
+  /** רכישות מרגע הכניסה והלאה */
   after: Purchase[];
-  /** קנה גם לפני יום הכניסה */
+  /** קנה גם לפני הכניסה */
   boughtBefore: boolean;
 }
 
@@ -834,11 +876,11 @@ export function withPurchasesAfterEntry(leads: LeadX[], purchases: Purchase[]): 
     if (g) g.push(p);
     else byLead.set(p.lead, [p]);
   }
+  // לפי השעה ולא לפי היום: מי שקנה באתר ואז נכנס מהפופאפ באותו יום הוא קונה חוזר (הנחיית המנהל, 1/11/2026)
   return leads.map((l) => {
     const entry = entryOf(l);
-    const day = dayKey(entry);
-    const mine = byLead.get(l.i) ?? [];
-    return { lead: l, entry, after: mine.filter((p) => dayKey(p.at) >= day), boughtBefore: mine.some((p) => dayKey(p.at) < day) };
+    const mine = (byLead.get(l.i) ?? []).filter((p) => !p.fromLead);
+    return { lead: l, entry, after: mine.filter((p) => p.at >= entry), boughtBefore: mine.some((p) => p.at < entry) };
   });
 }
 
@@ -942,6 +984,8 @@ export interface TrackingHealth {
   total: number;
   last7: number;
   byValue: { name: string; count: number; last7: number }[];
+  /** הפלטפורמות של מה שהגיע ב-7 הימים האחרונים */
+  platforms: ('Google Ads' | 'Meta')[];
 }
 
 /** אנשים שה-BH שלהם לא מולא, בסך הכול וב-7 הימים האחרונים (לפי תאריך הכניסה) */
@@ -956,5 +1000,60 @@ export function trackingHealth(leads: Lead[], now: Date): TrackingHealth {
     if (recent(l)) r.last7++;
     m.set(l.campaign!, r);
   }
-  return { total: bad.length, last7: bad.filter(recent).length, byValue: [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) };
+  const byValue = [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const platforms = [...new Set(byValue.filter((v) => v.last7 > 0).map((v) => unfilledPlatform(v.name)))].sort();
+  return { total: bad.length, last7: bad.filter(recent).length, byValue, platforms };
 }
+
+// ---------- הנחיית המנהל, 1/11/2026 ----------
+
+/** כמה שורות רכישה כפולות לא נספרו בטווח */
+export function dupesIn(dupes: string[], range: Range): number {
+  return dupes.filter((at) => inside(at, range)).length;
+}
+
+/** הטווח הקודם באותו אורך, צמוד לפני הטווח. null כשהטווח פתוח (הכול) */
+export function previousRange(range: Range, now: Date): Range | null {
+  if (!range.from) return null;
+  const to = range.to ?? now;
+  const len = to.getTime() - range.from.getTime();
+  return { from: new Date(range.from.getTime() - len), to: range.from };
+}
+
+/** שינוי באחוזים מול הקודם. null כשאין בסיס להשוואה */
+export function change(now: number, before: number): number | null {
+  return before > 0 ? (now - before) / before : null;
+}
+
+/** החלק של הבוט מהרכישות בכל תקופה, באחוזים (0 עד 1). null כשאין רכישות בתקופה */
+export function botShareSeries(ps: Purchase[], b: Bucket): { key: string; share: number | null }[] {
+  return timeSeries(ps, (p) => p.at, b, 2, (p) => [botSide(p) === 'yes' ? 1 : 0, 1]).map(({ key, values: [yes, all] }) => ({ key, share: all ? yes / all : null }));
+}
+
+export interface ReasonGroup {
+  side: BotSide;
+  rows: ReasonRow[];
+  total: { purchases: number; paid: number; buyers: number };
+}
+
+/** "לפי סיבה" מקובץ: קודם הסיבות של הבוט עם סכום ביניים, אחר כך שאינן של הבוט, ובסוף מה שעוד לא הוכרע */
+export function reasonGroups(ps: Purchase[]): ReasonGroup[] {
+  const rows = byReason(ps);
+  return BOT_SIDES.map((side) => {
+    const g = ps.filter((p) => botSide(p) === side);
+    return { side, rows: rows.filter((r) => r.side === side), total: { purchases: g.length, paid: paidSum(g), buyers: buyersOf(g) } };
+  }).filter((g) => g.rows.length > 0);
+}
+
+/** הסיבות של הבוט, לצ'יפים: שם קצר ומספר רכישות */
+export function botReasonChips(ps: Purchase[]): { name: string; purchases: number }[] {
+  return byReason(ps).filter((r) => r.side === 'yes').map((r) => ({ name: r.name, purchases: r.yes }));
+}
+
+/** מאיזו פלטפורמה קוד שלא מולא: {{...}} או שם עם נקודה הם של Meta, השאר ({campaignname}) של Google Ads */
+export function unfilledPlatform(value: string): 'Google Ads' | 'Meta' {
+  return /^\{\{|\./.test(value) ? 'Meta' : 'Google Ads';
+}
+
+/** מכמה אנשים ב-7 ימים מציגים פס אדום בראש הדף. מתחת לזה רק נקודה אדומה ליד כותרת הכרטיס */
+export const TRACKING_BANNER_MIN = 5;

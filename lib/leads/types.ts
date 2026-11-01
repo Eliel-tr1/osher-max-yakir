@@ -141,4 +141,6 @@ export interface LeadsFile {
   mailings: MailingPurchase[] | null;
   /** לשונית "דיוורים - סיכום". null = חסרה */
   mailingWaves: MailingWave[] | null;
+  /** תאריכים (ISO) של שורות רכישה כפולות שלא נספרו: אותו קוד ואותו סכום בתוך 2 דקות */
+  dupes: string[];
 }

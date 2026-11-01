@@ -3,7 +3,7 @@ import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from '..
 import {
   annotate, BOT_COUPON_GROUP, botBreakdown, botCoupons, botCouponSeries, botSeries, buyItems, byReason, campaigns, couponRows, isActivation, mailingCampaigns,
   mailingView, popupCompare, popupFunnel, purchaseFamily, purchaseGaps, reasonOf, repeatBuyers, trackingHealth, UNDECIDED, usedBotCoupon, withPurchasesAfterEntry,
-  ACTIVATION,
+  ACTIVATION, funnel, summarize,
 } from '../lib/metrics';
 
 function lead(p: Partial<Lead>): Lead {
@@ -20,7 +20,7 @@ function buy(p: Partial<Purchase> & { buyer: number }): Purchase {
   };
 }
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
-  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null };
+  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [] };
 }
 const all = { from: null, to: null };
 
@@ -71,7 +71,8 @@ describe('purchases by "של הבוט"', () => {
     const items = buyItems([buy({ buyer: 1, lead: 0, at: '2026-10-01T07:00:00.000Z' }), buy({ buyer: 1, lead: 0, campaign: 'halloween_lightning', bot: 'yes', reason: 'x' })], leads);
     expect(items.map((i) => [i.campaign, i.reason, i.side])).toEqual([['halloween_lightning', 'x', 'yes'], ['popup_website', UNDECIDED, 'open']]);
     expect(JSON.stringify(items)).not.toMatch(/buyer|lead/);
-    expect(campaigns([buy({ buyer: 1, lead: 0 }), buy({ buyer: 2 })], leads).map((c) => [c.name, c.count])).toEqual([['popup_website', 1]]);
+    // "קמפיינים מובילים": רק הקמפיין של הרכישה עצמה. בלי P = "בלי קמפיין", גם כשלאדם יש קמפיין (1/11)
+    expect(campaigns([buy({ buyer: 1, lead: 0 }), buy({ buyer: 2, campaign: 'halloween_lightning' })]).map((c) => [c.name, c.count])).toEqual([['halloween_lightning', 1], ['בלי קמפיין', 1]]);
   });
   it('finds the first day and the days without any row', () => {
     const g = purchaseGaps([buy({ buyer: 1, at: '2026-09-30T08:00:00.000Z' }), buy({ buyer: 1, at: '2026-10-02T08:00:00.000Z' }), buy({ buyer: 1, at: '2026-09-01T08:00:00.000Z', fromLead: true })]);
@@ -189,5 +190,37 @@ describe('campaign tracking health', () => {
     expect(h.total).toBe(5);
     expect(h.last7).toBe(1);
     expect(h.byValue.find((v) => v.name === '{campaignname}')).toEqual({ name: '{campaignname}', count: 1, last7: 1 });
+  });
+});
+
+describe('people who bought on the site without the bot (1/11)', () => {
+  it('are out of the funnel and the conversion rate, and counted apart', () => {
+    const leads = [
+      // נוצר ברגע הרכישה באתר
+      lead({ at: '2026-10-20T10:05:00.000Z', answered: false }),
+      // נוצר 9 דקות לפני הרכישה: עדיין קונה מהאתר
+      lead({ at: '2026-10-20T09:51:00.000Z' }),
+      // נכנס לבוט יום לפני ואז קנה
+      lead({ at: '2026-10-19T10:00:00.000Z', answered: true, step: 3, qStatus: 'finished' }),
+      // כמה שורות: הכניסה הראשונה מוקדמת, ולכן הוא לא קונה מהאתר
+      lead({ at: '2026-10-20T10:01:00.000Z', firstAt: '2026-10-10T10:00:00.000Z', answered: true }),
+      // רק רכישה משורת ליד (בלי תאריך אמיתי): נשאר במשפך
+      lead({ at: '2026-10-20T10:00:00.000Z', qStatus: 'converted', answered: true }),
+      lead({ at: '2026-10-20T10:00:00.000Z' }),
+    ];
+    const ps = [
+      buy({ buyer: 0, lead: 0, at: '2026-10-20T10:00:00.000Z' }),
+      buy({ buyer: 1, lead: 1, at: '2026-10-20T10:00:00.000Z' }),
+      buy({ buyer: 2, lead: 2, at: '2026-10-20T10:00:00.000Z' }),
+      buy({ buyer: 3, lead: 3, at: '2026-10-20T10:00:00.000Z' }),
+      buy({ buyer: 4, lead: 4, at: '2026-10-20T10:00:00.000Z', fromLead: true }),
+    ];
+    const x = annotate(file(leads, ps));
+    expect(x.map((l) => l.siteBuyer)).toEqual([true, true, false, false, false, false]);
+    const s = summarize(x, ps);
+    expect(s).toMatchObject({ leads: 4, siteBuyers: 2, leadsWhoBought: 3, purchases: 5 });
+    const f = funnel(x);
+    expect(f.leads).toBe(4);
+    expect(f.bought).toBe(3);
   });
 });

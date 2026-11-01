@@ -124,6 +124,8 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
     leads: sortedLeads,
     purchases,
     ...demoMailings(rnd, until),
+    // כמה שורות כפולות שלא נספרו, כמו בגיליון
+    dupes: purchases.filter((_, i) => i % 23 === 0).map((p) => p.at),
   };
 }
 

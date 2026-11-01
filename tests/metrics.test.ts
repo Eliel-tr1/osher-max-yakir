@@ -22,7 +22,7 @@ function buy(p: Partial<Purchase>): Purchase {
   };
 }
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
-  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null };
+  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [] };
 }
 
 const L = [
@@ -62,7 +62,7 @@ describe('summaries', () => {
     expect(leads.map((l) => [l.purchases, l.spent])).toEqual([[2, 150], [1, 30], [0, 0], [1, 0], [0, 0]]);
     const s = summarize(leads, P);
     expect(s).toEqual({
-      leads: 5, startedJourney: 3, aiAnalyzed: 3, realConversations: 2, salesConversations: 1,
+      leads: 5, siteBuyers: 0, startedJourney: 3, aiAnalyzed: 3, realConversations: 2, salesConversations: 1,
       purchases: 5, buyers: 4, totalPaid: 200, avgDeal: 50, leadsWhoBought: 3,
     });
     expect(buyersOf([])).toBe(0);
@@ -128,7 +128,7 @@ describe('products and sources', () => {
     expect(stats.find((s) => s.name === 'לא צוין')).toEqual({ name: 'לא צוין', count: 1, revenue: 20, bot: 0, avg: 20, min: 20, max: 20 });
     expect(stats.find((s) => s.name === 'Lightning Access')).toMatchObject({ count: 1, revenue: 0, avg: null });
     expect(purchaseSources(P).map((s) => [s.name, s.count])).toEqual([['לא צוין', 2], ['google', 1], ['Vitrue', 1], ['בוט וואטסאפ', 1]]);
-    expect(campaigns(P)).toEqual([{ name: 'halloween', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 }]);
+    expect(campaigns(P).find((c) => c.name === 'halloween')).toEqual({ name: 'halloween', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 });
   });
 
   it('rows per source group with leads, starts, buyers and money', () => {

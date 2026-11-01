@@ -151,6 +151,11 @@ function osher_indexer(array $rows, array $required, string $tabName): array {
 
 /** כמו leadsFromRows. $purchaseRows = null כשאין לשונית רכישות. */
 function osher_leads_from_rows(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null): array {
+    return osher_build($leadRows, $purchaseRows, $generatedAt, $mailingRows, $waveRows)['file'];
+}
+
+/** כמו buildData: הקובץ הציבורי, והקודים המזהים שנשמרים בנפרד מחוץ לאתר (#6) */
+function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null): array {
     [$lcol, $ldata] = osher_indexer($leadRows, OSHER_REQUIRED, 'הלידים');
     $start = osher_day_start(OSHER_START_DAY);
 
@@ -200,28 +205,39 @@ function osher_leads_from_rows(array $leadRows, ?array $purchaseRows, DateTimeIm
         if (!array_key_exists($ns, $buyerOfNs)) $buyerOfNs[$ns] = $nextBuyer++;
         return $buyerOfNs[$ns];
     };
-    $purchases = $pcol !== null ? osher_purchases_from_rows($pdata, $pcol, $leads, $leadOfNs, $productNames, $start, $buyerId) : [];
+    [$rows, $dupes] = $pcol !== null ? osher_purchases_from_rows($pdata, $pcol, $leads, $leadOfNs, $productNames, $start, $buyerId) : [[], []];
     $withRows = [];
-    foreach ($purchases as $p) if ($p['lead'] !== null) $withRows[$p['lead']] = true;
+    foreach ($rows as $r) if ($r['p']['lead'] !== null) $withRows[$r['p']['lead']] = true;
     foreach ($leads as $i => $l) {
         if (($l['qStatus'] === 'converted' || $l['qStatus'] === 'payment') && !isset($withRows[$i])) {
-            $purchases[] = ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
+            $rows[] = ['ns' => $kept[$i]['ns'], 'p' => ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
                 'source' => null, 'sourceGroup' => null, 'campaign' => null, 'fromLead' => true, 'bot' => null,
-                'reason' => null, 'coupon' => null, 'buyer' => $buyerId($kept[$i]['ns'])];
+                'reason' => null, 'coupon' => null, 'buyer' => $buyerId($kept[$i]['ns'])]];
         }
     }
-    usort($purchases, fn ($a, $b) => strcmp($a['at'], $b['at']) ?: ($a['lead'] ?? -1) <=> ($b['lead'] ?? -1));
+    usort($rows, fn ($a, $b) => strcmp($a['p']['at'], $b['p']['at']) ?: ($a['p']['lead'] ?? -1) <=> ($b['p']['lead'] ?? -1));
+    $mailings = $mailingRows !== null ? osher_mailings_with_ids($mailingRows) : null;
+    $at = osher_iso($generatedAt);
 
     return [
-        'version' => 2,
-        'origin' => 'sheet',
-        'generatedAt' => osher_iso($generatedAt),
-        'sheetRows' => count($ldata),
-        'purchaseRows' => count($pdata),
-        'leads' => $leads,
-        'purchases' => $purchases,
-        'mailings' => $mailingRows !== null ? osher_mailings_from_rows($mailingRows) : null,
-        'mailingWaves' => $waveRows !== null ? osher_waves_from_rows($waveRows) : null,
+        'file' => [
+            'version' => 2,
+            'origin' => 'sheet',
+            'generatedAt' => $at,
+            'sheetRows' => count($ldata),
+            'purchaseRows' => count($pdata),
+            'leads' => $leads,
+            'purchases' => array_map(fn ($r) => $r['p'], $rows),
+            'mailings' => $mailings !== null ? array_map(fn ($m) => $m['m'], $mailings) : null,
+            'mailingWaves' => $waveRows !== null ? osher_waves_from_rows($waveRows) : null,
+            'dupes' => $dupes,
+        ],
+        'ids' => [
+            'generatedAt' => $at,
+            'leads' => array_map(fn ($r) => $r['ns'], $kept),
+            'purchases' => array_map(fn ($r) => $r['ns'], $rows),
+            'mailings' => $mailings !== null ? array_map(fn ($m) => $m['ns'], $mailings) : [],
+        ],
     ];
 }
 
@@ -236,6 +252,11 @@ function osher_optional_indexer(array $rows, array $required): ?array {
 
 /** כמו mailingsFromRows */
 function osher_mailings_from_rows(array $rows): ?array {
+    $x = osher_mailings_with_ids($rows);
+    return $x === null ? null : array_map(fn ($m) => $m['m'], $x);
+}
+
+function osher_mailings_with_ids(array $rows): ?array {
     $m = osher_optional_indexer($rows, OSHER_MAILING);
     if ($m === null) return null;
     [$c, $data] = $m;
@@ -252,11 +273,11 @@ function osher_mailings_from_rows(array $rows): ?array {
             $buyer = $ids[$ns];
         }
         $sent = osher_parse_date($c($r, 'תאריך שליחה'));
-        $out[] = [
+        $out[] = ['ns' => $ns, 'm' => [
             'campaign' => $c($r, 'קמפיין'), 'wave' => $c($r, 'גל'), 'sentAt' => $sent ? osher_iso($sent) : null, 'at' => osher_iso($at), 'buyer' => $buyer,
             'product' => osher_clean($c($r, 'מוצר')), 'amount' => osher_amount($c($r, 'סכום')), 'viaLink' => $c($r, 'דרך קישור הקמפיין') === OSHER_BOT_YES,
             'coupon' => osher_coupon_code($c($r, 'קופון')), 'bot' => osher_bot_flag($c($r, 'של הבוט')), 'reason' => osher_clean($c($r, 'סיבה')),
-        ];
+        ]];
     }
     return $out;
 }
@@ -325,8 +346,13 @@ function osher_purchases_from_rows(array $data, callable $col, array $leads, arr
         }
     }
     $out = [];
-    foreach ($rows as $i => $r) if (!isset($dropped[$i])) $out[] = $r['p'];
-    return $out;
+    $dupes = [];
+    foreach ($rows as $i => $r) {
+        if (isset($dropped[$i])) $dupes[] = $r['p']['at'];
+        else $out[] = ['ns' => $r['ns'], 'p' => $r['p']];
+    }
+    sort($dupes, SORT_STRING);
+    return [$out, $dupes];
 }
 
 function osher_to_lead(array $r, callable $col, array $productNames, ?DateTimeImmutable $first): array {

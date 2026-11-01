@@ -11,6 +11,7 @@ header('Cache-Control: no-store');
 header('X-Robots-Tag: noindex');
 
 require __DIR__ . '/_leads.php';
+require __DIR__ . '/_auth.php';
 
 const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
 const SHEET_GID = '0';            // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
@@ -91,8 +92,9 @@ if ($err) out(502, ['ok' => false, 'error' => $err]);
 [$wavesCsv] = fetch_tab(WAVES_GID);
 
 try {
-    $file = osher_leads_from_rows(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')),
+    $built = osher_build(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')),
         $mailingsCsv !== null ? osher_parse_csv($mailingsCsv) : null, $wavesCsv !== null ? osher_parse_csv($wavesCsv) : null);
+    $file = $built['file'];
 } catch (RuntimeException $e) {
     out(422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']);
 }
@@ -105,6 +107,8 @@ if (@file_put_contents($tmp, osher_pack($file)) === false || !@rename($tmp, $dat
     @unlink($tmp);
     out(500, ['ok' => false, 'error' => 'שמירת הנתונים נכשלה']);
 }
+// הקודים המזהים לקישורים לשיחות: מחוץ לתיקיית האתר, ומוגשים רק אחרי כניסה (links.php). כשל כאן לא מפיל את הרענון
+$links = osher_write_private('ids.json', json_encode($built['ids'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 out(200, [
     'ok' => true,
     'generatedAt' => $file['generatedAt'],
@@ -114,4 +118,5 @@ out(200, [
     'purchases' => count($file['purchases']),
     'mailings' => $file['mailings'] === null ? null : count($file['mailings']),
     'mailingWaves' => $file['mailingWaves'] === null ? null : count($file['mailingWaves']),
+    'links' => $links,
 ]);

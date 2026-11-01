@@ -121,6 +121,18 @@ function indexer(rows: string[][], required: readonly string[], tabName: string)
 }
 
 /**
+ * הקודים המזהים (user_ns) של כל ליד, רכישה ורכישת דיוור, לפי אותו סדר כמו בקובץ הנתונים.
+ * לא נכנסים לקובץ הציבורי: נשמרים בשרת מחוץ לאתר, ומוגשים רק אחרי כניסה (#6, הנחיית המנהל 1/11/2026).
+ * ריק = אין קוד מזהה.
+ */
+export interface PrivateIds {
+  generatedAt: string;
+  leads: string[];
+  purchases: string[];
+  mailings: string[];
+}
+
+/**
  * מהשורות של שתי הלשוניות לקובץ הנתונים. purchaseRows = null כשאין לשונית רכישות: אז הרכישות נלקחות
  * משורות הלידים בלבד (הרכישה האחרונה של כל אדם).
  */
@@ -128,6 +140,14 @@ export function leadsFromRows(
   leadRows: string[][], purchaseRows: string[][] | null = null, generatedAt = new Date(),
   mailingRows: string[][] | null = null, waveRows: string[][] | null = null,
 ): LeadsFile {
+  return buildData(leadRows, purchaseRows, generatedAt, mailingRows, waveRows).file;
+}
+
+/** כמו leadsFromRows, וגם הקודים המזהים שנשמרים בנפרד */
+export function buildData(
+  leadRows: string[][], purchaseRows: string[][] | null = null, generatedAt = new Date(),
+  mailingRows: string[][] | null = null, waveRows: string[][] | null = null,
+): { file: LeadsFile; ids: PrivateIds } {
   const L = indexer(leadRows, REQUIRED_COLUMNS, 'הלידים');
   const lcol = (r: string[], name: LeadColumn) => L.col(r, name);
   const start = israelDayStart(START_DAY).getTime();
@@ -181,30 +201,40 @@ export function leadsFromRows(
     }
     return id;
   };
-  const purchases = P ? purchasesFromRows(P.data, pcol, leads, leadOfNs, productNames, start, buyerId) : [];
+  const fromTab = P ? purchasesFromRows(P.data, pcol, leads, leadOfNs, productNames, start, buyerId) : { rows: [], dupes: [] };
+  const rows = fromTab.rows;
   // קונים שמסומנים בלשונית הלידים ואין להם אף שורה בלשונית הרכישות: הרכישה האחרונה שלהם נלקחת משם
-  const withRows = new Set(purchases.map((p) => p.lead).filter((l): l is number => l !== null));
+  const withRows = new Set(rows.map((r) => r.p.lead).filter((l): l is number => l !== null));
   leads.forEach((l, i) => {
     if ((l.qStatus === 'converted' || l.qStatus === 'payment') && !withRows.has(i)) {
       // רכישה משורת ליד: אין לה תא "של הבוט", ולכן היא עוד לא הוכרעה
-      purchases.push({
-        at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null,
-        reason: null, coupon: null, buyer: buyerId(kept[i].ns),
+      rows.push({
+        ns: kept[i].ns,
+        p: {
+          at: l.at, lead: i, product: l.product ?? l.test, amount: l.amount, source: null, sourceGroup: null, campaign: null, fromLead: true, bot: null,
+          reason: null, coupon: null, buyer: buyerId(kept[i].ns),
+        },
       });
     }
   });
-  purchases.sort((a, b) => a.at.localeCompare(b.at) || (a.lead ?? -1) - (b.lead ?? -1));
+  rows.sort((a, b) => a.p.at.localeCompare(b.p.at) || (a.p.lead ?? -1) - (b.p.lead ?? -1));
+  const mailings = mailingRows ? mailingsWithIds(mailingRows) : null;
+  const at = generatedAt.toISOString();
 
   return {
-    version: 2,
-    origin: 'sheet',
-    generatedAt: generatedAt.toISOString(),
-    sheetRows: L.data.length,
-    purchaseRows: P ? P.data.length : 0,
-    leads,
-    purchases,
-    mailings: mailingRows ? mailingsFromRows(mailingRows) : null,
-    mailingWaves: waveRows ? wavesFromRows(waveRows) : null,
+    file: {
+      version: 2,
+      origin: 'sheet',
+      generatedAt: at,
+      sheetRows: L.data.length,
+      purchaseRows: P ? P.data.length : 0,
+      leads,
+      purchases: rows.map((r) => r.p),
+      mailings: mailings ? mailings.map((m) => m.m) : null,
+      mailingWaves: waveRows ? wavesFromRows(waveRows) : null,
+      dupes: fromTab.dupes,
+    },
+    ids: { generatedAt: at, leads: kept.map((r) => r.ns), purchases: rows.map((r) => r.ns), mailings: mailings ? mailings.map((m) => m.ns) : [] },
   };
 }
 
@@ -219,12 +249,16 @@ function optionalIndexer(rows: string[][], required: readonly string[]) {
 
 /** לשונית "דיוורים" */
 export function mailingsFromRows(rows: string[][]): MailingPurchase[] | null {
+  return mailingsWithIds(rows)?.map((x) => x.m) ?? null;
+}
+
+function mailingsWithIds(rows: string[][]): { m: MailingPurchase; ns: string }[] | null {
   const M = optionalIndexer(rows, MAILING_COLUMNS);
   if (!M) return null;
   const c = (r: string[], name: MailingColumn) => M.col(r, name);
   const ids = new Map<string, number>();
   let next = 0;
-  const out: MailingPurchase[] = [];
+  const out: { m: MailingPurchase; ns: string }[] = [];
   for (const r of M.data) {
     const at = parseSheetDate(c(r, 'תאריך רכישה'));
     if (!at) continue;
@@ -239,9 +273,12 @@ export function mailingsFromRows(rows: string[][]): MailingPurchase[] | null {
       } else buyer = id;
     }
     out.push({
-      campaign: c(r, 'קמפיין'), wave: c(r, 'גל'), sentAt: parseSheetDate(c(r, 'תאריך שליחה'))?.toISOString() ?? null, at: at.toISOString(), buyer,
-      product: cleanText(c(r, 'מוצר')), amount: parseAmount(c(r, 'סכום')), viaLink: c(r, 'דרך קישור הקמפיין') === BOT_YES,
-      coupon: couponCode(c(r, 'קופון')), bot: botFlag(c(r, 'של הבוט')), reason: cleanText(c(r, 'סיבה')),
+      ns,
+      m: {
+        campaign: c(r, 'קמפיין'), wave: c(r, 'גל'), sentAt: parseSheetDate(c(r, 'תאריך שליחה'))?.toISOString() ?? null, at: at.toISOString(), buyer,
+        product: cleanText(c(r, 'מוצר')), amount: parseAmount(c(r, 'סכום')), viaLink: c(r, 'דרך קישור הקמפיין') === BOT_YES,
+        coupon: couponCode(c(r, 'קופון')), bot: botFlag(c(r, 'של הבוט')), reason: cleanText(c(r, 'סיבה')),
+      },
     });
   }
   return out;
@@ -283,7 +320,7 @@ export function dedupeByNs(raws: Raw[]): Raw[] {
 function purchasesFromRows(
   data: string[][], col: (r: string[], name: PurchaseColumn) => string, leads: Lead[], leadOfNs: Map<string, number>,
   productNames: Set<string>, start: number, buyerId: (ns: string) => number,
-): Purchase[] {
+): { rows: { ns: string; p: Purchase }[]; dupes: string[] } {
   const rows: { at: Date; ns: string; p: Purchase }[] = [];
   data.forEach((cells) => {
     const at = parseSheetDate(col(cells, 'תאריך'));
@@ -324,7 +361,9 @@ function purchasesFromRows(
       if (g[i].p.amount === prev.p.amount && (g[i].at.getTime() - prev.at.getTime()) / 1000 <= PURCHASE_DUPLICATE_SECONDS) dropped.add(g[i]);
     }
   }
-  return rows.filter((r) => !dropped.has(r)).map((r) => r.p);
+  // התאריכים של השורות הכפולות שלא נספרו, כדי להראות כמה הן בכל טווח (הנחיית המנהל, 1/11/2026)
+  const dupes = rows.filter((r) => dropped.has(r)).map((r) => r.p.at).sort();
+  return { rows: rows.filter((r) => !dropped.has(r)).map((r) => ({ ns: r.ns, p: r.p })), dupes };
 }
 
 function toLead(r: Raw, col: (r: string[], name: LeadColumn) => string, productNames: Set<string>, first: Date | null): Lead {

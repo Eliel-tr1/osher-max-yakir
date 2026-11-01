@@ -4,7 +4,7 @@ name: פרופיל טבלה
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'check/**']
     paths: ['scripts/check-numbers.ts', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:

@@ -28,7 +28,7 @@ function TrackingAlert() {
 export function TrackingSection({ health, leads, all }: { health: TrackingHealth; leads: Lead[]; all: Purchase[] }) {
   const [sort, setSort] = useState<'count' | 'money'>('count');
   const rows = useMemo(() => {
-    const r = campaigns(all, leads);
+    const r = campaigns(all);
     return sort === 'money' ? [...r].sort((a, b) => b.revenue - a.revenue || b.count - a.count) : r;
   }, [all, leads, sort]);
   const without = useMemo(() => all.filter((p) => !campaignOf(p, leads)).length, [all, leads]);
