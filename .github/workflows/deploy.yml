@@ -79,7 +79,8 @@ jobs:
           npm ci
           # הנתונים האמיתיים נבנים לפני הבנייה. אם הטבלה לא נקראת או שמבנה עמודה השתנה, הפריסה נעצרת
           npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --gid "$SHEET_GID" --purchases-gid "$PURCHASES_GID"
-          npm run check
+          # הגרסה נכנסת לבנייה, כדי שדף פתוח ייטען מחדש לבד כשעולה גרסה חדשה
+          NEXT_PUBLIC_BUILD_SHA="${GITHUB_SHA::7}" npm run check
       - name: אריזה
         if: steps.gate.outputs.ready == 'true'
         run: |
