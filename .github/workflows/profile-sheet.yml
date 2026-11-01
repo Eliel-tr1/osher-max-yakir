@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, 'check/**']
-    paths: ['scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/coupon-diag.ts', 'scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -47,6 +47,7 @@ jobs:
           PARITY=$(npx tsx scripts/parity-real.ts /tmp/leads.csv /tmp/purchases.csv /tmp/mailings.csv /tmp/waves.csv 2>&1 || true)
           CHECK=$(npx tsx scripts/check-numbers.ts /tmp/leads.json /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)
           CHECK="$CHECK"$'\n'"$(npx tsx scripts/popup-diag.ts /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)"
+          CHECK="$CHECK"$'\n'"$(npx tsx scripts/coupon-diag.ts /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)"
           OUT="$PARITY"$'\n'"$CHECK"$'\n'"$(npx tsx scripts/summary.ts /tmp/leads.json)"$'\n'"$OUT"
           echo "$OUT"
           # הערה אחת מוגבלת בגודל, אז מפצלים לחלקים של עד 2500 בתים
