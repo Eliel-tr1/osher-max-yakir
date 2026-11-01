@@ -10,9 +10,10 @@ import {
   type Bucket, type Range,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
-import { AuthProvider, LoginControl } from './auth';
-import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
+import { AuthProvider, LoginControl, LoginGate } from './auth';
+import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Ring, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
 import { DataProvider } from './lists';
+import { ThemeToggle } from './theme';
 import { BotVsRest, type Measure } from './sections/botVsRest';
 import { CouponsSection } from './sections/coupons';
 import { MailingsSection } from './sections/mailings';
@@ -30,7 +31,7 @@ const BUILD = process.env.NEXT_PUBLIC_BUILD_SHA ?? '';
 /** טווחים שמשווים לתקופה הקודמת (הנחיית המנהל, 1/11/2026) */
 const COMPARED: Preset[] = ['7d', '30d', 'month', 'prevMonth'];
 
-type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
+type Load = { state: 'loading' } | { state: 'locked' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
 
 export default function Dashboard() {
@@ -55,8 +56,21 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async (): Promise<LeadsFile | null> => {
     try {
-      const res = await fetch(`${BASE_PATH}/data/leads.json?t=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // הנתונים רק אחרי כניסה בסיסמה (1/11/2026). בלי PHP (תצוגה מקומית) נקרא הקובץ הסטטי
+      let res = await fetch(`${BASE_PATH}/data.php?t=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+      if (res.status === 401) {
+        setLoad({ state: 'locked' });
+        return null;
+      }
+      const isPhp = (res.headers.get('content-type') ?? '').includes('json');
+      if (!isPhp || res.status === 404) {
+        const local = await fetch(`${BASE_PATH}/data/leads.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (local.ok) res = local;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
       const file = unpack(await res.json());
       setLoad({ state: 'ready', file, checkedAt: new Date() });
       return file;
@@ -96,6 +110,11 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BASE_PATH}/refresh.php`, { method: 'POST', cache: 'no-store' });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.status === 401) {
+        setLoad({ state: 'locked' });
+        setRefresh({ state: 'idle' });
+        return;
+      }
       if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       const file = await fetchData();
       if (!file) throw new Error('הנתונים עודכנו בשרת, אבל לא נטענו לדף. אפשר לרענן את הדף.');
@@ -162,6 +181,7 @@ export default function Dashboard() {
   }, [file, all, preset, custom, source, proc, leadsBy, testsBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
+  if (load.state === 'locked') return <LoginGate onIn={() => { setLoad({ state: 'loading' }); fetchData(); }} />;
   if (load.state === 'error' || !file || !view) {
     return (
       <main className="page">
@@ -190,9 +210,12 @@ export default function Dashboard() {
               <p className="sub">הנתונים נכונים ל-<bdi>{fmtDateTime(file.generatedAt)}</bdi></p>
             </div>
             <div className="refresh">
-              <button type="button" onClick={startRefresh} disabled={refresh.state === 'waiting'}>
-                {refresh.state === 'waiting' ? 'מעדכן...' : 'רענון מהטבלה'}
-              </button>
+              <div className="headbtns">
+                <ThemeToggle />
+                <button type="button" onClick={startRefresh} disabled={refresh.state === 'waiting'}>
+                  {refresh.state === 'waiting' ? 'מעדכן...' : 'רענון מהטבלה'}
+                </button>
+              </div>
               <span role="status" className={refresh.state === 'error' ? 'err' : ''}>
                 {refresh.state === 'waiting' && 'קורא את הטבלה...'}
                 {refresh.state === 'done' && 'עודכן עכשיו'}
@@ -248,12 +271,12 @@ export default function Dashboard() {
               info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
             />
             <Tile
-              label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
+              label="התחילו שיחה" value={nf.format(s.startedJourney)} ring={s.leads ? s.startedJourney / s.leads : null} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
               info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
             />
             <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
             <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
-            <Tile label="אחוז המרה" value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`} info="מתוך הלידים בטווח, בלי מי שקנה באתר בלי לעבור בבוט." />
+            <Tile label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`} info="מתוך הלידים בטווח, בלי מי שקנה באתר בלי לעבור בבוט." />
             <Tile label="קנו באתר בלי לעבור בבוט" value={nf.format(s.siteBuyers)} sub="לא במשפך" info={`ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`} />
             <Tile label="הסירו את עצמם" value={nf.format(view.removed)} sub="לפי תאריך ההסרה" />
             <article className="tile sparkcard">
@@ -303,8 +326,8 @@ export default function Dashboard() {
                 info: `מי שעבר ואז רכש מקבל בטבלה "לקוח פעיל", והתוצאה שלו נדרסת: ${nf.format(ex.overwritten)} כאלה בטווח. עד 19/10 שם המבחן לא נרשם, ולכן הפילוח לפי סוג כולל רק מבחנים עם שם. התאריך הוא תאריך הכניסה של הליד.`,
               },
               { label: 'נכשלו', value: nf.format(ex.failed) },
-              { label: 'אחוז מעבר', value: pctOf(ex.passRate) },
-              { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: pct(ex.passedAndBought, ex.passed) + ' מהעוברים' },
+              { label: 'אחוז מעבר', value: pctOf(ex.passRate), ring: ex.passRate },
+              { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: 'מהעוברים', ring: ex.passed ? ex.passedAndBought / ex.passed : null },
             ]} />
             <Columns
               labels={view.passFail.map((d) => fmtBucket(d.key, view.passFailBy))}
@@ -354,12 +377,15 @@ export default function Dashboard() {
   );
 }
 
-function Tile({ label, value, sub, info }: { label: string; value: string; sub?: string; info?: ReactNode }) {
+function Tile({ label, value, sub, info, ring }: { label: string; value: string; sub?: string; info?: ReactNode; ring?: number | null }) {
   return (
-    <article className="tile">
-      <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
-      <p className="value">{value}</p>
-      {sub ? <p className="sub">{sub}</p> : null}
+    <article className={`tile${ring !== undefined ? ' has-ring' : ''}`}>
+      <div>
+        <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
+        <p className="value">{value}</p>
+        {sub ? <p className="sub">{sub}</p> : null}
+      </div>
+      {ring !== undefined && <Ring value={ring} size={60} label={label} />}
     </article>
   );
 }

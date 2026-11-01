@@ -8,8 +8,10 @@ const SECTIONS = ['bot', 'buys', 'coupons', 'mail', 'popup', 'tracking', 'exams'
 
 await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch();
-for (const [name, width, scheme] of [['desktop', 1280, 'light'], ['phone', 375, 'light'], ['dark', 1280, 'dark']]) {
+for (const [name, width, scheme] of [['desktop', 1280, 'dark'], ['phone', 375, 'dark'], ['light', 1280, 'light']]) {
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: name === 'phone' ? 2 : 1, colorScheme: scheme });
+  // ברירת המחדל כהה. מצב בהיר נבחר בכפתור, והבחירה נשמרת ב-localStorage
+  await page.addInitScript((t) => { try { localStorage.setItem('osher-theme', t); } catch {} }, scheme);
   await page.goto(`${URL}?t=${Date.now()}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('#bot', { timeout: 30000 });
   await page.waitForTimeout(800);

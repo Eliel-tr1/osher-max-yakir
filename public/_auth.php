@@ -1,10 +1,12 @@
 <?php
 /**
- * כניסה מאובטחת לרשימות עם קישורים לשיחות (#6, הנחיית המנהל 1/11/2026): כניסה עם Google, רק למיילים ברשימה סגורה.
+ * כניסה מאובטחת לרשימות עם קישורים לשיחות (#6). מ-1/11/2026 בסיסמה אחת (הנחיית המנהל), במקום Google.
  * הקבצים הפרטיים יושבים בשרת מחוץ לתיקיית האתר (OSHER_PRIVATE_DIR, ברירת מחדל ~/osher-max-private):
- *   auth.json   {clientId, emails[]}, נכתב בפריסה מהסודות GOOGLE_CLIENT_ID ו-DASHBOARD_EMAILS
+ *   auth.json      {salt, iter, hash}, גיבוב הסיסמה. נכתב בפריסה מהסוד DASHBOARD_PASSWORD (הסיסמה עצמה לא נשמרת)
+ *   attempts.json  ניסיונות שגויים אחרונים, עם כתובת מגובבת
  *   secret.key  מפתח לחתימה על עוגיית הכניסה, נוצר בשימוש הראשון
  *   ids.json    הקודים המזהים, נכתב בכל רענון
+ *   leads.json  קובץ הנתונים של הדשבורד (מ-1/11 לא בתיקיית האתר), מוגש רק דרך data.php
  * הקובץ מגדיר פונקציות בלבד. גישה ישירה אליו מהדפדפן לא עושה כלום.
  */
 
@@ -32,17 +34,61 @@ function osher_write_private(string $name, string $content): bool {
     return $ok;
 }
 
+/** קובץ הנתונים של הדשבורד, מחוץ לתיקיית האתר. מוגש רק דרך data.php */
+function osher_data_file(): string {
+    return osher_private_dir() . '/leads.json';
+}
+
 function osher_read_private(string $name): ?string {
     $f = osher_private_dir() . "/$name";
     $t = is_file($f) ? @file_get_contents($f) : false;
     return $t === false ? null : $t;
 }
 
-/** ההגדרה: מזהה הלקוח של Google ורשימת המיילים. null = הכניסה עוד לא הוגדרה */
+/** ההגדרה: גיבוב הסיסמה (PBKDF2-SHA256 עם מלח). null = הכניסה עוד לא הוגדרה */
 function osher_auth_config(): ?array {
     $c = json_decode(osher_read_private('auth.json') ?? 'null', true);
-    if (!is_array($c) || empty($c['clientId']) || empty($c['emails']) || !is_array($c['emails'])) return null;
-    return ['clientId' => (string) $c['clientId'], 'emails' => array_values(array_map(fn ($e) => strtolower(trim((string) $e)), $c['emails']))];
+    if (!is_array($c) || empty($c['salt']) || empty($c['hash']) || (int) ($c['iter'] ?? 0) < 10000) return null;
+    return ['salt' => (string) $c['salt'], 'iter' => (int) $c['iter'], 'hash' => strtolower((string) $c['hash'])];
+}
+
+/** סיסמה נכונה? השוואה בזמן קבוע */
+/** רווחים, מרכאות וסימני כיוון נסתרים לא נחשבים (נכנסים כשמעתיקים מטקסט בעברית). אותו ניקוי כמו בפריסה */
+function osher_auth_clean(string $password): string {
+    return (string) preg_replace('/[\s\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}"]/u', '', $password);
+}
+
+function osher_auth_password_ok(string $password, array $cfg): bool {
+    $password = osher_auth_clean($password);
+    if ($password === '' || strlen($password) > 200) return false;
+    return hash_equals($cfg['hash'], hash_pbkdf2('sha256', $password, $cfg['salt'], $cfg['iter']));
+}
+
+/** גרסת הסיסמה: כשהסיסמה מתחלפת, כל העוגיות הקודמות כבר לא תקפות */
+function osher_auth_version(array $cfg): string {
+    return substr(hash('sha256', $cfg['salt'] . $cfg['hash']), 0, 16);
+}
+
+const OSHER_FAIL_WINDOW = 900;
+const OSHER_FAIL_PER_IP = 5;
+const OSHER_FAIL_TOTAL = 30;
+
+/** הגבלת ניסיונות: עד 5 שגויים מאותה כתובת ועד 30 בסך הכול ב-15 דקות. הכתובת נשמרת מגובבת */
+function osher_auth_blocked(string $ip, int $now): bool {
+    $log = json_decode(osher_read_private('attempts.json') ?? '[]', true);
+    if (!is_array($log)) $log = [];
+    $recent = array_filter($log, fn ($a) => is_array($a) && ($a['t'] ?? 0) > $now - OSHER_FAIL_WINDOW);
+    $key = hash('sha256', $ip);
+    $mine = array_filter($recent, fn ($a) => ($a['ip'] ?? '') === $key);
+    return count($mine) >= OSHER_FAIL_PER_IP || count($recent) >= OSHER_FAIL_TOTAL;
+}
+
+function osher_auth_failed(string $ip, int $now): void {
+    $log = json_decode(osher_read_private('attempts.json') ?? '[]', true);
+    if (!is_array($log)) $log = [];
+    $log = array_values(array_filter($log, fn ($a) => is_array($a) && ($a['t'] ?? 0) > $now - OSHER_FAIL_WINDOW));
+    $log[] = ['t' => $now, 'ip' => hash('sha256', $ip)];
+    osher_write_private('attempts.json', json_encode(array_slice($log, -200)));
 }
 
 function osher_auth_secret(): ?string {
@@ -60,53 +106,29 @@ function osher_unb64(string $s): string {
     return (string) base64_decode(strtr($s, '-_', '+/'));
 }
 
-/** עוגייה חתומה: המייל ותוקף, בלי מידע אחר */
-function osher_auth_token(string $email, int $exp, string $secret): string {
-    $payload = osher_b64(json_encode(['e' => $email, 'x' => $exp]));
+/** עוגייה חתומה: גרסת הסיסמה ותוקף, בלי מידע אחר */
+function osher_auth_token(string $version, int $exp, string $secret): string {
+    $payload = osher_b64(json_encode(['v' => $version, 'x' => $exp]));
     return $payload . '.' . osher_b64(hash_hmac('sha256', $payload, $secret, true));
 }
 
-/** המייל מתוך עוגייה תקינה, בתוקף ושעדיין ברשימה. אחרת null */
-function osher_auth_check(string $token, string $secret, array $emails, int $now): ?string {
+/** עוגייה תקינה, בתוקף ומהסיסמה הנוכחית? */
+function osher_auth_check(string $token, string $secret, string $version, int $now): bool {
     $parts = explode('.', $token);
-    if (count($parts) !== 2) return null;
-    if (!hash_equals(osher_b64(hash_hmac('sha256', $parts[0], $secret, true)), $parts[1])) return null;
+    if (count($parts) !== 2) return false;
+    if (!hash_equals(osher_b64(hash_hmac('sha256', $parts[0], $secret, true)), $parts[1])) return false;
     $p = json_decode(osher_unb64($parts[0]), true);
-    if (!is_array($p) || !isset($p['e'], $p['x']) || (int) $p['x'] < $now) return null;
-    $email = strtolower((string) $p['e']);
-    return in_array($email, $emails, true) ? $email : null;
+    if (!is_array($p) || !isset($p['v'], $p['x']) || (int) $p['x'] < $now) return false;
+    return hash_equals($version, (string) $p['v']);
 }
 
-/** בדיקה של מה ש-Google החזיר על ה-ID token (tokeninfo). מחזיר את המייל אם מותר, אחרת null */
-function osher_auth_verify_claims(array $claims, string $clientId, array $emails, int $now): ?string {
-    if (($claims['aud'] ?? '') !== $clientId) return null;
-    if (!in_array($claims['iss'] ?? '', ['accounts.google.com', 'https://accounts.google.com'], true)) return null;
-    if ((int) ($claims['exp'] ?? 0) < $now) return null;
-    $verified = $claims['email_verified'] ?? false;
-    if ($verified !== true && $verified !== 'true') return null;
-    $email = strtolower((string) ($claims['email'] ?? ''));
-    return $email !== '' && in_array($email, $emails, true) ? $email : null;
-}
-
-/** בודק את ה-ID token מול Google. null כשהבדיקה נכשלה */
-function osher_google_claims(string $idToken): ?array {
-    $ch = curl_init('https://oauth2.googleapis.com/tokeninfo?id_token=' . rawurlencode($idToken));
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15]);
-    $body = curl_exec($ch);
-    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($body === false || $code !== 200) return null;
-    $c = json_decode($body, true);
-    return is_array($c) ? $c : null;
-}
-
-/** המייל של מי שמחובר עכשיו, או null */
-function osher_auth_email(): ?string {
+/** האם מי שגולש עכשיו מחובר */
+function osher_auth_in(): bool {
     $cfg = osher_auth_config();
     $token = $_COOKIE[OSHER_AUTH_COOKIE] ?? '';
-    if (!$cfg || $token === '') return null;
+    if (!$cfg || $token === '') return false;
     $secret = osher_auth_secret();
-    return $secret ? osher_auth_check($token, $secret, $cfg['emails'], time()) : null;
+    return $secret ? osher_auth_check($token, $secret, osher_auth_version($cfg), time()) : false;
 }
 
 function osher_auth_set_cookie(string $value, int $exp): void {

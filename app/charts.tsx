@@ -220,14 +220,17 @@ export function Sparkline({ labels, values, color = '--series-1', height = 56 }:
 }
 
 /** שורת מספרים קטנים בתוך כרטיס. info: הגדרה ב-ⓘ ליד השם */
-export function Stats({ items }: { items: { label: string; value: string; sub?: string; info?: ReactNode }[] }) {
+export function Stats({ items }: { items: { label: string; value: string; sub?: string; info?: ReactNode; ring?: number | null; ringColor?: string }[] }) {
   return (
     <div className="stats">
       {items.map((s) => (
-        <div key={s.label} className="stat">
-          <span className="label">{s.label}{s.info ? <> <Info>{s.info}</Info></> : null}</span>
-          <span className="value">{s.value}</span>
-          {s.sub && <span className="sub">{s.sub}</span>}
+        <div key={s.label} className={`stat${s.ring !== undefined ? ' has-ring' : ''}`}>
+          {s.ring !== undefined && <Ring value={s.ring} color={s.ringColor} label={s.label} />}
+          <span className="stattext">
+            <span className="label">{s.label}{s.info ? <> <Info>{s.info}</Info></> : null}</span>
+            <span className="value">{s.value}</span>
+            {s.sub && <span className="sub">{s.sub}</span>}
+          </span>
         </div>
       ))}
     </div>
@@ -390,30 +393,65 @@ export function SimpleTable({ headers, rows, max: maxShown = 15 }: { headers: st
  * prev: בסיס אחר לאחוז מהקודם (למשל רכישות ולא קונים); first: false = בלי אחוז מהראשון.
  * pctText: טקסט אחר במקום שני האחוזים, לשלב שלא מוכל בשלב שלפניו.
  */
-export function FunnelStrip({ steps, fromPrev = false }: {
+/**
+ * משפך גרפי: פס ממורכז לכל שלב, ברוחב יחסי לשלב הראשון. בין השלבים חץ עם האחוז שעבר מהשלב הקודם
+ * (או pctText כשהשלבים לא מוכלים זה בזה). האחוז מהשלב הראשון ליד המספר.
+ */
+export function FunnelStrip({ steps }: {
   steps: { label: string; value: number; sub?: string; prev?: number; first?: boolean; pctText?: string }[];
+  /** לא בשימוש יותר: המשפך תמיד מראה גם מהשלב הקודם וגם מהראשון */
   fromPrev?: boolean;
 }) {
   const base = steps[0]?.value ?? 0;
   return (
-    <ol className={`funnel${fromPrev ? ' two-pct' : ''}`} style={{ ['--n' as string]: steps.length }}>
-      {steps.map((s, i) => (
-        <li key={s.label} style={{ ['--w' as string]: `${base ? Math.min(100, Math.max(6, (s.value / base) * 100)) : 0}%` }}>
-          <span className="bar" />
-          <span className="label" title={s.label}>{s.label}</span>
-          <span className="value">{nf.format(s.value)}</span>
-          {s.sub ? <span className="fsub">{s.sub}</span> : null}
-          {fromPrev ? (
-            <span className="pct">
-              {i === 0 ? '' : s.pctText ?? `${pct(s.value, s.prev ?? steps[i - 1].value)} מהשלב הקודם`}
-              {i > 0 && !s.pctText && s.first !== false ? <><br />{`${pct(s.value, base)} מהראשון`}</> : null}
-            </span>
-          ) : (
-            <span className="pct">{i === 0 ? '' : pct(s.value, base)}</span>
-          )}
-        </li>
-      ))}
+    <ol className="vfunnel">
+      {steps.map((s, i) => {
+        const w = base ? Math.min(100, Math.max(3, (s.value / base) * 100)) : 0;
+        const showFirst = i > 0 && !s.pctText && s.first !== false;
+        return (
+          <li key={s.label}>
+            {i > 0 && <span className="vconn">{s.pctText ?? `${pct(s.value, s.prev ?? steps[i - 1].value)} מהשלב הקודם`}</span>}
+            <span className="vlabel">{s.label}{s.sub ? <span className="vsub">{s.sub}</span> : null}</span>
+            <span className="vtrack" aria-hidden><span className="vbar" style={{ width: `${w}%`, opacity: 1 - Math.min(i, 5) * 0.08 }} /></span>
+            <span className="vval">{nf.format(s.value)}{showFirst ? <span className="vpct">{pct(s.value, base)}</span> : null}</span>
+          </li>
+        );
+      })}
     </ol>
+  );
+}
+
+/** פסי אחוז: כל שורה מ-0% עד 100%, עם הטקסט ליד הפס. להשוואת שיעורים בין קבוצות */
+export function RateBars({ rows, color = '--bot' }: { rows: { name: string; rate: number | null; sub?: string; color?: string }[]; color?: string }) {
+  return (
+    <div className="barlist">
+      {rows.map((r) => (
+        <div key={r.name} className="barrow rate">
+          <span className="name" title={r.name}>{r.name}</span>
+          <span className="track ratetrack">
+            <span className="fill" style={{ width: `${(r.rate ?? 0) * 100}%`, background: `var(${r.color ?? color})` }} />
+          </span>
+          <span className="num">{pctOf(r.rate)}{r.sub ? <small>{r.sub}</small> : null}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** טבעת אחוז: חלק מתוך שלם, עם האחוז במרכז */
+export function Ring({ value, size = 52, color = '--bot', label }: { value: number | null; size?: number; color?: string; label: string }) {
+  const r = (size - 7) / 2;
+  const c = 2 * Math.PI * r;
+  const v = value === null ? 0 : Math.max(0, Math.min(1, value));
+  return (
+    <svg className="ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${pctOf(value)}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={7} />
+      {v > 0 && (
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`var(${color})`} strokeWidth={7} strokeLinecap="round"
+          strokeDasharray={`${c * v} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      )}
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="ringtext">{value === null ? '-' : `${Math.round(v * 100)}%`}</text>
+    </svg>
   );
 }
 

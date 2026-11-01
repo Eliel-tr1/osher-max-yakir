@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { Lead, Purchase } from '@/lib/leads/types';
 import { autoBucket, BOT_COUPON_GROUP, botCoupons, botCouponSeries, couponRows, SPOOKY, type Bucket, type Range } from '@/lib/metrics';
-import { BarTable, Columns, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
+import { Bars100, BarTable, Columns, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum } from '../lists';
 import { SIDE } from './botVsRest';
@@ -66,7 +66,7 @@ export function CouponsSection({ people, all, range, rangeKey }: {
           sub: v.bc.undated ? `ועוד ${nf.format(v.bc.undated)} בלי תאריך` : undefined,
         },
         { label: 'שומשו', value: `${nf.format(v.bc.used)} רכישות`, sub: money.format(v.bc.usedPaid) },
-        { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made) },
+        { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made), ring: v.bc.made ? v.bc.used / v.bc.made : null },
       ]} />
       <p className="hint tight">
         הפקות לפי {v.b === 'day' ? 'יום' : v.b === 'week' ? 'שבוע' : 'חודש'}{' '}
@@ -86,11 +86,14 @@ export function CouponsSection({ people, all, range, rangeKey }: {
           </h3>
           <Chips value={sort} onChange={setSort} label="סדר" options={[{ id: 'count', label: 'לפי כמות' }, { id: 'money', label: 'לפי סכום' }]} />
         </div>
-        <Stats items={[
-          { label: 'רכישות עם קופון', value: nf.format(withCoupon), sub: `${pct(withCoupon, all.length)} מהרכישות` },
-          { label: 'רכישות בלי קופון', value: nf.format(v.none) },
-          { label: 'קודים שונים', value: nf.format(v.rows.length) },
-        ]} />
+        <Bars100
+          label="רכישות"
+          parts={[
+            { value: withCoupon, color: '--bot', text: nf.format(withCoupon), more: 'עם קופון' },
+            { value: v.none, color: '--notbot', text: nf.format(v.none), more: 'בלי קופון' },
+          ]}
+        />
+        <p className="hint tight">{nf.format(v.rows.length)} קודים שונים</p>
         {sort === 'count'
           ? <Legend items={[{ label: 'רכישות של הבוט', color: SIDE.yes.color }, { label: 'שאר הרכישות', color: SIDE.no.color }]} />
           : <Legend items={[{ label: 'סכום', color: SIDE.yes.color }]} />}

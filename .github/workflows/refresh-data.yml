@@ -51,7 +51,7 @@ jobs:
         run: |
           WANT=$(grep -o '"generatedAt":"[^"]*"' leads.json)
           for i in 1 2 3 4 5 6; do
-            if curl -fsS "${SITE_URL}data/leads.json?t=$(date +%s)" | head -c 300 | grep -qF "$WANT"; then
+            if curl -fsS "${SITE_URL}refresh.php?t=$(date +%s)" | grep -qF "$WANT"; then
               echo "::notice title=עדכון נתונים::$(head -c 200 leads.json | grep -o '"sheetRows":[0-9]*'), $WANT"
               exit 0
             fi
