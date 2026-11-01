@@ -6,6 +6,7 @@
 # באתר יש פרויקטים חיים אחרים. הסקריפט נוגע רק ב:
 #   <האתר>/oshermax                      - הדשבורד עצמו
 #   ~/.cache/osher-max-dashboard         - העלאות, הגרסה החדשה לפני ההחלפה, והגרסה הקודמת
+#   ~/osher-max-private/leads.json       - קובץ הנתונים, מחוץ לאתר. מוגש רק אחרי כניסה בסיסמה (data.php, 1/11/2026)
 # ואם בתיקייה oshermax יש משהו שלא אנחנו העלינו, הוא עוצר בלי לגעת בכלום.
 set -euo pipefail
 
@@ -19,6 +20,17 @@ STATE="$HOME/.cache/osher-max-dashboard"
 TARGET="$SITE/$NAME"
 NEW="$STATE/new"
 PREV="$STATE/prev"
+PRIV="${OSHER_PRIVATE_DIR:-$HOME/osher-max-private}"
+
+# מתקין קובץ נתונים בתיקייה הפרטית, רק אם הוא לא ישן יותר ממה שכבר שם
+install_data() {
+  local src="$1" new old
+  ( umask 077; mkdir -p "$PRIV" )
+  new=$(head -c 400 "$src" | grep -o '"generatedAt":"[^"]*"' || true)
+  old=$( [ -f "$PRIV/leads.json" ] && head -c 400 "$PRIV/leads.json" | grep -o '"generatedAt":"[^"]*"' || true)
+  if [ -n "$old" ] && [[ "$new" < "$old" ]]; then echo "בשרת כבר יש נתונים חדשים יותר"; return 0; fi
+  ( umask 077; cp "$src" "$PRIV/.leads.json.tmp" && mv -f "$PRIV/.leads.json.tmp" "$PRIV/leads.json" )
+}
 
 fail() { echo "$1" >&2; rm -f "$ARCHIVE"; exit 1; }
 
@@ -31,11 +43,10 @@ fi
 if [ "$REL" = data ]; then
   # עדכון נתונים בלבד: רק לתוך דשבורד שכבר באוויר, ורק קובץ שנראה תקין
   [ -f "$TARGET/$MARK" ] || fail "הדשבורד עוד לא באוויר. לא נגעתי בכלום."
-  [ -s "$ARCHIVE" ] && head -c 200 "$ARCHIVE" | grep -q '"version":1' && grep -q '"leads":\[' "$ARCHIVE" \
+  [ -s "$ARCHIVE" ] && head -c 200 "$ARCHIVE" | grep -q '"version":[0-9]' && grep -q '"leads":\[' "$ARCHIVE" \
     || fail "קובץ הנתונים שהועלה לא תקין. הנתונים שבאוויר נשארו כמו שהם."
-  mkdir -p "$TARGET/data"
-  cp "$ARCHIVE" "$TARGET/data/.leads.json.tmp"
-  mv -f "$TARGET/data/.leads.json.tmp" "$TARGET/data/leads.json"
+  install_data "$ARCHIVE"
+  rm -rf "$TARGET/data"
   rm -f "$ARCHIVE"
   echo "הנתונים עודכנו"
   exit 0
@@ -52,6 +63,10 @@ if [ ! -f "$NEW/index.html" ] || [ ! -f "$NEW/$MARK" ] || ! grep -q "\"sha\":\"$
   rm -rf "$NEW"
   fail "הגרסה שהועלתה לא שלמה. הגרסה שבאוויר נשארה כמו שהיא."
 fi
+
+# הנתונים לא נשארים בתיקיית האתר: עוברים לתיקייה הפרטית (מוגשים רק אחרי כניסה)
+if [ -f "$NEW/data/leads.json" ]; then install_data "$NEW/data/leads.json"; fi
+rm -rf "$NEW/data"
 
 # החלפה: הגרסה שבאוויר עוברת הצידה (לחזרה מהירה), והחדשה נכנסת במקומה
 rm -rf "$PREV"

@@ -120,8 +120,9 @@ jobs:
           for i in $(seq 1 12); do
             if curl -fsS "${SITE_URL}version.json?t=$(date +%s)" | grep -q "\"sha\":\"$REL\""; then
               CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL")
-              BTN=$(curl -s -X POST --max-time 60 "${SITE_URL}refresh.php" | head -c 300)
-              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). כפתור הרענון: $BTN"
+              BTN=$(curl -s --max-time 30 "${SITE_URL}refresh.php" | head -c 300)
+              DATA=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data.php"); OLD=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data/leads.json")
+              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). מצב הנתונים: $BTN. בלי כניסה: data.php $DATA, data/leads.json $OLD"
               exit 0
             fi
             sleep 5

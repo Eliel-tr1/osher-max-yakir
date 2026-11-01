@@ -6,6 +6,7 @@
  *   attempts.json  ניסיונות שגויים אחרונים, עם כתובת מגובבת
  *   secret.key  מפתח לחתימה על עוגיית הכניסה, נוצר בשימוש הראשון
  *   ids.json    הקודים המזהים, נכתב בכל רענון
+ *   leads.json  קובץ הנתונים של הדשבורד (מ-1/11 לא בתיקיית האתר), מוגש רק דרך data.php
  * הקובץ מגדיר פונקציות בלבד. גישה ישירה אליו מהדפדפן לא עושה כלום.
  */
 
@@ -31,6 +32,11 @@ function osher_write_private(string $name, string $content): bool {
         error_log("osher-max: private write failed ($name)");
     }
     return $ok;
+}
+
+/** קובץ הנתונים של הדשבורד, מחוץ לתיקיית האתר. מוגש רק דרך data.php */
+function osher_data_file(): string {
+    return osher_private_dir() . '/leads.json';
 }
 
 function osher_read_private(string $name): ?string {

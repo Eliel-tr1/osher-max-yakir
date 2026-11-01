@@ -1,9 +1,9 @@
 <?php
 /**
  * כפתור הרענון של הדשבורד: קורא את לשוניות הלידים והרכישות מגוגל שיטס, מנקה כפילויות ופרטים אישיים,
- * ומחליף את data/leads.json. הכול בשרת, בלי גיטהאב ובלי מפתחות.
- * GET  -> מצב: מתי הנתונים נבנו
- * POST -> רענון. לכל היותר פעם ב-10 שניות; לחיצות בזמן רענון מחכות לו.
+ * ומחליף את קובץ הנתונים (מחוץ לתיקיית האתר, מוגש דרך data.php). הכול בשרת, בלי גיטהאב ובלי מפתחות.
+ * GET  -> מצב: מתי הנתונים נבנו (רק תאריך ומספר שורות)
+ * POST -> רענון, רק למי שנכנס בסיסמה. לכל היותר פעם ב-10 שניות; לחיצות בזמן רענון מחכות לו.
  * העיבוד עצמו ב-_leads.php, שנבדק מול גרסת ה-TypeScript (tests/parity.test.ts).
  */
 header('Content-Type: application/json; charset=utf-8');
@@ -21,8 +21,8 @@ const WAVES_GID = '359996576';     // הלשונית "דיוורים - סיכו�
 
 const MIN_GAP = 10;
 
-$dataDir = __DIR__ . '/data';
-$dataFile = $dataDir . '/leads.json';
+$dataFile = osher_data_file();
+$dataDir = dirname($dataFile);
 
 function out(int $code, array $body): void {
     http_response_code($code);
@@ -43,7 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     out(405, ['ok' => false, 'error' => 'method']);
 }
-if (!is_dir($dataDir) && !@mkdir($dataDir, 0755, true)) {
+if (!osher_auth_in()) {
+    out(401, ['ok' => false, 'error' => 'צריך להיכנס']);
+}
+if (!is_dir($dataDir) && !@mkdir($dataDir, 0700, true)) {
     out(500, ['ok' => false, 'error' => 'אין תיקיית נתונים']);
 }
 
@@ -102,9 +105,7 @@ if (!$file['leads']) {
     out(422, ['ok' => false, 'error' => 'לא נמצאו לידים בטבלה. הנתונים הקודמים נשארו.']);
 }
 
-$tmp = $dataFile . '.tmp';
-if (@file_put_contents($tmp, osher_pack($file)) === false || !@rename($tmp, $dataFile)) {
-    @unlink($tmp);
+if (!osher_write_private('leads.json', osher_pack($file))) {
     out(500, ['ok' => false, 'error' => 'שמירת הנתונים נכשלה']);
 }
 // הקודים המזהים לקישורים לשיחות: מחוץ לתיקיית האתר, ומוגשים רק אחרי כניסה (links.php). כשל כאן לא מפיל את הרענון

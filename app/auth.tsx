@@ -124,8 +124,8 @@ export function LoginControl() {
     <div className="login">
       {status === 'in' ? (
         <>
-          <span className="who">מחובר · קישורים לשיחות פתוחים</span>
-          <button type="button" className="linkbtn" onClick={signOut}>יציאה</button>
+          <span className="who">מחובר</span>
+          <button type="button" className="linkbtn" onClick={() => signOut().then(() => window.location.reload())}>יציאה</button>
         </>
       ) : open ? (
         <form className="pwform" onSubmit={submit}>
@@ -137,6 +137,36 @@ export function LoginControl() {
       )}
       {error ? <span className="err" role="alert">{error}</span> : null}
     </div>
+  );
+}
+
+/** מסך הכניסה: כל הדשבורד מאחורי סיסמה (הנחיית המנהל, 1/11/2026) */
+export function LoginGate({ onIn }: { onIn: () => void }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`${BASE_PATH}/auth.php`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) }).catch(() => null);
+    const body = (res ? await res.json().catch(() => ({})) : {}) as { ok?: boolean; error?: string };
+    setBusy(false);
+    setPassword('');
+    if (res?.ok && body.ok) onIn();
+    else setError(body.error ?? 'הכניסה נכשלה');
+  };
+  return (
+    <main className="page gate">
+      <form className="gatebox" onSubmit={submit}>
+        <h1>דשבורד אושר מקס</h1>
+        <label htmlFor="gate-pw">סיסמה</label>
+        <input id="gate-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+        <button type="submit" disabled={busy || !password}>{busy ? 'בודק...' : 'כניסה'}</button>
+        {error ? <p className="err" role="alert">{error}</p> : null}
+      </form>
+    </main>
   );
 }
 

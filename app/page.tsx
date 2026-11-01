@@ -10,7 +10,7 @@ import {
   type Bucket, type Range,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
-import { AuthProvider, LoginControl } from './auth';
+import { AuthProvider, LoginControl, LoginGate } from './auth';
 import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Ring, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
 import { DataProvider } from './lists';
 import { ThemeToggle } from './theme';
@@ -31,7 +31,7 @@ const BUILD = process.env.NEXT_PUBLIC_BUILD_SHA ?? '';
 /** טווחים שמשווים לתקופה הקודמת (הנחיית המנהל, 1/11/2026) */
 const COMPARED: Preset[] = ['7d', '30d', 'month', 'prevMonth'];
 
-type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
+type Load = { state: 'loading' } | { state: 'locked' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
 
 export default function Dashboard() {
@@ -56,8 +56,21 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async (): Promise<LeadsFile | null> => {
     try {
-      const res = await fetch(`${BASE_PATH}/data/leads.json?t=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // הנתונים רק אחרי כניסה בסיסמה (1/11/2026). בלי PHP (תצוגה מקומית) נקרא הקובץ הסטטי
+      let res = await fetch(`${BASE_PATH}/data.php?t=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+      if (res.status === 401) {
+        setLoad({ state: 'locked' });
+        return null;
+      }
+      const isPhp = (res.headers.get('content-type') ?? '').includes('json');
+      if (!isPhp || res.status === 404) {
+        const local = await fetch(`${BASE_PATH}/data/leads.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (local.ok) res = local;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
       const file = unpack(await res.json());
       setLoad({ state: 'ready', file, checkedAt: new Date() });
       return file;
@@ -97,6 +110,11 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BASE_PATH}/refresh.php`, { method: 'POST', cache: 'no-store' });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.status === 401) {
+        setLoad({ state: 'locked' });
+        setRefresh({ state: 'idle' });
+        return;
+      }
       if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       const file = await fetchData();
       if (!file) throw new Error('הנתונים עודכנו בשרת, אבל לא נטענו לדף. אפשר לרענן את הדף.');
@@ -163,6 +181,7 @@ export default function Dashboard() {
   }, [file, all, preset, custom, source, proc, leadsBy, testsBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
+  if (load.state === 'locked') return <LoginGate onIn={() => { setLoad({ state: 'loading' }); fetchData(); }} />;
   if (load.state === 'error' || !file || !view) {
     return (
       <main className="page">
