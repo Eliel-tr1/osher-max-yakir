@@ -805,6 +805,60 @@ export function botCoupons(leads: Lead[], ps: Purchase[], range: Range): BotCoup
   return { made, undated, used: used.length, usedPaid: paidSum(used), rate: made ? used.length / made : null };
 }
 
+/** מאיזה יום הוובהוק רושם את הקוד שהוקלד בכל רכישה (עמודה M). לפני כן "בלי קוד" לא בהכרח נכון */
+export const COUPON_RECORDED_FROM = '2026-10-26';
+
+export type AfterCouponKind = 'personal' | 'generic' | 'none';
+
+export interface AfterCoupon {
+  /** אנשים שקיבלו קופון מהבוט בטווח (לפי תאריך הקופון) */
+  holders: number;
+  /** מהם, כמה קנו אתגר או מוצר אחרי שקיבלו את הקופון */
+  buyers: number;
+  /** הרכישות (בלי דמי הפעלה) לפי הקוד שהוקלד */
+  byKind: Record<AfterCouponKind, Purchase[]>;
+  /** דמי הפעלה אחרי הקופון: שם לא מקלידים קופון, ולכן בנפרד */
+  activation: Purchase[];
+  /** הקודים הכלליים, מהנפוץ */
+  generic: { name: string; count: number }[];
+}
+
+/**
+ * מה קנו מי שקיבלו קופון אישי מהבוט, מרגע הקופון והלאה (הנחיית המנהל 1/11/2026). אותו אדם גם תחת קוד מזהה אחר עם
+ * אותו טלפון. הלקוח מקליד את הקוד בעצמו, ולכן גם רכישה עם קוד כללי או בלי קוד נספרת, כדי לראות את ההשפעה של הקופון.
+ */
+export function afterBotCoupon(leads: Lead[], ps: Purchase[], range: Range): AfterCoupon {
+  const since = new Map<number, number>();
+  for (const l of leads) {
+    if (!l.botCoupon || !l.couponAt || !inside(l.couponAt, range)) continue;
+    const t = Date.parse(l.couponAt);
+    const was = since.get(l.person);
+    if (was === undefined || t < was) since.set(l.person, t);
+  }
+  const byKind: Record<AfterCouponKind, Purchase[]> = { personal: [], generic: [], none: [] };
+  const activation: Purchase[] = [];
+  const buyers = new Set<number>();
+  const generic = new Map<string, number>();
+  for (const p of ps) {
+    const t = since.get(p.person);
+    if (t === undefined || p.fromLead || Date.parse(p.at) < t) continue;
+    if (isActivation(p)) {
+      activation.push(p);
+      continue;
+    }
+    buyers.add(p.person);
+    if (usedBotCoupon(p)) byKind.personal.push(p);
+    else if (p.coupon) {
+      byKind.generic.push(p);
+      generic.set(p.coupon, (generic.get(p.coupon) ?? 0) + 1);
+    } else byKind.none.push(p);
+  }
+  return {
+    holders: since.size, buyers: buyers.size, byKind, activation,
+    generic: [...generic.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+  };
+}
+
 /** כמה קופונים הבוט הפיק בכל יום (לפי "תאריך קופון") */
 export function botCouponSeries(leads: Lead[], range: Range, b: Bucket): { key: string; values: number[] }[] {
   return timeSeries(leads.filter((l) => l.botCoupon && l.couponAt && inside(l.couponAt, range)), (l) => l.couponAt!, b, 1, () => [1]);

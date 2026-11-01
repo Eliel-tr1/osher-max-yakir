@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import type { Lead, Purchase } from '@/lib/leads/types';
-import { autoBucket, BOT_COUPON_GROUP, botCoupons, botCouponSeries, couponRows, SPOOKY, type Bucket, type Range } from '@/lib/metrics';
-import { Bars100, BarTable, Columns, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
+import { afterBotCoupon, autoBucket, BOT_COUPON_GROUP, botCoupons, COUPON_RECORDED_FROM, botCouponSeries, couponRows, SPOOKY, type Bucket, type Range } from '@/lib/metrics';
+import { BarList, Bars100, BarTable, Columns, fmtDay, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum } from '../lists';
 import { SIDE } from './botVsRest';
@@ -17,10 +17,12 @@ function CodeName({ name }: { name: string }) {
 }
 
 /** סקשן הקופונים (הנחיית המנהל, 31/10 ו-1/11/2026) */
-export function CouponsSection({ people, all, range, rangeKey }: {
+export function CouponsSection({ people, all, ever, range, rangeKey }: {
   /** הלידים אחרי סינון המקור והתהליך, להפקת הקופונים */
   people: Lead[];
   all: Purchase[];
+  /** כל הרכישות בלי טווח תאריכים: רכישה אחרי קופון נספרת גם כשהיא אחרי סוף הטווח */
+  ever: Purchase[];
   range: Range;
   rangeKey: string;
 }) {
@@ -47,12 +49,13 @@ export function CouponsSection({ people, all, range, rangeKey }: {
     return {
       auto, b,
       bc: botCoupons(people, all, range),
+      after: afterBotCoupon(people, ever, range),
       series: botCouponSeries(people, range, b),
       rows: couponRows(all, sort),
       groups,
       none: all.filter((p) => !p.coupon).length,
     };
-  }, [people, all, range, by, sort]);
+  }, [people, all, ever, range, by, sort]);
   const withCoupon = all.length - v.none;
 
   return (
@@ -77,6 +80,46 @@ export function CouponsSection({ people, all, range, rangeKey }: {
       </p>
       <div className="cardhead"><span /><BucketChips value={by} auto={v.auto} onChange={setBy} /></div>
       <Columns labels={v.series.map((d) => fmtBucket(d.key, v.b))} values={v.series.map((d) => d.values)} series={[{ key: 'made', label: 'הופקו', color: '--bot' }]} />
+
+      <div className="box">
+        <h3>
+          מה קנו מי שקיבלו קופון{' '}
+          <Info>
+            מי שקיבל קופון אישי מהבוט בטווח, וכל מה שקנה מרגע הקופון והלאה, גם תחת קוד מזהה אחר עם אותו טלפון. הלקוח מקליד את הקוד בעצמו, והוובהוק רושם מה הוקלד
+            (&quot;קופון מהרכישה&quot;). דמי הפעלה בנפרד, כי שם לא מקלידים קופון. הקוד נרשם בכל רכישה רק מ-{fmtDay(COUPON_RECORDED_FROM)}, ולפני כן &quot;בלי קוד&quot; כולל גם
+            רכישות שהקוד שלהן לא נרשם.
+          </Info>
+        </h3>
+        <Stats items={[
+          { label: 'קיבלו קופון', value: nf.format(v.after.holders) },
+          { label: 'קנו אחר כך', value: nf.format(v.after.buyers), sub: 'אתגר או מוצר', ring: v.after.holders ? v.after.buyers / v.after.holders : null },
+        ]} />
+        <Bars100
+          label="הקוד שהוקלד"
+          parts={[
+            { value: v.after.byKind.personal.length, color: '--bot', text: nf.format(v.after.byKind.personal.length), more: 'הקוד האישי' },
+            { value: v.after.byKind.generic.length, color: '--series-2', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
+            { value: v.after.byKind.none.length, color: '--notbot', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
+          ]}
+        />
+        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--series-2' }, { label: 'בלי קוד', color: '--notbot' }]} />
+        {v.after.generic.length > 0 && (
+          <>
+            <h3>הקודים הכלליים שהוקלדו במקום</h3>
+            <BarList items={v.after.generic} max={6} color="--series-2" />
+          </>
+        )}
+        <p className="hint tight">ועוד {nf.format(v.after.activation.length)} רכישות דמי הפעלה</p>
+        <ListBlock
+          note={note}
+          items={[
+            { id: 'ac-personal', title: 'קנו עם הקוד האישי', count: buysCount(v.after.byKind.personal), sum: buysSum(v.after.byKind.personal), render: () => <BuyList purchases={v.after.byKind.personal} /> },
+            { id: 'ac-generic', title: 'קנו עם קוד כללי', count: buysCount(v.after.byKind.generic), sum: buysSum(v.after.byKind.generic), render: () => <BuyList purchases={v.after.byKind.generic} /> },
+            { id: 'ac-none', title: 'קנו בלי קוד', count: buysCount(v.after.byKind.none), sum: buysSum(v.after.byKind.none), render: () => <BuyList purchases={v.after.byKind.none} /> },
+            { id: 'ac-act', title: 'דמי הפעלה אחרי הקופון', count: buysCount(v.after.activation), sum: buysSum(v.after.activation), render: () => <BuyList purchases={v.after.activation} /> },
+          ]}
+        />
+      </div>
 
       <div className="box">
         <div className="cardhead">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from '../lib/leads/types';
 import {
-  annotate, BOT_COUPON_GROUP, botBreakdown, botCoupons, botCouponSeries, botSeries, buyItems, byReason, campaigns, couponRows, isActivation, mailingCampaigns,
+  afterBotCoupon, annotate, BOT_COUPON_GROUP, botBreakdown, botCoupons, botCouponSeries, botSeries, buyItems, byReason, campaigns, couponRows, isActivation, mailingCampaigns,
   mailingView, popupCompare, popupFunnel, purchaseFamily, purchaseGaps, reasonOf, repeatBuyers, trackingHealth, UNDECIDED, usedBotCoupon, withPurchasesAfterEntry,
   ACTIVATION, funnel, summarize,
 } from '../lib/metrics';
@@ -115,6 +115,26 @@ describe('coupons', () => {
     const oct = { from: new Date('2026-10-24T00:00:00.000Z'), to: null };
     expect(botCoupons(leads, ps, oct).made).toBe(1);
     expect(botCouponSeries(leads, all, 'day').map((d) => d.values[0]).reduce((a, b) => a + b, 0)).toBe(2);
+  });
+  it('splits what coupon holders bought after the coupon by the code they typed', () => {
+    const leads = [
+      lead({ person: 1, botCoupon: true, couponAt: '2026-10-27T10:00:00.000Z' }),
+      lead({ person: 2, botCoupon: true, couponAt: '2026-10-27T10:00:00.000Z' }),
+      lead({ person: 3, botCoupon: true, couponAt: '2026-10-27T10:00:00.000Z' }),
+      lead({ person: 4, botCoupon: false }),
+    ];
+    const ps = [
+      buy({ buyer: 1, person: 1, at: '2026-10-26T10:00:00.000Z', coupon: 'PASS50', product: 'Challenge' }), // לפני הקופון
+      buy({ buyer: 1, person: 1, at: '2026-10-28T10:00:00.000Z', coupon: BOT_COUPON_GROUP, product: 'Challenge' }),
+      buy({ buyer: 9, person: 2, at: '2026-10-28T10:00:00.000Z', coupon: 'PASS50', product: 'Challenge' }), // קוד מזהה אחר, אותו טלפון
+      buy({ buyer: 2, person: 2, at: '2026-10-29T10:00:00.000Z', product: 'Challenge' }),
+      buy({ buyer: 2, person: 2, at: '2026-10-30T10:00:00.000Z', product: 'Activation fee' }),
+      buy({ buyer: 4, person: 4, at: '2026-10-28T10:00:00.000Z', coupon: 'PASS50', product: 'Challenge' }), // בלי קופון בוט
+    ];
+    const a = afterBotCoupon(leads, ps, all);
+    expect([a.holders, a.buyers, a.byKind.personal.length, a.byKind.generic.length, a.byKind.none.length, a.activation.length]).toEqual([3, 2, 1, 1, 1, 1]);
+    expect(a.generic).toEqual([{ name: 'PASS50', count: 1 }]);
+    expect(afterBotCoupon(leads, ps, { from: new Date('2026-10-28T00:00:00.000Z'), to: null }).holders).toBe(0);
   });
 });
 
