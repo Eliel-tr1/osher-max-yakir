@@ -582,7 +582,7 @@ export function Bars100({ label, parts }: { label: string; parts: { value: numbe
           if (!w) return null;
           return (
             <span key={p.color} className={`b100part${p.hatch ? ' hatch' : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={`${p.text}${p.more ? ` ${p.more}` : ''}`}>
-              {w >= 14 ? <span className="b100text">{p.text}{p.more ? <span className="more"> {p.more}</span> : null}</span> : null}
+              {w >= 14 ? <span className="b100text">{p.text}{p.more ? <span className="b100more"> {p.more}</span> : null}</span> : null}
             </span>
           );
         })}
