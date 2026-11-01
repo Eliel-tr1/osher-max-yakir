@@ -21,35 +21,40 @@ function run(code: string, dir = mkdtempSync(join(tmpdir(), 'auth-'))): unknown 
 
 describe.skipIf(!php)('secure login', () => {
   const now = 1_800_000_000;
-  const emails = "['boss@example.com']";
 
-  it('accepts a signed, fresh cookie for an allowed email only', () => {
-    expect(run(`$t = osher_auth_token('boss@example.com', ${now + 60}, 'k'); return osher_auth_check($t, 'k', ${emails}, ${now});`)).toBe('boss@example.com');
+  it('accepts a signed, fresh cookie for the current password version only', () => {
+    expect(run(`$t = osher_auth_token('v1', ${now + 60}, 'k'); return osher_auth_check($t, 'k', 'v1', ${now});`)).toBe(true);
     // פג תוקף
-    expect(run(`$t = osher_auth_token('boss@example.com', ${now - 1}, 'k'); return osher_auth_check($t, 'k', ${emails}, ${now});`)).toBeNull();
+    expect(run(`$t = osher_auth_token('v1', ${now - 1}, 'k'); return osher_auth_check($t, 'k', 'v1', ${now});`)).toBe(false);
     // מפתח אחר, או חתימה שזויפה
-    expect(run(`$t = osher_auth_token('boss@example.com', ${now + 60}, 'k'); return osher_auth_check($t, 'other', ${emails}, ${now});`)).toBeNull();
-    expect(run(`$t = osher_auth_token('x@example.com', ${now + 60}, 'k'); [$p] = explode('.', $t); $good = osher_auth_token('boss@example.com', ${now + 60}, 'k'); [, $sig] = explode('.', $good); return osher_auth_check($p . '.' . $sig, 'k', ${emails}, ${now});`)).toBeNull();
-    // מייל שהוצא מהרשימה
-    expect(run(`$t = osher_auth_token('boss@example.com', ${now + 60}, 'k'); return osher_auth_check($t, 'k', ['other@example.com'], ${now});`)).toBeNull();
-    expect(run(`return osher_auth_check('garbage', 'k', ${emails}, ${now});`)).toBeNull();
+    expect(run(`$t = osher_auth_token('v1', ${now + 60}, 'k'); return osher_auth_check($t, 'other', 'v1', ${now});`)).toBe(false);
+    expect(run(`$t = osher_auth_token('v2', ${now + 60}, 'k'); [$p] = explode('.', $t); $good = osher_auth_token('v1', ${now + 60}, 'k'); [, $sig] = explode('.', $good); return osher_auth_check($p . '.' . $sig, 'k', 'v1', ${now});`)).toBe(false);
+    // הסיסמה התחלפה
+    expect(run(`$t = osher_auth_token('v1', ${now + 60}, 'k'); return osher_auth_check($t, 'k', 'v2', ${now});`)).toBe(false);
+    expect(run(`return osher_auth_check('garbage', 'k', 'v1', ${now});`)).toBe(false);
   });
 
-  it('checks what Google says about the sign in', () => {
-    const ok = `['aud' => 'cid', 'iss' => 'https://accounts.google.com', 'exp' => '${now + 60}', 'email_verified' => 'true', 'email' => 'Boss@Example.com']`;
-    expect(run(`return osher_auth_verify_claims(${ok}, 'cid', ${emails}, ${now});`)).toBe('boss@example.com');
-    expect(run(`$c = ${ok}; $c['aud'] = 'other'; return osher_auth_verify_claims($c, 'cid', ${emails}, ${now});`)).toBeNull();
-    expect(run(`$c = ${ok}; $c['iss'] = 'evil.com'; return osher_auth_verify_claims($c, 'cid', ${emails}, ${now});`)).toBeNull();
-    expect(run(`$c = ${ok}; $c['email_verified'] = 'false'; return osher_auth_verify_claims($c, 'cid', ${emails}, ${now});`)).toBeNull();
-    expect(run(`$c = ${ok}; $c['exp'] = '${now - 1}'; return osher_auth_verify_claims($c, 'cid', ${emails}, ${now});`)).toBeNull();
-    expect(run(`$c = ${ok}; $c['email'] = 'stranger@example.com'; return osher_auth_verify_claims($c, 'cid', ${emails}, ${now});`)).toBeNull();
+  it('checks the password against the hash the deploy writes (same PBKDF2 as python)', () => {
+    const salt = 'abcd';
+    const hash = execFileSync('python3', ['-c', `import hashlib; print(hashlib.pbkdf2_hmac('sha256', b'test-pass', b'${salt}', 20000).hex())`], { encoding: 'utf8' }).trim();
+    const cfg = `['salt' => '${salt}', 'iter' => 20000, 'hash' => '${hash}']`;
+    expect(run(`return osher_auth_password_ok('test-pass', ${cfg});`)).toBe(true);
+    expect(run(`return osher_auth_password_ok('test-pasS', ${cfg});`)).toBe(false);
+    expect(run(`return osher_auth_password_ok('', ${cfg});`)).toBe(false);
   });
 
-  it('is not configured until the deploy writes the client id and the emails, and keeps private files for the owner only', () => {
+  it('blocks after 5 wrong tries from one address within 15 minutes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'auth-'));
+    expect(run(`for ($i = 0; $i < 4; $i++) osher_auth_failed('1.2.3.4', ${now}); return osher_auth_blocked('1.2.3.4', ${now});`, dir)).toBe(false);
+    expect(run(`osher_auth_failed('1.2.3.4', ${now}); return [osher_auth_blocked('1.2.3.4', ${now}), osher_auth_blocked('5.6.7.8', ${now}), osher_auth_blocked('1.2.3.4', ${now + 901})];`, dir)).toEqual([true, false, false]);
+    expect(readFileSync(join(dir, 'attempts.json'), 'utf8')).not.toContain('1.2.3.4');
+  });
+
+  it('is not configured until the deploy writes the hash, and keeps private files for the owner only', () => {
     const dir = mkdtempSync(join(tmpdir(), 'auth-'));
     expect(run('return osher_auth_config();', dir)).toBeNull();
-    expect(run(`return osher_write_private('auth.json', json_encode(['clientId' => 'cid', 'emails' => [' Boss@Example.com ']]));`, dir)).toBe(true);
-    expect(run('return osher_auth_config();', dir)).toEqual({ clientId: 'cid', emails: ['boss@example.com'] });
+    expect(run(`return osher_write_private('auth.json', json_encode(['salt' => 's', 'iter' => 300000, 'hash' => 'AB']));`, dir)).toBe(true);
+    expect(run('return osher_auth_config();', dir)).toEqual({ salt: 's', iter: 300000, hash: 'ab' });
     expect(statSync(join(dir, 'auth.json')).mode & 0o077).toBe(0);
     const secret = run('return osher_auth_secret();', dir) as string;
     expect(secret).toHaveLength(64);

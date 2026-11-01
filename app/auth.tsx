@@ -1,10 +1,10 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { BASE_PATH } from '@/lib/app';
 
 /**
- * כניסה עם Google לרשימות עם קישורים לשיחות ב-CloudChat (#6, הנחיית המנהל 1/11/2026).
+ * כניסה בסיסמה לרשימות עם קישורים לשיחות ב-CloudChat (#6, הנחיית המנהל 1/11/2026: סיסמה אחת, בלי Google).
  * הקודים המזהים לא בקובץ הציבורי: הם מגיעים מ-links.php רק אחרי כניסה, ורק כשהם מאותו רענון כמו הנתונים.
  */
 export const CHAT_URL = 'https://console.thecloud.chat/inbox/';
@@ -21,18 +21,16 @@ export type LinkKind = 'lead' | 'purchase' | 'mailing';
 
 interface Auth {
   status: Status;
-  email: string | null;
-  clientId: string | null;
   /** הקודים מרענון אחר מהנתונים שבדף */
   stale: boolean;
   link: (kind: LinkKind, i: number | undefined) => string | null;
-  signIn: (credential: string) => Promise<void>;
+  signIn: (password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   error: string | null;
 }
 
 const AuthContext = createContext<Auth>({
-  status: 'off', email: null, clientId: null, stale: false, link: () => null, signIn: async () => {}, signOut: async () => {}, error: null,
+  status: 'off', stale: false, link: () => null, signIn: async () => false, signOut: async () => {}, error: null,
 });
 
 export function useAuth(): Auth {
@@ -41,8 +39,6 @@ export function useAuth(): Auth {
 
 export function AuthProvider({ generatedAt, children }: { generatedAt: string; children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
-  const [email, setEmail] = useState<string | null>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
   const [ids, setIds] = useState<Ids | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,13 +51,11 @@ export function AuthProvider({ generatedAt, children }: { generatedAt: string; c
     let alive = true;
     fetch(`${BASE_PATH}/auth.php`, { cache: 'no-store', credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((a: { configured?: boolean; clientId?: string | null; email?: string | null } | null) => {
+      .then((a: { configured?: boolean; in?: boolean } | null) => {
         if (!alive) return;
         if (!a?.configured) return setStatus('off');
-        setClientId(a.clientId ?? null);
-        setEmail(a.email ?? null);
-        setStatus(a.email ? 'in' : 'out');
-        if (a.email) loadIds().catch(() => setIds(null));
+        setStatus(a.in ? 'in' : 'out');
+        if (a.in) loadIds().catch(() => setIds(null));
       })
       .catch(() => alive && setStatus('off'));
     return () => {
@@ -74,22 +68,21 @@ export function AuthProvider({ generatedAt, children }: { generatedAt: string; c
     if (status === 'in') loadIds().catch(() => setIds(null));
   }, [generatedAt, status, loadIds]);
 
-  const signIn = useCallback(async (credential: string) => {
+  const signIn = useCallback(async (password: string) => {
     setError(null);
-    const res = await fetch(`${BASE_PATH}/auth.php`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; email?: string; error?: string };
-    if (!res.ok || !body.ok) {
+    const res = await fetch(`${BASE_PATH}/auth.php`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) }).catch(() => null);
+    const body = (res ? await res.json().catch(() => ({})) : {}) as { ok?: boolean; error?: string };
+    if (!res || !res.ok || !body.ok) {
       setError(body.error ?? 'הכניסה נכשלה');
-      return;
+      return false;
     }
-    setEmail(body.email ?? null);
     setStatus('in');
-    await loadIds();
+    await loadIds().catch(() => setIds(null));
+    return true;
   }, [loadIds]);
 
   const signOut = useCallback(async () => {
     await fetch(`${BASE_PATH}/auth.php`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ logout: true }) }).catch(() => null);
-    setEmail(null);
     setIds(null);
     setStatus('out');
   }, []);
@@ -105,46 +98,42 @@ export function AuthProvider({ generatedAt, children }: { generatedAt: string; c
   );
 
   return (
-    <AuthContext.Provider value={{ status, email, clientId, stale: status === 'in' && ids !== null && !fresh, link, signIn, signOut, error }}>
+    <AuthContext.Provider value={{ status, stale: status === 'in' && ids !== null && !fresh, link, signIn, signOut, error }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-interface GoogleId {
-  accounts: { id: { initialize: (o: object) => void; renderButton: (el: HTMLElement, o: object) => void } };
-}
-
-/** בראש הדף: כפתור "התחברות עם Google", או המייל וכפתור יציאה. כשהכניסה לא הוגדרה, לא מופיע כלום */
+/** בראש הדף: כפתור "כניסה" שפותח שדה סיסמה, או "מחובר" וכפתור יציאה. כשהכניסה לא הוגדרה, לא מופיע כלום */
 export function LoginControl() {
-  const { status, email, clientId, signIn, signOut, error } = useAuth();
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (status !== 'out' || !clientId || !box.current) return;
-    const el = box.current;
-    const render = () => {
-      const g = (window as unknown as { google?: GoogleId }).google;
-      if (!g) return;
-      g.accounts.id.initialize({ client_id: clientId, callback: (r: { credential: string }) => signIn(r.credential), ux_mode: 'popup', auto_select: false });
-      g.accounts.id.renderButton(el, { theme: 'outline', size: 'medium', text: 'signin_with', locale: 'he', shape: 'pill' });
-    };
-    if ((window as unknown as { google?: GoogleId }).google) return render();
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.async = true;
-    s.onload = render;
-    document.head.appendChild(s);
-  }, [status, clientId, signIn]);
+  const { status, signIn, signOut, error } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   if (status === 'off' || status === 'loading') return null;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    const ok = await signIn(password);
+    setBusy(false);
+    setPassword('');
+    if (ok) setOpen(false);
+  };
   return (
     <div className="login">
       {status === 'in' ? (
         <>
-          <span className="who" dir="ltr">{email}</span>
+          <span className="who">מחובר · קישורים לשיחות פתוחים</span>
           <button type="button" className="linkbtn" onClick={signOut}>יציאה</button>
         </>
+      ) : open ? (
+        <form className="pwform" onSubmit={submit}>
+          <input type="password" autoComplete="current-password" aria-label="סיסמה" placeholder="סיסמה" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <button type="submit" disabled={busy || !password}>{busy ? '...' : 'כניסה'}</button>
+        </form>
       ) : (
-        <div ref={box} aria-label="התחברות עם Google" />
+        <button type="button" className="linkbtn" onClick={() => setOpen(true)}>כניסה לקישורים לשיחות</button>
       )}
       {error ? <span className="err" role="alert">{error}</span> : null}
     </div>

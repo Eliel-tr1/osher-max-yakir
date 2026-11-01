@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
     exit;
 }
-if (!osher_auth_email()) {
+if (!osher_auth_in()) {
     http_response_code(401);
     echo json_encode(['ok' => false, 'error' => 'צריך להתחבר'], JSON_UNESCAPED_UNICODE);
     exit;

@@ -425,3 +425,6 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
   /* בטלפון השם לא לוקח את כל השורה, כדי שהפס ייראה */
   .barlist .barrow, .barlist .barrow.rate { grid-template-columns: minmax(80px, 40%) minmax(0, 1fr) 64px; gap: 8px; }
 }
+.pwform { display: flex; gap: 6px; }
+.pwform input { width: 140px; min-height: 36px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.refresh .pwform button { min-height: 36px; padding: 4px 12px; }
