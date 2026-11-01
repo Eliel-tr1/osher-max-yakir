@@ -53,7 +53,13 @@ function osher_auth_config(): ?array {
 }
 
 /** סיסמה נכונה? השוואה בזמן קבוע */
+/** רווחים, מרכאות וסימני כיוון נסתרים לא נחשבים (נכנסים כשמעתיקים מטקסט בעברית). אותו ניקוי כמו בפריסה */
+function osher_auth_clean(string $password): string {
+    return (string) preg_replace('/[\s\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}"]/u', '', $password);
+}
+
 function osher_auth_password_ok(string $password, array $cfg): bool {
+    $password = osher_auth_clean($password);
     if ($password === '' || strlen($password) > 200) return false;
     return hash_equals($cfg['hash'], hash_pbkdf2('sha256', $password, $cfg['salt'], $cfg['iter']));
 }

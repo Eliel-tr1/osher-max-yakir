@@ -104,14 +104,14 @@ jobs:
         env:
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
         run: |
-          # רק גיבוב הסיסמה (PBKDF2 עם מלח אקראי) נכתב לשרת, מחוץ לתיקיית האתר. הסיסמה לא נשמרת ולא מודפסת (#6, 1/11)
+          # רווחים, מרכאות וסימני כיוון נסתרים (נכנסים כשמעתיקים מטקסט בעברית) מוסרים, כמו בבדיקה ב-PHP. רק גיבוב הסיסמה (PBKDF2 עם מלח אקראי) נכתב לשרת, מחוץ לתיקיית האתר. הסיסמה לא נשמרת ולא מודפסת (#6, 1/11)
           if [ -z "$DASHBOARD_PASSWORD" ]; then
             echo "::notice title=כניסה::עוד לא הוגדרה: חסר הסוד DASHBOARD_PASSWORD"
             exit 0
           fi
           OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
-          python3 -c 'import hashlib, json, os, secrets; salt = secrets.token_hex(16); it = 300000; print(json.dumps({"salt": salt, "iter": it, "hash": hashlib.pbkdf2_hmac("sha256", os.environ["DASHBOARD_PASSWORD"].strip().encode(), salt.encode(), it).hex()}))' \
-            | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'umask 077; mkdir -p ~/osher-max-private && cat > ~/osher-max-private/auth.json.tmp && mv ~/osher-max-private/auth.json.tmp ~/osher-max-private/auth.json'
+          python3 -c 'import hashlib, json, os, re, secrets; salt = secrets.token_hex(16); it = 300000; print(json.dumps({"salt": salt, "iter": it, "hash": hashlib.pbkdf2_hmac("sha256", re.sub(r"[\s\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff\"]", "", os.environ["DASHBOARD_PASSWORD"]).encode(), salt.encode(), it).hex()}))' \
+            | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'umask 077; mkdir -p ~/osher-max-private && cat > ~/osher-max-private/auth.json.tmp && mv ~/osher-max-private/auth.json.tmp ~/osher-max-private/auth.json && rm -f ~/osher-max-private/attempts.json'
           echo "::notice title=כניסה::הוגדרה"
       - name: הכתובת מציגה את הגרסה החדשה?
         if: steps.gate.outputs.ready == 'true'
