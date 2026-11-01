@@ -5,7 +5,7 @@ import type { Purchase } from '@/lib/leads/types';
 import {
   ACTIVATION, botBreakdown, botSide, byReason, isActivation, matrixByMonth, productStats, purchaseFamily, purchaseSources, reasonOf, repeatBuyers, SIDE_LABEL,
 } from '@/lib/metrics';
-import { BarList, HeatTable, Info, ListBlock, SimpleTable, Stats, money, nf, pct } from '../charts';
+import { BarList, Bars100, HeatTable, Info, ListBlock, SimpleTable, Stats, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum } from '../lists';
 import { Chips } from './shared';
@@ -68,11 +68,24 @@ export function PurchasesSection({ all, dupes, channel, setChannel }: {
           <BarList items={v.sources.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = v.sources.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
         </div>
         <div>
-          <h3>קונים חוזרים <Info>כמה קונים קנו פעם אחת, פעמיים וכו&apos;, בכל צד לפי הרכישות שלו באותו צד. &quot;לא של הבוט&quot; כולל גם מה שעוד לא הוכרע.</Info></h3>
-          <SimpleTable
-            headers={['רכישות לקונה', 'של הבוט', 'לא של הבוט']}
-            rows={v.repeat.map((r) => ({ key: r.name, cells: [r.name, `${nf.format(r.bot)} (${pct(r.bot, repeatTotal.bot)})`, `${nf.format(r.other)} (${pct(r.other, repeatTotal.other)})`] }))}
-          />
+          <h3>קונים חוזרים <Info>כמה מהקונים קנו יותר מפעם אחת, בכל צד לפי הרכישות שלו באותו צד. &quot;לא של הבוט&quot; כולל גם מה שעוד לא הוכרע. הפירוט המלא ברשימות למטה.</Info></h3>
+          <div className="stack100">
+            {(['bot', 'other'] as const).map((k) => {
+              const once = v.repeat[0]?.[k] ?? 0;
+              const total = repeatTotal[k];
+              return (
+                <Bars100
+                  key={k}
+                  label={k === 'bot' ? SIDE_LABEL.yes : SIDE_LABEL.no}
+                  parts={[
+                    { value: once, color: k === 'bot' ? '--bot' : '--notbot', text: pct(once, total), more: 'פעם אחת' },
+                    { value: total - once, color: '--series-2', text: pct(total - once, total), more: 'חזרו' },
+                  ]}
+                />
+              );
+            })}
+            <p className="hint tight">{nf.format(repeatTotal.bot + repeatTotal.other)} קונים. כתום = קנו יותר מפעם אחת</p>
+          </div>
         </div>
       </div>
 
@@ -82,11 +95,23 @@ export function PurchasesSection({ all, dupes, channel, setChannel }: {
           <Info>תשלום אחרי מעבר אתגר כדי לפתוח את החשבון הממומן. נספר מוצר שבשם שלו יש activation, או רכישה בלי שם מוצר בסכום של דמי הפעלה (109, 139, 169, 249, 259, 349, 399).</Info>
         </h3>
         <Stats items={[
-          { label: 'רכישות', value: nf.format(v.activation.length), sub: `${pct(v.activation.length, all.length)} מכל הרכישות` },
+          { label: 'רכישות', value: nf.format(v.activation.length), sub: `${pct(v.activation.length, all.length)} מכל הרכישות`, ring: all.length ? v.activation.length / all.length : null },
           { label: 'סכום', value: money.format(v.act.all.paid) },
-          { label: SIDE_LABEL.yes, value: nf.format(v.act.yes.purchases), sub: money.format(v.act.yes.paid) },
-          { label: SIDE_LABEL.no, value: nf.format(v.act.rest.purchases), sub: money.format(v.act.rest.paid) },
         ]} />
+        <Bars100
+          label="רכישות"
+          parts={[
+            { value: v.act.yes.purchases, color: '--bot', text: nf.format(v.act.yes.purchases), more: SIDE_LABEL.yes },
+            { value: v.act.rest.purchases, color: '--notbot', text: nf.format(v.act.rest.purchases), more: SIDE_LABEL.no },
+          ]}
+        />
+        <Bars100
+          label="סכום"
+          parts={[
+            { value: v.act.yes.paid, color: '--bot', text: money.format(v.act.yes.paid) },
+            { value: v.act.rest.paid, color: '--notbot', text: money.format(v.act.rest.paid) },
+          ]}
+        />
       </div>
 
       <ListBlock
@@ -104,6 +129,15 @@ export function PurchasesSection({ all, dupes, channel, setChannel }: {
                 max={200}
                 headers={['מוצר', 'רכישות', 'של הבוט', 'סכום', 'ממוצע', 'הכי נמוך', 'הכי גבוה']}
                 rows={v.products.map((p) => ({ key: p.name, cells: [p.name, nf.format(p.count), nf.format(p.bot), money.format(p.revenue), p.avg === null ? '-' : money.format(p.avg), p.min === null ? '-' : money.format(p.min), p.max === null ? '-' : money.format(p.max)] }))}
+              />
+            ),
+          },
+          {
+            id: 'repeat', title: 'קונים חוזרים: הפירוט',
+            render: () => (
+              <SimpleTable
+                headers={['רכישות לקונה', 'של הבוט', 'לא של הבוט']}
+                rows={v.repeat.map((r) => ({ key: r.name, cells: [r.name, `${nf.format(r.bot)} (${pct(r.bot, repeatTotal.bot)})`, `${nf.format(r.other)} (${pct(r.other, repeatTotal.other)})`] }))}
               />
             ),
           },

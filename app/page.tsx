@@ -11,8 +11,9 @@ import {
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
 import { AuthProvider, LoginControl } from './auth';
-import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
+import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Ring, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
 import { DataProvider } from './lists';
+import { ThemeToggle } from './theme';
 import { BotVsRest, type Measure } from './sections/botVsRest';
 import { CouponsSection } from './sections/coupons';
 import { MailingsSection } from './sections/mailings';
@@ -190,9 +191,12 @@ export default function Dashboard() {
               <p className="sub">הנתונים נכונים ל-<bdi>{fmtDateTime(file.generatedAt)}</bdi></p>
             </div>
             <div className="refresh">
-              <button type="button" onClick={startRefresh} disabled={refresh.state === 'waiting'}>
-                {refresh.state === 'waiting' ? 'מעדכן...' : 'רענון מהטבלה'}
-              </button>
+              <div className="headbtns">
+                <ThemeToggle />
+                <button type="button" onClick={startRefresh} disabled={refresh.state === 'waiting'}>
+                  {refresh.state === 'waiting' ? 'מעדכן...' : 'רענון מהטבלה'}
+                </button>
+              </div>
               <span role="status" className={refresh.state === 'error' ? 'err' : ''}>
                 {refresh.state === 'waiting' && 'קורא את הטבלה...'}
                 {refresh.state === 'done' && 'עודכן עכשיו'}
@@ -248,12 +252,12 @@ export default function Dashboard() {
               info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
             />
             <Tile
-              label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
+              label="התחילו שיחה" value={nf.format(s.startedJourney)} ring={s.leads ? s.startedJourney / s.leads : null} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
               info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
             />
             <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
             <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
-            <Tile label="אחוז המרה" value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`} info="מתוך הלידים בטווח, בלי מי שקנה באתר בלי לעבור בבוט." />
+            <Tile label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`} info="מתוך הלידים בטווח, בלי מי שקנה באתר בלי לעבור בבוט." />
             <Tile label="קנו באתר בלי לעבור בבוט" value={nf.format(s.siteBuyers)} sub="לא במשפך" info={`ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`} />
             <Tile label="הסירו את עצמם" value={nf.format(view.removed)} sub="לפי תאריך ההסרה" />
             <article className="tile sparkcard">
@@ -303,8 +307,8 @@ export default function Dashboard() {
                 info: `מי שעבר ואז רכש מקבל בטבלה "לקוח פעיל", והתוצאה שלו נדרסת: ${nf.format(ex.overwritten)} כאלה בטווח. עד 19/10 שם המבחן לא נרשם, ולכן הפילוח לפי סוג כולל רק מבחנים עם שם. התאריך הוא תאריך הכניסה של הליד.`,
               },
               { label: 'נכשלו', value: nf.format(ex.failed) },
-              { label: 'אחוז מעבר', value: pctOf(ex.passRate) },
-              { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: pct(ex.passedAndBought, ex.passed) + ' מהעוברים' },
+              { label: 'אחוז מעבר', value: pctOf(ex.passRate), ring: ex.passRate },
+              { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: 'מהעוברים', ring: ex.passed ? ex.passedAndBought / ex.passed : null },
             ]} />
             <Columns
               labels={view.passFail.map((d) => fmtBucket(d.key, view.passFailBy))}
@@ -354,12 +358,15 @@ export default function Dashboard() {
   );
 }
 
-function Tile({ label, value, sub, info }: { label: string; value: string; sub?: string; info?: ReactNode }) {
+function Tile({ label, value, sub, info, ring }: { label: string; value: string; sub?: string; info?: ReactNode; ring?: number | null }) {
   return (
-    <article className="tile">
-      <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
-      <p className="value">{value}</p>
-      {sub ? <p className="sub">{sub}</p> : null}
+    <article className={`tile${ring !== undefined ? ' has-ring' : ''}`}>
+      <div>
+        <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
+        <p className="value">{value}</p>
+        {sub ? <p className="sub">{sub}</p> : null}
+      </div>
+      {ring !== undefined && <Ring value={ring} size={60} label={label} />}
     </article>
   );
 }

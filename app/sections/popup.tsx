@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { botSide, fromPopup, inside, POPUP_START, popupCompare, popupFunnel, timeSeries, type Bucket, type CompareRow, type PopupPerson, type Range } from '@/lib/metrics';
-import { BarList, Columns, FunnelStrip, Info, ListBlock, SimpleTable, Stats, fmtDay, money, nf, pct, pctOf } from '../charts';
+import { BarList, Columns, FunnelStrip, Info, ListBlock, RateBars, Stats, fmtDay, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum, peopleCount, PeopleList } from '../lists';
 import { BucketChips, fmtBucket } from './shared';
@@ -42,10 +42,11 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
   const { f } = v;
   if (!people.some((x) => fromPopup(x.lead))) return null;
 
-  const cmpRow = (name: string, r: CompareRow) => ({
-    key: name,
-    cells: [name, nf.format(r.people), r.scanned ? `${pctOf(r.realRate)} (${nf.format(r.real)} מתוך ${nf.format(r.scanned)})` : '-', `${pctOf(r.buyRate)} (${nf.format(r.buyers)})`],
-  });
+  const groups: [string, CompareRow, string][] = [
+    ['מהפופאפ', v.cmp.popup, '--bot'],
+    ['בוט וואטסאפ בלי הפופאפ', v.cmp.bot, '--notbot'],
+    ['כל מי שלא הגיע מהפופאפ', v.cmp.others, '--notbot'],
+  ];
 
   return (
     <section className="card" id="popup" aria-labelledby="popup-h">
@@ -63,7 +64,7 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
       />
       <Stats items={[
         {
-          label: 'קנו אחרי הכניסה', value: `${nf.format(f.buyers)} אנשים`, sub: `${nf.format(f.purchases)} רכישות`,
+          label: 'סכום', value: money.format(f.paid), sub: `${nf.format(f.purchases)} רכישות`,
           info: (
             <>
               רכישה מרגע הכניסה והלאה, לפי השעה. כולל רכישות של אותו אדם תחת קוד מזהה אחר עם אותו טלפון. חוזר = קנה גם לפני הכניסה. שלבים 2 עד 4 במשפך מחלקים את הנכנסים ולא
@@ -71,9 +72,8 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
             </>
           ),
         },
-        { label: 'סכום', value: money.format(f.paid) },
         { label: 'עסקה ממוצעת', value: f.avgDeal === null ? '-' : money.format(f.avgDeal) },
-        { label: 'של הבוט', value: `${nf.format(f.botPurchases)} רכישות`, sub: `${money.format(f.botPaid)} · ${pct(f.botPaid, f.paid)} מהסכום` },
+        { label: 'של הבוט', value: `${nf.format(f.botPurchases)} רכישות`, sub: `${money.format(f.botPaid)} מהסכום`, ring: f.paid ? f.botPaid / f.paid : null },
       ]} />
 
       <div className="two">
@@ -102,10 +102,16 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
           מי שנכנס לטבלה כשקנה באתר, ולכן אחוז הרכישה שלו גבוה.
         </Info>
       </h3>
-      <SimpleTable
-        headers={['', 'אנשים', 'שיחה אמיתית', 'קנו אחרי הכניסה']}
-        rows={[cmpRow('מהפופאפ', v.cmp.popup), cmpRow('בוט וואטסאפ בלי הפופאפ', v.cmp.bot), cmpRow('כל מי שלא הגיע מהפופאפ', v.cmp.others)]}
-      />
+      <div className="two">
+        <div>
+          <h3 className="minor">ניהלו שיחה אמיתית</h3>
+          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.scanned ? r.realRate : null, sub: r.scanned ? `${nf.format(r.real)} מתוך ${nf.format(r.scanned)}` : 'לא נסרקו', color: c }))} />
+        </div>
+        <div>
+          <h3 className="minor">קנו אחרי הכניסה</h3>
+          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.buyRate, sub: `${nf.format(r.buyers)} מתוך ${nf.format(r.people)}`, color: c }))} />
+        </div>
+      </div>
 
       <ListBlock
         note={note}
