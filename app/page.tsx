@@ -24,6 +24,9 @@ import { trackingBanner, TrackingSection, useTrackingHealth } from './sections/t
 const BUCKET_WORD: Record<Bucket, string> = { day: 'יום', week: 'שבוע', month: 'חודש' };
 const ALL = '';
 const EMPTY: LeadsFile['leads'] = [];
+/** הגרסה של הבנייה. כשבשרת יש גרסה אחרת, הדף נטען מחדש לבד (הדפדפן שומר את הדף הישן בזיכרון) */
+const BUILD = process.env.NEXT_PUBLIC_BUILD_SHA ?? '';
+
 /** טווחים שמשווים לתקופה הקודמת (הנחיית המנהל, 1/11/2026) */
 const COMPARED: Preset[] = ['7d', '30d', 'month', 'prevMonth'];
 
@@ -64,8 +67,26 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, REFRESH_MS);
+    const check = () => {
+      fetchData();
+      if (!BUILD) return;
+      fetch(`${BASE_PATH}/version.json?t=${Date.now()}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((v: { sha?: string } | null) => {
+          if (!v?.sha || v.sha === BUILD) return;
+          // פעם אחת לכל גרסה, כדי שלא ייווצר מעגל אם הדפדפן מחזיר שוב את הדף הישן
+          try {
+            if (sessionStorage.getItem('osher-reload') === v.sha) return;
+            sessionStorage.setItem('osher-reload', v.sha);
+          } catch {
+            return;
+          }
+          window.location.reload();
+        })
+        .catch(() => null);
+    };
+    check();
+    const id = setInterval(check, REFRESH_MS);
     return () => clearInterval(id);
   }, [fetchData]);
 
@@ -222,7 +243,10 @@ export default function Dashboard() {
           </nav>
 
           <section className="top" aria-label="מספרי מפתח">
-            <Tile label="לידים" value={nf.format(s.leads)} sub="בלי מי שקנה באתר" info={`לפי קוד מזהה. בלי מי שנוצר בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה: הם באריח "קנו באתר בלי לעבור בבוט".`} />
+            <Tile
+              label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`}
+              info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
+            />
             <Tile
               label="התחילו שיחה" value={nf.format(s.startedJourney)} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
               info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
@@ -247,7 +271,7 @@ export default function Dashboard() {
               <Info>כל שלב סופר רק מי שעבר גם את השלבים שלפניו, ולכן אף שלב לא גדול מהקודם. בלי מי שקנה באתר בלי לעבור בבוט. &quot;רכשו&quot; = מי שגם סיים שאלון.</Info>
             </h2>
             <FunnelStrip steps={[
-              { label: 'לידים', value: view.funnel.leads },
+              { label: 'לידים', value: view.funnel.leads, sub: `בלי ${nf.format(s.siteBuyers)} שקנו באתר` },
               { label: 'התחילו שיחה', value: view.funnel.started },
               { label: 'התחילו שאלון', value: view.funnel.startedQ },
               { label: 'סיימו שאלון', value: view.funnel.finishedQ },

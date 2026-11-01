@@ -65,7 +65,7 @@ describe('summaries', () => {
     expect(leads.map((l) => [l.purchases, l.spent])).toEqual([[2, 150], [1, 30], [0, 0], [1, 0], [0, 0]]);
     const s = summarize(leads, P);
     expect(s).toEqual({
-      leads: 5, siteBuyers: 0, startedJourney: 3, aiAnalyzed: 3, realConversations: 2, salesConversations: 1,
+      people: 5, leads: 5, siteBuyers: 0, startedJourney: 3, aiAnalyzed: 3, realConversations: 2, salesConversations: 1,
       purchases: 5, buyers: 4, totalPaid: 200, avgDeal: 50, leadsWhoBought: 3,
     });
     expect(buyersOf([])).toBe(0);

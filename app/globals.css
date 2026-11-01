@@ -378,12 +378,14 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .how ul { margin: 0; padding-inline-start: 18px; }
 
 @container (max-width: 420px) {
-  .b100text .more { display: none; }
+  .b100text .b100more { display: none; }
 }
 
 @media (max-width: 760px) {
   .vs { grid-template-columns: 1fr 1fr; gap: 10px 14px; }
   .bartable th:nth-child(2), .bartable td.barcell { display: none; }
+  .bartable tbody th { white-space: normal; max-width: 46vw; min-width: 0; line-height: 1.3; }
+  .bartable th, .bartable td { padding: 6px 5px; }
   .vs .big .value { font-size: 30px; }
   .lsum, .lcount { min-width: 0; }
   .lrow > button { gap: 8px; }

@@ -143,7 +143,9 @@ export function undecided(p: Purchase): boolean {
 // ---------- מספרי מפתח ----------
 
 export interface Summary {
-  /** לידים בלי מי שקנה באתר בלי לעבור בבוט */
+  /** כל הלידים בטווח (אנשים) */
+  people: number;
+  /** לידים בלי מי שקנה באתר בלי לעבור בבוט: הבסיס של המשפך ושל אחוז ההמרה */
   leads: number;
   /** קנו באתר בלי לעבור בבוט */
   siteBuyers: number;
@@ -171,6 +173,7 @@ export function summarize(all: LeadX[], purchases: Purchase[]): Summary {
   const total = paid.reduce((s, p) => s + p.amount!, 0);
   const leads = botLeads(all);
   return {
+    people: all.length,
     leads: leads.length,
     siteBuyers: all.length - leads.length,
     startedJourney: leads.filter(startedJourney).length,
