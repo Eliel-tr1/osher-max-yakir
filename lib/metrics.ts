@@ -199,15 +199,21 @@ export interface Funnel {
   bought: number;
 }
 
-/** המשפך, בלי מי שקנה באתר בלי לעבור בבוט (הנחיית המנהל, 1/11/2026) */
+/**
+ * המשפך, בלי מי שקנה באתר בלי לעבור בבוט. כל שלב סופר רק מי שעבר גם את כל השלבים שלפניו, כך שאף שלב לא גדול
+ * מהקודם: "רכשו" = מי שהתחיל שיחה, התחיל וסיים שאלון, ורכש (הנחיית המנהל, 1/11/2026).
+ */
 export function funnel(all: LeadX[]): Funnel {
   const leads = botLeads(all);
+  const started = leads.filter(startedJourney);
+  const startedQ = started.filter(startedQuestionnaire);
+  const finishedQ = startedQ.filter(finishedQuestionnaire);
   return {
     leads: leads.length,
-    started: leads.filter(startedJourney).length,
-    startedQ: leads.filter(startedQuestionnaire).length,
-    finishedQ: leads.filter(finishedQuestionnaire).length,
-    bought: leads.filter((l) => l.purchases > 0).length,
+    started: started.length,
+    startedQ: startedQ.length,
+    finishedQ: finishedQ.length,
+    bought: finishedQ.filter((l) => l.purchases > 0).length,
   };
 }
 
@@ -744,9 +750,12 @@ export { BOT_COUPON_GROUP };
 /** הקופון של האתר להאלווין */
 export const SPOOKY = 'SPOOKY';
 
-/** רכישה עם הקופון האישי של הבוט, לפי "סיבה" שמתחילה ב"קופון הבוט" */
-export function usedBotCoupon(p: { reason: string | null }): boolean {
-  return p.reason?.startsWith('קופון הבוט') ?? false;
+/**
+ * רכישה עם הקופון האישי של הבוט: בעמודה "קופון מהרכישה" יש קוד PTB- ו-10 תווים. אותה ספירה בכרטיס ובטבלת הקודים
+ * (הנחיית המנהל, 1/11/2026). רכישה עם קופון כזה יכולה לקבל "סיבה" אחרת, למשל שיחה מכירתית שהייתה לפני.
+ */
+export function usedBotCoupon(p: { coupon: string | null }): boolean {
+  return p.coupon === BOT_COUPON_GROUP;
 }
 
 export interface CouponRow {

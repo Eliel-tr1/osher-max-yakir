@@ -54,4 +54,34 @@ for (const [name, f] of Object.entries(defs)) {
   }
   out.push(`כניסה = ${name}: קנו אחרי ${after}; קנו לפני ${before}; גם וגם ${both}; קנו אחרי וגם יותר מ-10 דקות לפני ${beforeDay}`);
 }
+// אותו אדם עם קוד מזהה אחר: לפי טלפון (9 הספרות האחרונות). רק ספירות
+const tail = (v: string) => v.replace(/\D/g, '').slice(-9);
+const phoneOfNs = new Map<string, string>();
+for (const r of L.rows) {
+  const ns = L.c(r, 'קוד מזהה');
+  const ph = tail(L.c(r, 'טלפון'));
+  if (ns && ph.length === 9) phoneOfNs.set(ns, ph);
+}
+const buysByPhone = new Map<string, { at: number; ns: string }[]>();
+for (const r of P.rows) {
+  const at = parseSheetDate(P.c(r, 'תאריך'))?.getTime();
+  const ph = tail(P.c(r, 'טלפון'));
+  if (!at || at < start || ph.length !== 9) continue;
+  const g = buysByPhone.get(ph) ?? [];
+  g.push({ at, ns: P.c(r, 'קוד מזהה') });
+  buysByPhone.set(ph, g);
+}
+let byPhoneBefore = 0, byPhoneBoth = 0, otherNs = 0;
+for (const [ns, g] of popup) {
+  const e = Math.min(...g.map((x) => x.at));
+  const ph = phoneOfNs.get(ns);
+  if (!ph) continue;
+  const b = buysByPhone.get(ph) ?? [];
+  const before = b.some((x) => x.at < e);
+  const after = b.some((x) => x.at >= e);
+  if (before) byPhoneBefore++;
+  if (before && after) byPhoneBoth++;
+  if (b.some((x) => x.ns !== ns)) otherNs++;
+}
+out.push(`לפי טלפון: קנו לפני הכניסה ${byPhoneBefore}; קנו לפני וגם אחרי ${byPhoneBoth}; עם רכישה תחת קוד מזהה אחר ${otherNs}`);
 console.log(out.join('\n'));

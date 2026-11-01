@@ -106,7 +106,8 @@ describe('coupons', () => {
       lead({ botCoupon: true, couponAt: '2026-10-20T21:00:00.000Z' }), lead({ botCoupon: true, couponAt: '2026-10-25T21:00:00.000Z' }), lead({ botCoupon: true }),
       lead({ botCoupon: false, couponAt: '2026-10-20T21:00:00.000Z' }),
     ];
-    const ps = [buy({ buyer: 1, reason: 'קופון הבוט', amount: 20 })];
+    // שימוש = קוד אישי של הבוט ברכישה, גם כשהסיבה אחרת
+    const ps = [buy({ buyer: 1, coupon: BOT_COUPON_GROUP, reason: 'שיחה מכירתית לפני הרכישה', amount: 20 }), buy({ buyer: 2, reason: 'קופון הבוט' })];
     expect(botCoupons(leads, ps, all)).toEqual({ made: 3, undated: 1, used: 1, usedPaid: 20, rate: 1 / 3 });
     const oct = { from: new Date('2026-10-24T00:00:00.000Z'), to: null };
     expect(botCoupons(leads, ps, oct).made).toBe(1);
@@ -221,6 +222,9 @@ describe('people who bought on the site without the bot (1/11)', () => {
     expect(s).toMatchObject({ leads: 4, siteBuyers: 2, leadsWhoBought: 3, purchases: 5 });
     const f = funnel(x);
     expect(f.leads).toBe(4);
-    expect(f.bought).toBe(3);
+    // במשפך רק מי שגם סיים שאלון: ליד 2 וליד 4 (converted)
+    expect(f.bought).toBe(2);
+    expect(f.started).toBeGreaterThanOrEqual(f.startedQ);
+    expect(f.finishedQ).toBeGreaterThanOrEqual(f.bought);
   });
 });

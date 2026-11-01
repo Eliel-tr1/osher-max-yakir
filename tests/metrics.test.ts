@@ -79,7 +79,8 @@ describe('summaries', () => {
 
   it('builds the funnel and removals by removal date', () => {
     const leads = annotate(file(L, P));
-    expect(funnel(leads)).toEqual({ leads: 5, started: 3, startedQ: 2, finishedQ: 2, bought: 3 });
+    // כל שלב רק מי שעבר את הקודמים: רכשו = מי שגם סיים שאלון (1/11)
+    expect(funnel(leads)).toEqual({ leads: 5, started: 3, startedQ: 2, finishedQ: 2, bought: 1 });
     expect(removedIn(L, { from: new Date('2026-10-04T00:00:00Z'), to: null })).toBe(1);
     expect(removedIn(L, { from: null, to: new Date('2026-10-04T00:00:00Z') })).toBe(0);
     expect(inRange(P, { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-10-05T00:00:00Z') })).toHaveLength(3);
