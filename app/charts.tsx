@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export const nf = new Intl.NumberFormat('he-IL');
 export const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -137,7 +137,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
     <div className="chart" dir="ltr" ref={box}>
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={series.map((s) => s.label).join(', ')} onMouseLeave={() => setHover(null)}>
         {series.some((s) => s.hatch) && <HatchDef id={uid} />}
-        {note && <text x={W - 4} y={11} className="tick" textAnchor="end" direction="rtl">{note}</text>}
+        {note && <text x={W - 4} y={11} className="tick" textAnchor="start" direction="rtl">{note}</text>}
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="grid" />
@@ -219,13 +219,13 @@ export function Sparkline({ labels, values, color = '--series-1', height = 56 }:
   );
 }
 
-/** שורת מספרים קטנים בתוך כרטיס */
-export function Stats({ items }: { items: { label: string; value: string; sub?: string }[] }) {
+/** שורת מספרים קטנים בתוך כרטיס. info: הגדרה ב-ⓘ ליד השם */
+export function Stats({ items }: { items: { label: string; value: string; sub?: string; info?: ReactNode }[] }) {
   return (
     <div className="stats">
       {items.map((s) => (
         <div key={s.label} className="stat">
-          <span className="label">{s.label}</span>
+          <span className="label">{s.label}{s.info ? <> <Info>{s.info}</Info></> : null}</span>
           <span className="value">{s.value}</span>
           {s.sub && <span className="sub">{s.sub}</span>}
         </div>
@@ -291,7 +291,7 @@ export function SplitList({ items, max: maxShown = 8 }: { items: { name: string;
             <span className="fill" style={{ width: `${(it.passed / top) * 100}%`, background: 'var(--series-1)' }} />
             <span className="fill second" style={{ width: `${(it.failed / top) * 100}%`, insetInlineStart: `${(it.passed / top) * 100}%`, background: 'var(--series-2)' }} />
           </span>
-          <span className="num">{nf.format(it.total)}<small>{it.passRate === null ? '' : `${pctOf(it.passRate)} עברו`}</small></span>
+          <span className="num">{nf.format(it.total)}<small>{it.passed === 0 ? '-' : `${pctOf(it.passRate)} עברו`}</small></span>
         </div>
       ))}
       {items.length > maxShown && (
@@ -300,16 +300,6 @@ export function SplitList({ items, max: maxShown = 8 }: { items: { name: string;
         </button>
       )}
     </div>
-  );
-}
-
-/** חלק מקופל: נפתח רק בלחיצה. */
-export function Fold({ title, children, count }: { title: string; children: ReactNode; count?: number }) {
-  return (
-    <details className="fold">
-      <summary>{title}{count !== undefined ? <span className="count">{nf.format(count)}</span> : null}</summary>
-      <div className="foldbody">{children}</div>
-    </details>
   );
 }
 
@@ -448,7 +438,7 @@ export interface BarSegment {
 export function BarTable({ headers, rows, max: maxShown = 10 }: {
   /** [שם, פס, ...עמודות המספרים] */
   headers: string[];
-  rows: { key: string; name: ReactNode; title?: string; segments: BarSegment[]; cells: ReactNode[] }[];
+  rows: { key: string; name: ReactNode; title?: string; segments: BarSegment[]; cells: ReactNode[]; group?: boolean }[];
   max?: number;
 }) {
   const [all, setAll] = useState(false);
@@ -462,7 +452,7 @@ export function BarTable({ headers, rows, max: maxShown = 10 }: {
           <thead><tr>{headers.map((h, i) => <th key={i} scope="col">{h}</th>)}</tr></thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.key}>
+              <tr key={r.key} className={r.group ? 'group' : undefined}>
                 <th scope="row" dir="auto" title={r.title}>{r.name}</th>
                 <td className="barcell">
                   <span className="stack" title={r.segments.filter((g) => g.value).map((g) => `${g.label}: ${nf.format(g.value)}`).join(' · ')}>
@@ -484,45 +474,6 @@ export function BarTable({ headers, rows, max: maxShown = 10 }: {
   );
 }
 
-/** חלק מקופל שהתוכן שלו נבנה רק כשפותחים אותו, לרשימות ארוכות */
-export function LazyFold({ title, meta, children }: { title: string; meta?: string; children: () => ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <details className="fold" onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary><span className="ftitle" dir="auto">{title}</span>{meta ? <span className="count">{meta}</span> : null}</summary>
-      {open ? <div className="foldbody">{children()}</div> : null}
-    </details>
-  );
-}
-
-/** טבלה בעמודים, לרשימות ארוכות */
-export function PagedTable({ headers, rows, pageSize = 25 }: { headers: string[]; rows: { key: string; cells: ReactNode[] }[]; pageSize?: number }) {
-  const [page, setPage] = useState(0);
-  if (!rows.length) return <p className="empty">אין שורות</p>;
-  const pages = Math.ceil(rows.length / pageSize);
-  const p = Math.min(page, pages - 1);
-  const shown = rows.slice(p * pageSize, (p + 1) * pageSize);
-  return (
-    <div className="heat simple list">
-      <div className="scroll">
-        <table>
-          <thead><tr>{headers.map((h) => <th key={h} scope="col">{h}</th>)}</tr></thead>
-          <tbody>
-            {shown.map((r) => <tr key={r.key}>{r.cells.map((c, i) => <td key={i} dir="auto">{c}</td>)}</tr>)}
-          </tbody>
-        </table>
-      </div>
-      {pages > 1 && (
-        <div className="pager">
-          <button type="button" onClick={() => setPage(p - 1)} disabled={p === 0}>הקודם</button>
-          <span>עמוד {nf.format(p + 1)} מתוך {nf.format(pages)}</span>
-          <button type="button" onClick={() => setPage(p + 1)} disabled={p === pages - 1}>הבא</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * ⓘ ליד מספר או כותרת: ההגדרה מופיעה במעבר עכבר או בלחיצה (גם בטלפון). Esc או לחיצה בחוץ סוגרים.
  * החלונית במיקום קבוע על המסך, כדי שלא תגרום לגלילה לצד בטלפון.
@@ -539,11 +490,18 @@ export function Info({ children, label = 'הסבר' }: { children: ReactNode; la
     setPinned(false);
   }, []);
   useLayoutEffect(() => {
-    if (!open || !btn.current) return;
+    if (!open || !btn.current) {
+      setPos(null);
+      return;
+    }
     const r = btn.current.getBoundingClientRect();
     const width = Math.min(300, window.innerWidth - 24);
     const left = Math.min(Math.max(12, r.left + r.width / 2 - width / 2), window.innerWidth - width - 12);
-    setPos({ left, top: r.bottom + 6, width });
+    // מתחת לאייקון, ואם אין מקום, מעליו
+    const h = tip.current?.getBoundingClientRect().height ?? 0;
+    const below = r.bottom + 6;
+    const top = below + h > window.innerHeight - 8 && r.top - h - 6 > 8 ? r.top - h - 6 : below;
+    setPos({ left, top, width });
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -586,8 +544,14 @@ export function Info({ children, label = 'הסבר' }: { children: ReactNode; la
       >
         ⓘ
       </button>
-      {open && pos && (
-        <span ref={tip} id={id} role="tooltip" className="infotip" style={{ left: pos.left, top: pos.top, width: pos.width }}>
+      {open && (
+        <span
+          ref={tip}
+          id={id}
+          role="tooltip"
+          className="infotip"
+          style={pos ? { left: pos.left, top: pos.top, width: pos.width } : { left: 0, top: 0, width: Math.min(300, typeof window === 'undefined' ? 300 : window.innerWidth - 24), visibility: 'hidden' }}
+        >
           {children}
         </span>
       )}
@@ -607,18 +571,18 @@ export function Delta({ value }: { value: number | null }) {
 }
 
 /** פס של 100%: חלק לכל צד, עם האחוז כתוב על החלק כשיש לו מקום */
-export function Bars100({ label, parts }: { label: string; parts: { value: number; color: string; hatch?: boolean; text: string }[] }) {
+export function Bars100({ label, parts }: { label: string; parts: { value: number; color: string; hatch?: boolean; text: string; more?: string }[] }) {
   const total = parts.reduce((s, p) => s + p.value, 0);
   return (
     <div className="bar100">
       <span className="b100label">{label}</span>
-      <span className="b100track" role="img" aria-label={parts.map((p) => `${p.text}`).join(', ')}>
+      <span className="b100track" role="img" aria-label={parts.map((p) => `${p.text}${p.more ? ` ${p.more}` : ''}`).join(', ')}>
         {parts.map((p) => {
           const w = total ? (p.value / total) * 100 : 0;
           if (!w) return null;
           return (
-            <span key={p.text} className={`b100part${p.hatch ? ' hatch' : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={p.text}>
-              {w >= 14 ? <span className="b100text">{p.text}</span> : null}
+            <span key={p.color} className={`b100part${p.hatch ? ' hatch' : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={`${p.text}${p.more ? ` ${p.more}` : ''}`}>
+              {w >= 14 ? <span className="b100text">{p.text}{p.more ? <span className="more"> {p.more}</span> : null}</span> : null}
             </span>
           );
         })}
@@ -705,18 +669,12 @@ export interface ListItem {
   render: () => ReactNode;
 }
 
-/** כמה בלוקים של רשימות פתוחים יחד: כל אחד שומר רק רשימה אחת פתוחה */
-const ListOpenContext = createContext<{ open: string | null; setOpen: (id: string | null) => void } | null>(null);
-
 /**
  * בלוק "רשימות" בסוף סקשן: שורה לכל רשימה (שם, כמה, סכום, חץ), הכול סגור, ופתיחה של רשימה סוגרת את הקודמת.
  * Enter פותח וסוגר, Esc סוגר. כל רשימות הדף משתמשות ברכיב הזה (הנחיית המנהל, 1/11/2026).
  */
 export function ListBlock({ items, title = 'רשימות', note }: { items: ListItem[]; title?: string; note?: ReactNode }) {
-  const [own, setOwn] = useState<string | null>(null);
-  const shared = useContext(ListOpenContext);
-  const open = shared ? shared.open : own;
-  const setOpen = shared ? shared.setOpen : setOwn;
+  const [open, setOpen] = useState<string | null>(null);
   const base = useId().replace(/:/g, '');
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -746,8 +704,8 @@ export function ListBlock({ items, title = 'רשימות', note }: { items: List
               onClick={() => setOpen(isOpen ? null : it.id)}
             >
               <span className="ltitle" dir="auto">{it.title}</span>
-              {it.count ? <span className="lcount">{it.count}</span> : null}
-              {it.sum ? <span className="lsum">{it.sum}</span> : null}
+              <span className="lcount">{it.count ?? ''}</span>
+              <span className="lsum">{it.sum ?? ''}</span>
               <span className="lchev" aria-hidden="true">⌄</span>
             </button>
             {isOpen ? <div id={panel} role="region" aria-label={it.title} className="lpanel">{it.render()}</div> : null}
@@ -756,14 +714,4 @@ export function ListBlock({ items, title = 'רשימות', note }: { items: List
       })}
     </div>
   );
-}
-
-/** רשימה אחת פתוחה בכל קבוצה של בלוקים (למשל רשימות הסיבות והצ'יפים שפותחים אותן) */
-export function ListGroup({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState<string | null>(null);
-  return <ListOpenContext.Provider value={{ open, setOpen }}>{children}</ListOpenContext.Provider>;
-}
-
-export function useListGroup() {
-  return useContext(ListOpenContext);
 }
