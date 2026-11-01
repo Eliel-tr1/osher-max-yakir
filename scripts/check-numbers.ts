@@ -9,6 +9,7 @@ import {
   POPUP, popupFunnel, summarize, trackingHealth, usedBotCoupon, withPurchasesAfterEntry, type Range,
 } from '../lib/metrics';
 import { rangeFor } from '../lib/ranges';
+import { parseCsv } from '../lib/sheet/parse';
 
 const file = unpack(JSON.parse(readFileSync(process.argv[2], 'utf8')));
 const now = new Date(file.generatedAt);
@@ -54,6 +55,12 @@ if (file.mailingWaves && file.mailings) {
     const v = mailingView(name, file.mailingWaves, file.mailings);
     out.push(`${name}: כרטיס ${v.total.purchases} רכישות, דרך הקישור ${v.total.viaLinkPurchases} רכישות (${v.linkBuyers} אנשים); בקמפיינים מובילים ${camp.find((c) => c.name === name)?.count ?? 0}`);
   }
+}
+// כמה שורות בגיליון עם P = halloween_lightning (לפני כפולות וסינון), מול מה ש"קמפיינים מובילים" מראה
+if (process.argv[4]) {
+  const [hd, ...body] = parseCsv(readFileSync(process.argv[4], 'utf8'));
+  const ci = hd.map((x) => x.trim()).indexOf('utm_campaign');
+  out.push(`P = halloween_lightning בגיליון: ${body.filter((r) => (r[ci] ?? '').trim() === 'halloween_lightning').length} שורות`);
 }
 const h = trackingHealth(file.leads, now);
 out.push(`קמפיין שלא מולא: ${h.total} אנשים, ב-7 ימים ${h.last7} (${h.platforms.join(', ') || 'אין'}); ` + h.byValue.map((v) => `${v.name} ${v.count}/${v.last7}`).join(' · '));
