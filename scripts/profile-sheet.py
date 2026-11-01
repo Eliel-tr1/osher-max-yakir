@@ -23,9 +23,17 @@ def top(name, n=10):
     empty = c.pop('', 0)
     return f'{name}: ריקים {empty}; ' + '; '.join(f'{k} ({v})' for k, v in c.most_common(n))
 
+# ערכים מודפסים רק לעמודות של קטגוריות. בכל עמודה אחרת, גם חדשה, רק כמה מלאים: אין כאן קודי קופון אישיים,
+# נימוקים של הסוכן (תוכן שיחה) או תשובות חופשיות (תיקון 1/11/2026: קודי קופון אישיים הודפסו כאן מ-31/10)
+SAFE = {'מקור הגעה', 'סטטוס', 'סטטוס שאלון', 'שם תהליך', 'מוצר שנקנה', 'תשלומים', 'מבחן', 'שם בוטקאסט', 'מספר בוטקאסט',
+        'התחיל שיחה', 'אופן שיחה', 'utm_campaign', "ענה לצ'אטבוט?"}
 for name in [c for c in h if c not in KNOWN] + ['מקור הגעה', 'סטטוס', 'הסיר את עצמו?', 'סטטוס שאלון', 'שם תהליך', 'מוצר שנקנה', 'תשלומים', 'מבחן', 'שם בוטקאסט', 'מספר בוטקאסט']:
-    if name in h:
+    if name not in h:
+        continue
+    if name in SAFE:
         out.append(top(name))
+    else:
+        out.append(f'{name}: מלאים {sum(1 for v in col(name) if v)}')
 
 amt = [a for a in col('סכום ששולם') if a]
 out.append(f'סכום ששולם: מלאים {len(amt)}; דוגמאות פורמט: ' + ' | '.join(sorted({re.sub(r"\d", "9", a) for a in amt})[:8]))
@@ -38,7 +46,7 @@ out.append(f'converted: {conv}; עם סכום או מוצר: {paid_any}; convert
 for i in range(16, 32):
     if i < len(h):
         c = collections.Counter(col(h[i])); c.pop('', None)
-        out.append(f'{h[i]}: {sum(c.values())} מלאים, {len(c)} ערכים שונים; נפוצים: ' + '; '.join(k[:25] for k, _ in c.most_common(4)))
+        out.append(f'{h[i]}: {sum(c.values())} מלאים, {len(c)} ערכים שונים')
 
 def parse(d):
     for f in ('%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y'):
@@ -146,9 +154,9 @@ susp = sorted({rownum[i] for i, v in enumerate(col('מקור הגעה')) if v an
 for rn in susp[:5]:
     r = rows[rn - 1]
     cells = [(h[j] if j < len(h) else f'#{j}', v.strip()) for j, v in enumerate(r) if v.strip()]
-    shown = [f'{k}={v[:30]}' if k not in PII else f'{k}=(מלא)' for k, v in cells]
+    shown = [f'{k}={v[:30]}' if k in SAFE or k in ('תאריך כניסה', 'סכום ששולם', 'שלב בשאלון', 'ניקוד לקוח') else f'{k}=(מלא)' for k, v in cells]
     print(f'שורה {rn}: {len(r)} תאים; מלאות: ' + ' | '.join(shown))
 # שורה תקינה אחרונה להשוואה
 last_ok = max(rownum[i] for i, v in enumerate(col('מקור הגעה')) if v == "אורגני - צ'אטבוט וואטסאפ")
 r = rows[last_ok - 1]
-print(f'להשוואה, שורה תקינה {last_ok}: מלאות: ' + ' | '.join((h[j] if j < len(h) else f'#{j}') + ('=(מלא)' if h[j] in PII else '=' + v.strip()[:20]) for j, v in enumerate(r) if v.strip() and j < len(h)))
+print(f'להשוואה, שורה תקינה {last_ok}: מלאות: ' + ' | '.join(h[j] + ('=' + v.strip()[:20] if h[j] in SAFE else '=(מלא)') for j, v in enumerate(r) if v.strip() and j < len(h)))
