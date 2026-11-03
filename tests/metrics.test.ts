@@ -25,7 +25,7 @@ function buy(p: Partial<Purchase>): Purchase {
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
   leads.forEach((l, i) => { if (l.person === -1) l.person = i; });
   purchases.forEach((p, k) => { if (p.person === -1) p.person = p.lead ?? 100_000 + k; });
-  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [] };
+  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null } };
 }
 
 const L = [
@@ -129,7 +129,8 @@ describe('products and sources', () => {
     const stats = productStats(P);
     expect(stats.find((s) => s.name === 'Instant')).toEqual({ name: 'Instant', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 });
     expect(stats.find((s) => s.name === 'funded activation fee')).toMatchObject({ count: 1, revenue: 50, bot: 1 });
-    expect(stats.find((s) => s.name === 'לא צוין')).toEqual({ name: 'לא צוין', count: 1, revenue: 20, bot: 0, avg: 20, min: 20, max: 20 });
+    // רכישה בלי שם מוצר מלפני 20/10: פער ידוע בנתונים (הנחיית המנהל 3/11/2026)
+    expect(stats.find((s) => s.name === 'לפני 20/10 (בלי שם מוצר)')).toEqual({ name: 'לפני 20/10 (בלי שם מוצר)', count: 1, revenue: 20, bot: 0, avg: 20, min: 20, max: 20 });
     expect(stats.find((s) => s.name === 'Lightning Access')).toMatchObject({ count: 1, revenue: 0, avg: null });
     expect(purchaseSources(P).map((s) => [s.name, s.count])).toEqual([['לא צוין', 2], ['google', 1], ['Vitrue', 1], ['בוט וואטסאפ', 1]]);
     expect(campaigns(P).find((c) => c.name === 'halloween')).toEqual({ name: 'halloween', count: 1, revenue: 30, bot: 0, avg: 30, min: 30, max: 30 });

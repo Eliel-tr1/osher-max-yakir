@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import type { MailingPurchase, MailingWave } from '@/lib/leads/types';
-import { mailingCampaigns, mailingView, SPOOKY } from '@/lib/metrics';
-import { BarList, Columns, FunnelStrip, Info, ListBlock, SimpleTable, Stats, fmtSheetDay, money, nf } from '../charts';
+import { MAILING_WINDOW_HOURS, mailingCampaigns, mailingLevels, mailingView, SPOOKY } from '@/lib/metrics';
+import { BarList, Columns, Fold, FunnelStrip, Info, ListBlock, SimpleTable, Stats, fmtSheetDay, money, nf } from '../charts';
 import { useLinkNote } from '../auth';
 import { buysCount, buysSum, MailList } from '../lists';
 import { Chips } from './shared';
@@ -14,23 +14,30 @@ const eur = (v: number | null) => (v === null ? '-' : money.format(v));
 /**
  * קמפיין דיוור, מהלשוניות "דיוורים" ו"דיוורים - סיכום" (הנחיית המנהל, 31/10/2026).
  * קמפיינים עתידיים נכנסים לאותן לשוניות, והעמודה "קמפיין" היא הבחירה. לא מושפע מטווח התאריכים.
+ * מ-3/11/2026: סגור כברירת מחדל, ושלוש רמות של רכישות נמענים עד 72 שעות אחרי השליחה.
  */
-export function MailingsSection({ mailings, waves }: { mailings: MailingPurchase[]; waves: MailingWave[] }) {
+export function MailingsSection({ mailings, waves, open, onToggle }: { mailings: MailingPurchase[]; waves: MailingWave[]; open: boolean; onToggle: () => void }) {
   const names = useMemo(() => mailingCampaigns(waves, mailings), [waves, mailings]);
   const [picked, setPicked] = useState<string | null>(null);
   const note = useLinkNote();
   const campaign = picked && names.includes(picked) ? picked : names[names.length - 1];
   const v = useMemo(() => (campaign ? mailingView(campaign, waves, mailings) : null), [campaign, waves, mailings]);
+  const levels = useMemo(() => mailingLevels(mailings.filter((m) => m.campaign === campaign)), [mailings, campaign]);
   if (!campaign || !v) return null;
+  const counted = levels.link.length + levels.spooky.length + levels.rest.length;
   const t = v.total;
   const rows = [...v.waves, ...(v.others ? [v.others] : []), t];
 
   return (
-    <section className="card" id="mail" aria-labelledby="mail-h">
-      <div className="cardhead">
-        <h2 id="mail-h" dir="auto">קמפיין {campaign}</h2>
-        {names.length > 1 && <Chips value={campaign} onChange={setPicked} label="קמפיין" options={names.map((x) => ({ id: x, label: x }))} />}
-      </div>
+    <Fold
+      id="mail" title={<>דיוור <bdi>{campaign}</bdi></>} open={open} onToggle={onToggle}
+      stats={[
+        { label: 'נשלחו', value: n(t.sent) },
+        { label: 'רכישות', value: nf.format(counted) },
+        { label: 'הכנסות', value: money.format(levels.link.concat(levels.spooky, levels.rest).reduce((s, m) => s + (m.amount && m.amount > 0 ? m.amount : 0), 0)) },
+      ]}
+    >
+      {names.length > 1 && <div className="cardhead"><span /><Chips value={campaign} onChange={setPicked} label="קמפיין" options={names.map((x) => ({ id: x, label: x }))} /></div>}
       <FunnelStrip
         steps={[
           { label: 'נשלחו', value: t.sent ?? 0, sub: 'אנשים' },
@@ -50,23 +57,26 @@ export function MailingsSection({ mailings, waves }: { mailings: MailingPurchase
         { label: 'רכישות של הבוט', value: n(t.bot), ring: t.bot !== null && t.purchases ? t.bot / t.purchases : null, sub: 'מרכישות הנמענים' },
       ]} />
 
+      <h3>
+        רכישות של נמענים{' '}
+        <Info>נספרות כל הרכישות של נמענים עד {MAILING_WINDOW_HOURS} שעות אחרי השליחה. דרך הקישור: utm_source = vitrue. רק הקוד: הקלידו SPOOKY בלי לעבור בקישור.</Info>
+      </h3>
+      <BarList
+        items={[
+          { name: 'דרך הקישור', count: levels.link.length },
+          { name: `רק הקוד ${SPOOKY}`, count: levels.spooky.length },
+          { name: `שאר הרכישות עד ${MAILING_WINDOW_HOURS} שעות`, count: levels.rest.length },
+        ]}
+        max={3}
+        color="--bot"
+      />
+
       <h3>לפי גל</h3>
       <Columns
         labels={v.waves.map((w) => w.wave)}
         values={v.waves.map((w) => [w.delivered ?? 0, w.undelivered ?? 0])}
         series={[{ key: 'delivered', label: 'נמסרו', color: '--bot' }, { key: 'undelivered', label: 'לא נמסרו', color: '--notbot' }]}
         labelEvery={1}
-      />
-
-      <h3>קופונים ברכישות של הנמענים</h3>
-      <BarList
-        items={[
-          { name: `${SPOOKY} · קופון האתר להאלווין`, count: v.coupons.spooky },
-          { name: 'קופון אחר', count: v.coupons.other },
-          { name: 'בלי קופון', count: v.coupons.none },
-        ]}
-        max={3}
-        color="--bot"
       />
 
       <ListBlock
@@ -90,6 +100,6 @@ export function MailingsSection({ mailings, waves }: { mailings: MailingPurchase
             : []),
         ]}
       />
-    </section>
+    </Fold>
   );
 }

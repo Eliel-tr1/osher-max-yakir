@@ -1,4 +1,4 @@
-import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from './types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, Lead, LeadsFile, MailingPurchase, MailingWave, Part, Purchase, QuestionRow } from './types';
 
 /** בקובץ לא נשמרים שדות ריקים (null או false), כדי שיהיה קטן. unpack משלים אותם. */
 export function pack(file: LeadsFile): string {
@@ -24,6 +24,31 @@ const EMPTY_WAVE: MailingWave = {
   viaLinkPurchases: null, viaLinkAmount: null, spooky: null, bot: null, note: null,
 };
 
+const EMPTY_ANALYSIS: AnalysisRow = {
+  at: null, lead: null, path: null, bought: null, step: null, reason: null, agent: false, inquiry: null, unanswered: null, feedback: null,
+  messages: null, scannedAt: null, removal: null, basis: null,
+};
+const EMPTY_QUESTION: QuestionRow = { text: '', category: null, count: 0, lastAt: null, status: null, answer: null };
+const EMPTY_INQUIRY: Omit<InquiryRow, 'who'> = { at: null, lead: null, category: null };
+const EMPTY_FEEDBACK: Omit<FeedbackRow, 'who'> = { at: null, lead: null, category: null, exam: null };
+
+/** חלק של תובנות השיחה: שורות עם ערכי ברירת מחדל, או null כשהחלק לא קיים */
+function partOf<T>(p: unknown, fill: (row: Partial<T>, i: number) => T): Part<T> | null {
+  const x = p as Partial<Part<T>> | null | undefined;
+  if (!x || !Array.isArray(x.rows)) return null;
+  return { readAt: typeof x.readAt === 'string' ? x.readAt : '', rows: x.rows.map((r, i) => fill(r as Partial<T>, i)) };
+}
+
+export function unpackInsights(json: unknown): Insights {
+  const x = (json ?? {}) as Partial<Record<keyof Insights, unknown>>;
+  return {
+    analysis: partOf<AnalysisRow>(x.analysis, (r) => ({ ...EMPTY_ANALYSIS, ...r })),
+    questions: partOf<QuestionRow>(x.questions, (r) => ({ ...EMPTY_QUESTION, ...r })),
+    inquiries: partOf<InquiryRow>(x.inquiries, (r, i) => ({ ...EMPTY_INQUIRY, ...r, who: r.who ?? -1 - i })),
+    feedback: partOf<FeedbackRow>(x.feedback, (r, i) => ({ ...EMPTY_FEEDBACK, ...r, who: r.who ?? -1 - i })),
+  };
+}
+
 export function unpack(json: unknown): LeadsFile {
   const f = json as Partial<LeadsFile> | null;
   if (!f || f.version !== 2 || !Array.isArray(f.leads) || !Array.isArray(f.purchases)) throw new Error('קובץ הנתונים לא במבנה הצפוי');
@@ -40,5 +65,7 @@ export function unpack(json: unknown): LeadsFile {
     mailings: Array.isArray(f.mailings) ? f.mailings.map((m, i) => ({ ...EMPTY_MAILING, ...m, buyer: m.buyer ?? -1 - i })) : null,
     mailingWaves: Array.isArray(f.mailingWaves) ? f.mailingWaves.map((w) => ({ ...EMPTY_WAVE, ...w })) : null,
     dupes: Array.isArray(f.dupes) ? f.dupes : [],
+    // קובץ בלי תובנות שיחה (לפני 3/11/2026): כל החלקים חסרים
+    insights: unpackInsights(f.insights),
   };
 }

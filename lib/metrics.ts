@@ -380,6 +380,14 @@ export function purchaseSummary(purchases: Purchase[]): PurchaseSummary {
 }
 
 export const NO_PRODUCT = 'לא צוין';
+/** עד 20/10/2026 שם המוצר לא נרשם בלשונית הרכישות (הנחיית המנהל 3/11/2026, #27) */
+export const NAMES_FROM = '2026-10-20';
+export const BEFORE_NAMES = 'לפני 20/10 (בלי שם מוצר)';
+
+/** השם לרכישה בלי שם מוצר: לפני 20/10 זה פער ידוע בנתונים, אחרי זה "לא צוין" */
+export function noProductLabel(at: string): string {
+  return at < israelDayStart(NAMES_FROM).toISOString() ? BEFORE_NAMES : NO_PRODUCT;
+}
 
 /** משפחת המוצר, לפי השם. */
 export function productFamily(name: string | null): string {
@@ -415,7 +423,8 @@ export function isActivation(p: { product: string | null; amount: number | null 
 
 /** סוג המוצר של רכישה: כמו productFamily, ודמי הפעלה גם כששם המוצר לא נרשם */
 export function purchaseFamily(p: Purchase): string {
-  return isActivation(p) ? ACTIVATION : productFamily(p.product);
+  if (isActivation(p)) return ACTIVATION;
+  return p.product === null ? noProductLabel(p.at) : productFamily(p.product);
 }
 
 export interface ProductStat {
@@ -429,7 +438,7 @@ export interface ProductStat {
   bot: number;
 }
 
-export function productStats(ps: Purchase[], nameOf: (p: Purchase) => string = (p) => p.product ?? NO_PRODUCT): ProductStat[] {
+export function productStats(ps: Purchase[], nameOf: (p: Purchase) => string = (p) => p.product ?? noProductLabel(p.at)): ProductStat[] {
   const by = new Map<string, { amounts: number[]; count: number; bot: number }>();
   for (const p of ps) {
     const n = nameOf(p);
@@ -1041,6 +1050,118 @@ export function popupCompare(people: PopupPerson[], range: Range): { popup: Comp
     bot: compareRow(others.filter((x) => x.lead.sourceGroup === BOT_SOURCE)),
     others: compareRow(others),
     from: dayKey(from),
+  };
+}
+
+// ---------- הבוט קודם (הנחיית המנהל 3/11/2026, #27) ----------
+
+/** הסיבות ב"סיבה" שכרטיסי היכולת סופרים. השוואה לפי תחילת הערך, לא התאמה מלאה */
+export const REASON_SALES = 'שיחה מכירתית לפני הרכישה';
+/** שתי הסיבות: "קופון הבוט" ו"קופון הבוט (נוצר לאיש קשר אחר של הלקוח)" */
+export const REASON_COUPON = 'קופון הבוט';
+export const REASON_LINKS = ['הבוט שלח קופון או קישור רכישה', 'הבוט שלח קישור לאתר'];
+/** רכישה של נמען נספרת לדיוור עד 72 שעות אחרי השליחה */
+export const MAILING_WINDOW_HOURS = 72;
+
+export function reasonStarts(p: { reason: string | null }, prefixes: string[]): boolean {
+  return p.reason !== null && prefixes.some((x) => p.reason!.startsWith(x));
+}
+
+export interface BotHero {
+  /** € של הבוט */
+  paid: number;
+  /** החלק של הבוט מכל ההכנסות (כולל מה שעוד לא הוכרע) */
+  share: number | null;
+  purchases: number;
+  buyers: number;
+  avgDeal: number | null;
+  /** סך כל ההכנסות */
+  totalPaid: number;
+  open: { purchases: number; paid: number };
+  /** שינוי ב-€ של הבוט מול התקופה הקודמת. null = אין השוואה */
+  change: number | null;
+}
+
+/** "מה הבוט הביא" (סעיף 2.1): אותו חישוב של "של הבוט" כמו בכל הדף */
+export function botHero(ps: Purchase[], prev: Purchase[] | null): BotHero {
+  const x = botBreakdown(ps);
+  return {
+    paid: x.yes.paid, share: x.share.paid, purchases: x.yes.purchases, buyers: x.yes.buyers, avgDeal: x.yes.avgDeal, totalPaid: x.all.paid,
+    open: { purchases: x.open.purchases, paid: x.open.paid },
+    change: prev ? change(x.yes.paid, botBreakdown(prev).yes.paid) : null,
+  };
+}
+
+/** החלק של הבוט מה-€ בכל תקופה (0 עד 1). null כשאין בה הכנסות */
+export function moneyShareSeries(ps: Purchase[], b: Bucket): { key: string; share: number | null }[] {
+  return timeSeries(ps, (p) => p.at, b, 2, (p) => {
+    const v = p.amount && p.amount > 0 ? p.amount : 0;
+    return [botSide(p) === 'yes' ? v : 0, v];
+  }).map(({ key, values: [yes, all] }) => ({ key, share: all ? yes / all : null }));
+}
+
+/** רכישות של נמענים, עד 72 שעות אחרי השליחה שלהם, מכל הקמפיינים */
+export function mailingRecipients(ms: MailingPurchase[]): MailingPurchase[] {
+  return ms.filter((m) => {
+    if (m.sentAt === null) return false;
+    const h = (new Date(m.at).getTime() - new Date(m.sentAt).getTime()) / 3_600_000;
+    return h >= 0 && h <= MAILING_WINDOW_HOURS;
+  });
+}
+
+/** שלוש רמות של רכישות נמענים: דרך הקישור, רק הקוד SPOOKY, ושאר הרכישות עד 72 שעות */
+export function mailingLevels(ms: MailingPurchase[]): { link: MailingPurchase[]; spooky: MailingPurchase[]; rest: MailingPurchase[] } {
+  const r = mailingRecipients(ms);
+  const link = r.filter((m) => m.viaLink);
+  const spooky = r.filter((m) => !m.viaLink && m.coupon === SPOOKY);
+  return { link, spooky, rest: r.filter((m) => !m.viaLink && m.coupon !== SPOOKY) };
+}
+
+export type CapabilityId = 'sales' | 'coupons' | 'links' | 'mail' | 'popup';
+
+export interface Capability {
+  id: CapabilityId;
+  /** המספר הגדול */
+  count: number;
+  /** € שהביא */
+  paid: number;
+  /** לפי שבוע, לגרף הקטן */
+  weekly: { key: string; values: number[] }[];
+}
+
+const weekly = <T,>(xs: T[], at: (x: T) => string) => timeSeries(xs, at, 'week', 1, () => [1]);
+
+/**
+ * "מה הבוט עושה" (סעיף 2.2): חמישה כרטיסי יכולת. שלושת הראשונים הם חלקים נפרדים מה-€ של הבוט (לפי "סיבה"), ולכן
+ * הסכום שלהם לא גדול ממנו. הדיוורים והפופאפ נמדדים אחרת ויכולים לחפוף לסיבות אחרות.
+ */
+export function capabilities(input: {
+  /** הלידים בטווח, אחרי סינון המקור והתהליך */
+  leads: LeadX[];
+  /** הלידים לקופונים (botCoupons מסנן לפי תאריך הקופון) */
+  couponLeads: Lead[];
+  /** הרכישות בטווח */
+  purchases: Purchase[];
+  /** כל האנשים עם הרכישות שאחרי הכניסה */
+  people: PopupPerson[];
+  mailings: MailingPurchase[] | null;
+  range: Range;
+}): Record<CapabilityId, Capability> {
+  const { leads, couponLeads, purchases, people, mailings, range } = input;
+  const bot = purchases.filter((p) => botSide(p) === 'yes');
+  const sales = botLeads(leads).filter(salesConversation);
+  const salesBuys = bot.filter((p) => reasonStarts(p, [REASON_SALES]));
+  const couponBuys = bot.filter((p) => reasonStarts(p, [REASON_COUPON]));
+  const linkBuys = bot.filter((p) => reasonStarts(p, REASON_LINKS));
+  const mail = mailingRecipients(mailings ?? []).filter((m) => inside(m.at, range));
+  const popup = people.filter((x) => fromPopup(x.lead) && inside(x.entry, range));
+  const pf = popupFunnel(popup);
+  return {
+    sales: { id: 'sales', count: sales.length, paid: paidSum(salesBuys), weekly: weekly(sales, (l) => l.at) },
+    coupons: { id: 'coupons', count: botCoupons(couponLeads, purchases, range).made, paid: paidSum(couponBuys), weekly: botCouponSeries(couponLeads, range, 'week') },
+    links: { id: 'links', count: linkBuys.length, paid: paidSum(linkBuys), weekly: weekly(linkBuys, (p) => p.at) },
+    mail: { id: 'mail', count: mail.length, paid: paidSum(mail), weekly: weekly(mail, (m) => m.at) },
+    popup: { id: 'popup', count: pf.real, paid: pf.botPaid, weekly: weekly(popup.filter((x) => realConversation(x.lead)), (x) => x.entry) },
   };
 }
 

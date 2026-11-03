@@ -5,7 +5,7 @@ import type { Purchase } from '@/lib/leads/types';
 import { campaignLabel, campaigns, NO_CAMPAIGN, trackingHealth, TRACKING_BANNER_MIN, type TrackingHealth } from '@/lib/metrics';
 import type { Lead } from '@/lib/leads/types';
 import { BarList, BarTable, Info, Legend, Stats, money, nf, pct } from '../charts';
-import { SIDE } from './botVsRest';
+import { SIDE } from './shared';
 import { Chips } from './shared';
 
 export function useTrackingHealth(leads: Lead[], at: string): TrackingHealth {

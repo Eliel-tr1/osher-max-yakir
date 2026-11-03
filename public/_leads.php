@@ -20,6 +20,13 @@ const OSHER_PURCHASE_DUP_SECONDS = 120;
 const OSHER_BOT_SOURCE = 'בוט וואטסאפ';
 const OSHER_BOT_YES = 'כן';
 const OSHER_SITE_SOURCE = 'מהאתר (מבחן או רכישה)';
+// תובנות שיחה (3/11/2026), כמו ANALYSIS_COLUMNS ושאר הקבועים ב-fromSheet.ts
+const OSHER_ANALYSIS = ['קוד מזהה', 'תאריך כניסה', 'מסלול', 'קנה', 'שלב אחרון', 'סיבת נטישה'];
+const OSHER_QUESTIONS = ['שאלה', 'מופעים'];
+const OSHER_INQUIRIES = ['תאריך פניה', 'מזהה לקוח', 'קטגוריה'];
+const OSHER_FEEDBACK = ['תאריך', 'קוד מזהה', 'קטגוריה'];
+const OSHER_INSIGHTS_START_DAY = '2026-10-02';
+const OSHER_TEXT_MAX = 600;
 
 function osher_trim(string $s): string {
     // כמו String.prototype.trim של JS: רווחים ב-Unicode, NBSP ו-BOM
@@ -110,6 +117,19 @@ function osher_bot_flag(string $v): ?string {
     return $v === OSHER_BOT_YES ? 'yes' : 'no';
 }
 
+/** כמו clip: טקסט נקי, עד OSHER_TEXT_MAX תווים */
+function osher_clip(string $v): string {
+    $t = osher_clean($v);
+    if ($t === null) return '';
+    return mb_strlen($t, 'UTF-8') > OSHER_TEXT_MAX ? mb_substr($t, 0, OSHER_TEXT_MAX, 'UTF-8') . '…' : $t;
+}
+
+/** כמו yesNoExact: "כן" -> yes, "לא" -> no, אחר -> null */
+function osher_yes_no_exact(string $v): ?string {
+    $t = osher_trim($v);
+    return $t === 'כן' ? 'yes' : ($t === 'לא' ? 'no' : null);
+}
+
 /** כמו couponCode: JSON או טקסט, אותיות גדולות, ריק / "-" / empty = null, קופון אישי של הבוט = הקבוצה */
 function osher_coupon_code(string $v): ?string {
     $t = osher_trim($v);
@@ -177,12 +197,12 @@ function osher_indexer(array $rows, array $required, string $tabName): array {
 }
 
 /** כמו leadsFromRows. $purchaseRows = null כשאין לשונית רכישות. */
-function osher_leads_from_rows(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null): array {
-    return osher_build($leadRows, $purchaseRows, $generatedAt, $mailingRows, $waveRows)['file'];
+function osher_leads_from_rows(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null, array $extra = []): array {
+    return osher_build($leadRows, $purchaseRows, $generatedAt, $mailingRows, $waveRows, $extra)['file'];
 }
 
 /** כמו buildData: הקובץ הציבורי, והקודים המזהים שנשמרים בנפרד מחוץ לאתר (#6) */
-function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null): array {
+function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $generatedAt, ?array $mailingRows = null, ?array $waveRows = null, array $extra = []): array {
     [$lcol, $ldata] = osher_indexer($leadRows, OSHER_REQUIRED, 'הלידים');
     $start = osher_day_start(OSHER_START_DAY);
 
@@ -270,6 +290,15 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
     $mailings = $mailingRows !== null ? osher_mailings_with_ids($mailingRows) : null;
     $at = osher_iso($generatedAt);
 
+    // שם לכל קוד מזהה מלשונית הלידים, לרשימות של תובנות השיחה (רק בקובץ הפרטי)
+    $nameOfNs = [];
+    foreach ($ldata as $r) {
+        $ns = $lcol($r, 'קוד מזהה');
+        $name = osher_clean($lcol($r, 'שם לקוח'));
+        if ($ns !== '' && $name !== null && !array_key_exists($ns, $nameOfNs)) $nameOfNs[$ns] = $name;
+    }
+    $insights = osher_insights_from_rows($extra, $at, $leadOfNs, $nameOfNs);
+
     return [
         'file' => [
             'version' => 2,
@@ -282,13 +311,128 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
             'mailings' => $mailings !== null ? array_map(fn ($m) => $m['m'], $mailings) : null,
             'mailingWaves' => $waveRows !== null ? osher_waves_from_rows($waveRows) : null,
             'dupes' => $dupes,
+            'insights' => $insights['file'],
         ],
-        'ids' => [
+        'ids' => array_merge([
             'generatedAt' => $at,
             'leads' => array_map(fn ($r) => $r['ns'], $kept),
             'purchases' => array_map(fn ($r) => $r['ns'], $rows),
             'mailings' => $mailings !== null ? array_map(fn ($m) => $m['ns'], $mailings) : [],
-        ],
+        ], $insights['ids']),
+    ];
+}
+
+/** כמו insightsFromRows: ארבע הלשוניות של תובנות השיחה, כל אחת לחוד */
+function osher_insights_from_rows(array $extra, string $readAt, array $leadOfNs, array $nameOfNs): array {
+    $start = osher_day_start(OSHER_INSIGHTS_START_DAY);
+    $iso = function (string $v): ?string { $d = osher_parse_date($v); return $d ? osher_iso($d) : null; };
+    $lead = fn (string $ns) => $ns !== '' && array_key_exists($ns, $leadOfNs) ? $leadOfNs[$ns] : null;
+    $name = function (string $own, string $ns) use ($nameOfNs): string {
+        $c = osher_clean($own);
+        if ($c !== null) return $c;
+        return array_key_exists($ns, $nameOfNs) ? $nameOfNs[$ns] : '';
+    };
+    $counter = function () {
+        $ids = [];
+        $next = 0;
+        return function (string $ns) use (&$ids, &$next): int {
+            if ($ns === '') return $next++;
+            if (!array_key_exists($ns, $ids)) $ids[$ns] = $next++;
+            return $ids[$ns];
+        };
+    };
+    $dated = function (array $data, callable $c, string $dateCol) use ($start): array {
+        return array_values(array_filter($data, function ($r) use ($c, $dateCol, $start) {
+            $d = osher_parse_date($c($r, $dateCol));
+            return !$d || $d->getTimestamp() >= $start;
+        }));
+    };
+
+    $analysis = null; $analysisIds = null;
+    $a = isset($extra['analysis']) && $extra['analysis'] !== null ? osher_optional_indexer($extra['analysis'], OSHER_ANALYSIS) : null;
+    if ($a !== null) {
+        [$c, $data] = $a;
+        $rows = [];
+        $priv = ['ns' => [], 'names' => [], 'texts' => []];
+        foreach ($data as $r) {
+            $ns = $c($r, 'קוד מזהה');
+            $rows[] = [
+                'at' => $iso($c($r, 'תאריך כניסה')), 'lead' => $lead($ns), 'path' => osher_clean($c($r, 'מסלול')), 'bought' => osher_yes_no_exact($c($r, 'קנה')),
+                'step' => osher_clean($c($r, 'שלב אחרון')), 'reason' => osher_clean($c($r, 'סיבת נטישה')), 'agent' => osher_yes_no_exact($c($r, 'פנה לנציג')) === 'yes',
+                'inquiry' => osher_clean($c($r, 'קטגוריית פנייה')), 'unanswered' => osher_number($c($r, 'שאלות ללא מענה')), 'feedback' => osher_clean($c($r, 'קטגוריית משוב')),
+                'messages' => osher_number($c($r, 'הודעות לקוח')), 'scannedAt' => $iso($c($r, 'נסרק ב:')), 'removal' => osher_clean($c($r, 'סיבת הסרה')),
+                'basis' => osher_clean($c($r, 'מקור הסיבה')),
+            ];
+            $priv['ns'][] = $ns;
+            $priv['names'][] = $name('', $ns);
+            $priv['texts'][] = osher_clip($c($r, 'פירוט קצר'));
+        }
+        $analysis = ['readAt' => $readAt, 'rows' => $rows];
+        $analysisIds = $priv;
+    }
+
+    $questions = null; $examples = null;
+    $q = isset($extra['questions']) && $extra['questions'] !== null ? osher_optional_indexer($extra['questions'], OSHER_QUESTIONS) : null;
+    if ($q !== null) {
+        [$c, $data] = $q;
+        $rows = [];
+        $examples = [];
+        foreach ($data as $r) {
+            $text = osher_clean($c($r, 'שאלה'));
+            if ($text === null) continue;
+            $rows[] = [
+                'text' => $text, 'category' => osher_clean($c($r, 'קטגוריה')), 'count' => osher_number($c($r, 'מופעים')) ?? 0, 'lastAt' => $iso($c($r, 'נשאל לאחרונה')),
+                'status' => osher_clean($c($r, 'סטטוס')), 'answer' => osher_clean($c($r, 'תשובת יקיר')),
+            ];
+            $ex = preg_split('/(*UCP)[,\s]+/u', $c($r, 'דוגמאות (קוד מזהה)'));
+            $examples[] = array_values(array_filter($ex === false ? [] : $ex, fn ($x) => $x !== ''));
+        }
+        $questions = ['readAt' => $readAt, 'rows' => $rows];
+    }
+
+    $inquiries = null; $inquiryIds = null;
+    $i = isset($extra['inquiries']) && $extra['inquiries'] !== null ? osher_optional_indexer($extra['inquiries'], OSHER_INQUIRIES) : null;
+    if ($i !== null) {
+        [$c, $data] = $i;
+        $who = $counter();
+        $rows = [];
+        $priv = ['ns' => [], 'names' => [], 'texts' => []];
+        foreach ($dated($data, $c, 'תאריך פניה') as $r) {
+            $ns = $c($r, 'מזהה לקוח');
+            $rows[] = ['at' => $iso($c($r, 'תאריך פניה')), 'lead' => $lead($ns), 'who' => $who($ns), 'category' => osher_clean($c($r, 'קטגוריה'))];
+            $priv['ns'][] = $ns;
+            $priv['names'][] = $name($c($r, 'שם לקוח'), $ns);
+            $priv['texts'][] = osher_clip($c($r, 'תוכן הפניה'));
+        }
+        $inquiries = ['readAt' => $readAt, 'rows' => $rows];
+        $inquiryIds = $priv;
+    }
+
+    $feedback = null; $feedbackIds = null;
+    $f = isset($extra['feedback']) && $extra['feedback'] !== null ? osher_optional_indexer($extra['feedback'], OSHER_FEEDBACK) : null;
+    if ($f !== null) {
+        [$c, $data] = $f;
+        $who = $counter();
+        $rows = [];
+        $priv = ['ns' => [], 'names' => [], 'texts' => []];
+        foreach ($dated($data, $c, 'תאריך') as $r) {
+            $ns = $c($r, 'קוד מזהה');
+            $exam = $c($r, 'מבחן');
+            $rows[] = [
+                'at' => $iso($c($r, 'תאריך')), 'lead' => $lead($ns), 'who' => $who($ns), 'category' => osher_clean($c($r, 'קטגוריה')),
+                'exam' => $exam === 'עבר' ? 'passed' : ($exam === 'לא עבר' ? 'failed' : null),
+            ];
+            $priv['ns'][] = $ns;
+            $priv['names'][] = $name($c($r, 'שם לקוח'), $ns);
+            $priv['texts'][] = osher_clip($c($r, 'הערות'));
+        }
+        $feedback = ['readAt' => $readAt, 'rows' => $rows];
+        $feedbackIds = $priv;
+    }
+
+    return [
+        'file' => ['analysis' => $analysis, 'questions' => $questions, 'inquiries' => $inquiries, 'feedback' => $feedback],
+        'ids' => ['analysis' => $analysisIds, 'inquiries' => $inquiryIds, 'feedback' => $feedbackIds, 'questions' => $examples],
     ];
 }
 
@@ -460,5 +604,13 @@ function osher_pack(array $file): string {
         if ($file[$k] === null) unset($f[$k]);
         else $f[$k] = array_map($strip, $file[$k]);
     }
+    // תובנות שיחה: חלק חסר לא נכתב, וכשכולם חסרים נשאר אובייקט ריק (כמו ב-JSON.stringify)
+    $ins = [];
+    foreach (['analysis', 'questions', 'inquiries', 'feedback'] as $k) {
+        $part = $file['insights'][$k] ?? null;
+        if ($part === null) continue;
+        $ins[$k] = ['readAt' => $part['readAt'], 'rows' => array_map($strip, $part['rows'])];
+    }
+    $f['insights'] = $ins ? $ins : new stdClass();
     return json_encode($f, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }

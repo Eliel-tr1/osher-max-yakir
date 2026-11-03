@@ -130,6 +130,92 @@ export interface MailingWave {
   note: string | null;
 }
 
+/**
+ * "תובנות שיחה" (הנחיית המנהל 3/11/2026): מה שהסריקה של המנהל כותבת לגיליון. הדשבורד רק קורא.
+ * בלי שמות, טלפונים, קודים מזהים או טקסט חופשי של לקוח: אלה בקובץ הפרטי (PrivateIds), ומוצגים רק ברשימות אחרי כניסה.
+ * כן/לא נשמרים כ-'yes' / 'no', כי הקובץ לא שומר false (ראו pack).
+ */
+export interface AnalysisRow {
+  /** "תאריך כניסה", ISO. null = תאריך שלא פוענח */
+  at: string | null;
+  /** הליד עם אותו קוד מזהה (לסינון לפי מקור ותהליך), או null */
+  lead: number | null;
+  /** "מסלול" */
+  path: string | null;
+  /** "קנה" */
+  bought: 'yes' | 'no' | null;
+  /** "שלב אחרון" כמו שכתוב */
+  step: string | null;
+  /** "סיבת נטישה" כמו שכתוב. null = ריק */
+  reason: string | null;
+  /** "פנה לנציג" = כן */
+  agent: boolean;
+  /** "קטגוריית פנייה" */
+  inquiry: string | null;
+  /** "שאלות ללא מענה" */
+  unanswered: number | null;
+  /** "קטגוריית משוב" */
+  feedback: string | null;
+  /** "הודעות לקוח" */
+  messages: number | null;
+  /** "נסרק ב:", ISO */
+  scannedAt: string | null;
+  /** "סיבת הסרה": רק למי שהסיר את עצמו */
+  removal: string | null;
+  /** "מקור הסיבה": צ'אט, סיכום או בלי צ'אט */
+  basis: string | null;
+}
+
+/** שורה מלשונית "שאלות לסוכן": שאלה שהסוכן לא ידע לענות (דוח ליקיר) */
+export interface QuestionRow {
+  /** "שאלה": נוסח כללי, בלי פרטי לקוח */
+  text: string;
+  category: string | null;
+  /** "מופעים" */
+  count: number;
+  /** "נשאל לאחרונה", ISO */
+  lastAt: string | null;
+  /** "סטטוס": ממתין לתשובה, נענה, עודכן במאגר */
+  status: string | null;
+  /** "תשובת יקיר", לקריאה בלבד */
+  answer: string | null;
+}
+
+/** פנייה לשירות (לשונית "פניות"), מ-2/10 */
+export interface InquiryRow {
+  /** "תאריך פניה", ISO. null = תאריך שלא פוענח */
+  at: string | null;
+  lead: number | null;
+  /** מספר סידורי של הפונה (קוד מזהה שונה = מספר שונה), לספירת אנשים */
+  who: number;
+  /** "קטגוריה". null = עוד בסיווג */
+  category: string | null;
+}
+
+/** משוב אחרי מבחן (לשונית "משובים"), מ-2/10 */
+export interface FeedbackRow {
+  at: string | null;
+  lead: number | null;
+  who: number;
+  category: string | null;
+  /** "מבחן": עבר / לא עבר */
+  exam: 'passed' | 'failed' | null;
+}
+
+/** מה שנקרא מלשונית אחת, עם הזמן שבו נקרא. כשהקריאה נכשלת, נשאר החלק הקודם עם הזמן האמיתי שלו */
+export interface Part<T> {
+  readAt: string;
+  rows: T[];
+}
+
+/** הלשוניות של "תובנות שיחה". null = הלשונית חסרה או בלי העמודות הצפויות */
+export interface Insights {
+  analysis: Part<AnalysisRow> | null;
+  questions: Part<QuestionRow> | null;
+  inquiries: Part<InquiryRow> | null;
+  feedback: Part<FeedbackRow> | null;
+}
+
 export interface LeadsFile {
   version: 2;
   /** demo = נתוני הדגמה מומצאים; sheet = הטבלה האמיתית */
@@ -147,4 +233,6 @@ export interface LeadsFile {
   mailingWaves: MailingWave[] | null;
   /** תאריכים (ISO) של שורות רכישה כפולות שלא נספרו: אותו קוד ואותו סכום בתוך 2 דקות */
   dupes: string[];
+  /** תובנות שיחה (3/11/2026) */
+  insights: Insights;
 }

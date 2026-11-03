@@ -1,4 +1,5 @@
-import { BOT_COUPON_GROUP } from './fromSheet';
+import { BOT_COUPON_GROUP, type PrivateIds } from './fromSheet';
+import { demoInsights } from './demoInsights';
 import type { Lead, LeadsFile, MailingPurchase, MailingWave, Purchase } from './types';
 
 /**
@@ -31,6 +32,11 @@ const CAMPAIGNS = ['demo_meta_lightning', 'demo_google_access', 'campaignname', 
 const CODES = ['DEMO50', 'DEMO50', 'DEMO50', 'SPOOKY', 'FLASH50', 'RESET60', BOT_COUPON_GROUP];
 
 export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00+03:00')): LeadsFile {
+  return demoData(count, until).file;
+}
+
+/** נתוני ההדגמה, וגם קובץ פרטי של הדגמה (שמות וקודים מומצאים), לתצוגה מקומית של הרשימות */
+export function demoData(count = 900, until = new Date('2026-10-19T12:00:00+03:00')): { file: LeadsFile; ids: PrivateIds } {
   const rnd = seeded(20261019);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const spanMs = 45 * 24 * 60 * 60 * 1000;
@@ -118,7 +124,9 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
     p.person = sortedLeads[p.lead].person;
   }
   purchases.sort((a, b) => a.at.localeCompare(b.at) || (a.lead ?? -1) - (b.lead ?? -1));
-  return {
+  const mail = demoMailings(rnd, until);
+  const ins = demoInsights(sortedLeads, purchases, until, rnd);
+  const file: LeadsFile = {
     version: 2,
     origin: 'demo',
     generatedAt: until.toISOString(),
@@ -126,10 +134,16 @@ export function demoLeadsFile(count = 900, until = new Date('2026-10-19T12:00:00
     purchaseRows: purchases.length + 5,
     leads: sortedLeads,
     purchases,
-    ...demoMailings(rnd, until),
+    ...mail,
     // כמה שורות כפולות שלא נספרו, כמו בגיליון
     dupes: purchases.filter((_, i) => i % 23 === 0).map((p) => p.at),
+    insights: ins.insights,
   };
+  const ids: PrivateIds = {
+    generatedAt: file.generatedAt, leads: sortedLeads.map((_, i) => `DEMO${i}`), purchases: purchases.map((p) => `DEMO${p.lead}`),
+    mailings: mail.mailings.map((m) => `DEMOM${m.buyer}`), ...ins.ids,
+  };
+  return { file, ids };
 }
 
 /** קמפיין דיוור מומצא: ארבעה גלים, רכישות ושורת סה"כ */

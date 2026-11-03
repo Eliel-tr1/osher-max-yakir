@@ -103,7 +103,7 @@ function useWidth(initial = 640) {
  * עמודות לאורך זמן, אחת או כמה סדרות זו על זו. הזמן זורם משמאל לימין, כמו בכל ציר זמן.
  * ריחוף על עמודה מראה את הערכים המדויקים. money: הערכים הם כסף.
  */
-export function Columns({ labels, series, values, height = 150, labelEvery, isMoney, note, extraTip }: {
+export function Columns({ labels, series, values, height = 150, labelEvery, isMoney, note, extraTip, line, gaps }: {
   labels: string[];
   series: Series[];
   /** values[i][s] = ערך העמודה i בסדרה s */
@@ -115,6 +115,10 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   note?: string;
   /** שורה נוספת בחלונית הריחוף, לפי העמודה */
   extraTip?: (i: number) => string | null;
+  /** קו של אחוז (0 עד 1) על ציר משני מימין (הנחיית המנהל 3/11/2026). null = אין ערך בתקופה */
+  line?: { values: (number | null)[]; label: string; color: string };
+  /** תקופות עם ימים בלי שורות בגיליון: "full" = אין נתונים בכלל (לא 0), "part" = חסר חלק */
+  gaps?: ('full' | 'part' | null)[];
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth();
@@ -128,7 +132,8 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   const padL = isMoney ? 52 : 34;
   const padB = 20;
   const padT = 16;
-  const slot = (W - padL - 4) / n;
+  const padR = line ? 34 : 4;
+  const slot = (W - padL - padR) / n;
   const bw = Math.max(2, Math.min(28, slot * 0.72));
   const y = (v: number) => padT + (H - padT - padB) * (1 - v / max);
   const every = labelEvery ?? Math.max(1, Math.ceil(n / Math.max(3, Math.floor(W / 64))));
@@ -138,18 +143,25 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={series.map((s) => s.label).join(', ')} onMouseLeave={() => setHover(null)}>
         {series.some((s) => s.hatch) && <HatchDef id={uid} />}
         {note && <text x={W - 4} y={11} className="tick" textAnchor="start" direction="rtl">{note}</text>}
-        {ticks.map((t) => (
+        {ticks.map((t, k) => (
           <g key={t}>
-            <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="grid" />
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className="grid" />
             <text x={padL - 6} y={y(t) + 4} className="tick" textAnchor="end">{f.format(t)}</text>
+            {line && <text x={W - padR + 6} y={y(t) + 4} className="tick" textAnchor="start">{pctFmt.format(k / 2)}</text>}
           </g>
         ))}
+        {gaps?.some((g) => g === 'full') && !series.some((s) => s.hatch) && <HatchDef id={uid} />}
         {values.map((v, i) => {
           const x = padL + slot * i + (slot - bw) / 2;
           let acc = 0;
+          const gap = gaps?.[i] ?? null;
           return (
             <g key={labels[i]} onMouseEnter={() => setHover(i)}>
               <rect x={padL + slot * i} y={padT} width={slot} height={H - padT - padB} fill="transparent" />
+              {gap === 'full' && totals[i] === 0 && (
+                <rect x={x} y={padT} width={bw} height={H - padT - padB} fill={`url(#${uid}-hatch)`} opacity={0.5} rx={2}><title>אין נתונים</title></rect>
+              )}
+              {gap === 'part' && <circle cx={x + bw / 2} cy={H - padB + 3} r={2} className="gapdot" />}
               {v.map((val, s) => {
                 if (!val) return null;
                 const top = y(acc + val);
@@ -168,10 +180,27 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
             </g>
           );
         })}
+        {line && (() => {
+          const yl = (v: number) => padT + (H - padT - padB) * (1 - v);
+          let d = '';
+          line.values.forEach((v, i) => {
+            if (v === null) return;
+            d += `${i === 0 || line.values[i - 1] === null ? 'M' : 'L'}${(padL + slot * i + slot / 2).toFixed(1)},${yl(v).toFixed(1)} `;
+          });
+          return (
+            <g pointerEvents="none">
+              <path d={d} fill="none" stroke={`var(${line.color})`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              {line.values.map((v, i) => (v === null ? null : <circle key={i} cx={padL + slot * i + slot / 2} cy={yl(v)} r={hover === i ? 4 : 2.5} fill={`var(${line.color})`} stroke="var(--surface)" strokeWidth={1.5} />))}
+            </g>
+          );
+        })()}
       </svg>
       {hover !== null && (
         <div className="tip" dir="rtl" style={{ left: `${((padL + slot * hover + slot / 2) / W) * 100}%` }}>
           <strong>{labels[hover]}</strong>
+          {gaps?.[hover] === 'full' && totals[hover] === 0 ? <span>אין נתונים: אין שורות בגיליון</span> : null}
+          {gaps?.[hover] === 'part' ? <span>חסרים נתונים לחלק מהימים</span> : null}
+          {line && line.values[hover] !== null ? <span><i className="lineswatch" style={{ background: `var(${line.color})` }} />{line.label}: {pctFmt.format(line.values[hover]!)}</span> : null}
           {series.map((s, k) => (
             <span key={s.key}><i className={s.hatch ? 'hatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}: {f.format(values[hover][k])}</span>
           ))}
@@ -179,7 +208,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
           {extraTip?.(hover) ? <span>{extraTip(hover)}</span> : null}
         </div>
       )}
-      {series.length > 1 && <Legend items={series} />}
+      {series.length > 1 && <Legend items={[...series, ...(line ? [{ label: line.label, color: line.color, line: true }] : [])]} />}
     </div>
   );
 }
@@ -191,29 +220,39 @@ function barPath(x: number, y: number, w: number, h: number, roundTop: boolean):
 }
 
 /** גרף קטן בלי צירים, לכרטיס בחלק העליון. ריחוף מראה את הערך. */
-export function Sparkline({ labels, values, color = '--series-1', height = 56 }: { labels: string[]; values: number[]; color?: string; height?: number }) {
+export function Sparkline({ labels, values, color = '--series-1', height = 56, format = (v) => nf.format(v), max: fixedMax, label = 'לאורך זמן' }: {
+  labels: string[];
+  /** null = אין ערך בתקופה (בלי עמודה) */
+  values: (number | null)[];
+  color?: string;
+  height?: number;
+  format?: (v: number) => string;
+  /** תקרה קבועה, למשל 1 לאחוזים */
+  max?: number;
+  label?: string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth(260);
   const n = values.length;
   if (!n) return <div ref={box} className="spark"><p className="empty">אין נתונים</p></div>;
-  const max = Math.max(...values, 1);
+  const max = fixedMax ?? Math.max(...values.map((v) => v ?? 0), 1);
   const slot = W / n;
   const bw = Math.max(1.5, slot * 0.66);
   return (
     <div className="spark" dir="ltr" ref={box}>
-      <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} role="img" aria-label="לידים לאורך זמן" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
         {values.map((v, i) => {
-          const h = Math.max(1, (height - 4) * (v / max));
+          const h = v === null ? 0 : Math.max(1, (height - 4) * (v / max));
           return (
             <g key={labels[i]} onMouseEnter={() => setHover(i)}>
               <rect x={slot * i} y={0} width={slot} height={height} fill="transparent" />
-              <rect x={slot * i + (slot - bw) / 2} y={height - h} width={bw} height={h} rx={1.5} fill={`var(${color})`} opacity={hover === null || hover === i ? 1 : 0.45} />
+              {v !== null && <rect x={slot * i + (slot - bw) / 2} y={height - h} width={bw} height={h} rx={1.5} fill={`var(${color})`} opacity={hover === null || hover === i ? 1 : 0.45} />}
             </g>
           );
         })}
       </svg>
       <div className="sparkfoot" dir="rtl">
-        {hover === null ? <><span>{labels[0]}</span><span>{labels[n - 1]}</span></> : <strong>{labels[hover]}: {nf.format(values[hover])}</strong>}
+        {hover === null ? <><span>{labels[0]}</span><span>{labels[n - 1]}</span></> : <strong>{labels[hover]}: {values[hover] === null ? '-' : format(values[hover]!)}</strong>}
       </div>
     </div>
   );
@@ -238,7 +277,7 @@ export function Stats({ items }: { items: { label: string; value: string; sub?: 
 }
 
 /** רשימה מדורגת עם פס אופקי לכל שורה. הערך ליד קצה הפס, ואפשר להוסיף ערך משני (למשל סכום). */
-export function BarList({ items, color = '--series-1', max: maxShown = 8, selected, onSelect, extra }: {
+export function BarList({ items, color = '--series-1', max: maxShown = 8, selected, onSelect, extra, colorOf, tagOf }: {
   items: { name: string; count: number }[];
   color?: string;
   max?: number;
@@ -246,6 +285,10 @@ export function BarList({ items, color = '--series-1', max: maxShown = 8, select
   onSelect?: (name: string) => void;
   /** טקסט נוסף לשורה, למשל סכום */
   extra?: (name: string) => string | null;
+  /** צבע אחר לשורה מסוימת (למשל צבע אזהרה) */
+  colorOf?: (name: string) => string | undefined;
+  /** כיתוב קטן ליד השם */
+  tagOf?: (name: string) => string | null;
 }) {
   const [all, setAll] = useState(false);
   if (!items.length) return <p className="empty">אין נתונים בטווח הזה</p>;
@@ -262,9 +305,9 @@ export function BarList({ items, color = '--series-1', max: maxShown = 8, select
             className={`barrow${selected === it.name ? ' on' : ''}`}
             {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(it.name), 'aria-pressed': selected === it.name } : {})}
           >
-            <span className="name" title={it.name} dir="auto">{it.name}</span>
+            <span className="name" title={it.name} dir="auto">{it.name}{tagOf?.(it.name) ? <small className="tag">{tagOf(it.name)}</small> : null}</span>
             <span className="track">
-              <span className="fill" style={{ width: `${(it.count / top) * 100}%`, background: `var(${color})` }} />
+              <span className="fill" style={{ width: `${(it.count / top) * 100}%`, background: `var(${colorOf?.(it.name) ?? color})` }} />
             </span>
             <span className="num">{nf.format(it.count)}{ex ? <small>{ex}</small> : null}</span>
           </Tag>
@@ -456,10 +499,10 @@ export function Ring({ value, size = 52, color = '--bot', label }: { value: numb
 }
 
 /** מקרא: ריבוע צבע ושם לכל סדרה */
-export function Legend({ items }: { items: { label: string; color: string; hatch?: boolean }[] }) {
+export function Legend({ items }: { items: { label: string; color: string; hatch?: boolean; line?: boolean }[] }) {
   return (
     <div className="legend" dir="rtl">
-      {items.map((s) => <span key={s.label}><i className={s.hatch ? 'hatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}</span>)}
+      {items.map((s) => <span key={s.label}><i className={s.hatch ? 'hatch' : s.line ? 'lineswatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}</span>)}
     </div>
   );
 }
@@ -695,6 +738,50 @@ export function MoreTable({ headers, rows, step = 50 }: { headers: string[]; row
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * סקשן מקופל (הנחיית המנהל 3/11/2026): סגור כברירת מחדל, ובכותרת שלו מספרים קטנים או מספר אחד גדול עם משפט.
+ * השליטה בפתיחה אצל הדף, כדי שלחיצה על כרטיס יכולת תפתח את הפירוט שלו.
+ */
+export function Fold({ id, title, stats, big, sentence, open, onToggle, info, className, children, level = 2 }: {
+  id: string;
+  title: ReactNode;
+  /** עד 3 מספרים קטנים בכותרת */
+  stats?: { label: string; value: string }[];
+  /** מספר אחד גדול ומשפט אחד, לכרטיסי התובנות */
+  big?: string;
+  sentence?: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  info?: ReactNode;
+  className?: string;
+  children: ReactNode;
+  level?: 2 | 3;
+}) {
+  const panel = `${id}-panel`;
+  const H = level === 2 ? 'h2' : 'h3';
+  return (
+    <section className={`card fold${open ? ' open' : ''}${className ? ` ${className}` : ''}`} id={id}>
+      <div className="foldhead">
+        <H className="foldtitle">
+          <button type="button" aria-expanded={open} aria-controls={panel} onClick={onToggle}>
+            <span className="ftitle">{title}</span>
+            {big !== undefined && <span className="fbig">{big}</span>}
+            {sentence !== undefined && <span className="fsent">{sentence}</span>}
+            {stats && (
+              <span className="fstats">
+                {stats.map((s) => <span key={s.label}><b>{s.value}</b> {s.label}</span>)}
+              </span>
+            )}
+            <span className="lchev" aria-hidden="true">⌄</span>
+          </button>
+        </H>
+        {info ? <Info>{info}</Info> : null}
+      </div>
+      {open ? <div id={panel} className="foldbody">{children}</div> : null}
+    </section>
   );
 }
 

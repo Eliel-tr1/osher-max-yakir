@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { pack } from '../lib/leads/file';
-import { buildData, leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS, REQUIRED_COLUMNS } from '../lib/leads/fromSheet';
+import {
+  ANALYSIS_COLUMNS, ANALYSIS_OPTIONAL, buildData, FEEDBACK_COLUMNS, INQUIRY_COLUMNS, leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS,
+  REQUIRED_COLUMNS, type InsightRows,
+} from '../lib/leads/fromSheet';
 import { parseCsv } from '../lib/sheet/parse';
 
 /**
@@ -135,7 +138,51 @@ function mailingFixture(): { mailings: string; waves: string } {
   return { mailings: ml.join('\r\n'), waves: wl.join('\n') };
 }
 
-function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string, ids = false): unknown {
+/** ארבע הלשוניות של תובנות השיחה, עם כל המקרים הקשים: שתי צורות תאריך, תאריך בלי שעה ושבור, טקסט ארוך ואמוג'י, שם חסר */
+function insightsFixture(n: number): { analysis: string; questions: string; inquiries: string; feedback: string } {
+  const rnd = seeded(303);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+  const dates = ['02/11/2026 10:47', '3/11/2026 10:47', '03/11/2026 08:35:00', '01/10/2026 09:00', '15/10/2026', '31/02/2026 10:00', '', 'שבור'];
+  const long = `${'מילה '.repeat(130)}😀 סוף`;
+  const ah = [...ANALYSIS_COLUMNS, ...ANALYSIS_OPTIONAL, 'סומן ב-CloudChat'];
+  const al = [ah.map(q).join(',')];
+  for (let i = 0; i < n; i++) {
+    const v: Record<string, string> = {
+      'קוד מזהה': pick([`ID${i}`, `ID${i}`, `NEW${i}`, '']), 'תאריך כניסה': pick(dates), מסלול: pick(['מבחן - עבר', 'מבחן - לא עבר', 'פופאפ', 'תהליך ראשי', 'הרשמה לאתגר', '']),
+      קנה: pick(['כן', 'לא', ' לא ', 'אולי', '']), 'שלב אחרון': pick(['לא התחיל שאלון', 'התחיל שאלון (שלב 3)', 'התחיל שאלון', 'רכש', '']),
+      'סיבת נטישה': pick(['הפסיק לענות בשאלון', 'שיחת בדיקה', 'אין נטישה - רכש', 'לא ברור מהסיכום', 'הבוט לא נתן מענה או הבטיח ולא קיים', '']),
+      'פירוט קצר': pick(['', 'שאל על המחיר, "יקר"', long, 'שורה\nשנייה']), 'פנה לנציג': pick(['כן', 'לא', '']), 'קטגוריית פנייה': pick(['', 'מכירות והנחות']),
+      'שאלות ללא מענה': pick(['0', '2', '', 'x']), 'קטגוריית משוב': pick(['', 'אחר']), 'הודעות לקוח': pick(['', '5', '1.5']), 'נסרק ב:': pick(['03/11/2026 05:12:09', '']),
+      'סיבת הסרה': pick(['', '', 'לא מעוניין']), 'מקור הסיבה': pick(["צ'אט", 'סיכום', "בלי צ'אט"]), 'סומן ב-CloudChat': 'x',
+    };
+    al.push(ah.map((h) => q(v[h] ?? '')).join(','));
+  }
+  const qh = ['שאלה', 'קטגוריה', 'מופעים', 'נשאל לאחרונה', 'דוגמאות (קוד מזהה)', 'סטטוס', 'תשובת יקיר', 'הערות'];
+  const ql = [qh.map(q).join(',')];
+  for (let i = 0; i < 40; i++) {
+    ql.push([pick(['מה המגבלה היומית?', 'כמה עולה תוסף, "פרו"?', '', ' ']), pick(['חוקי תוכנית ומסחר', '']), pick(['1', '3', '', 'x']), pick(dates),
+      pick(['A1', 'A1, B2,C3', 'A1 B2\nC3', '']), pick(['ממתין לתשובה', 'נענה', '']), pick(['', 'תשובה, עם "מרכאות"']), 'הערה'].map(q).join(','));
+  }
+  const ih = ['תאריך פניה', ...INQUIRY_COLUMNS.slice(1), 'שם לקוח', 'טלפון', 'סוג פניה', 'תוכן הפניה', 'לינק לשיחה', 'סומן ב-CloudChat'];
+  const il = [ih.map(q).join(',')];
+  for (let i = 0; i < n; i++) {
+    il.push(ih.map((h) => q(({
+      'תאריך פניה': pick(dates), 'מזהה לקוח': pick([`ID${i}`, `ID${i % 7}`, '']), קטגוריה: pick(['הפעלת חשבון ושדרוג', 'אחר', '']), 'שם לקוח': pick(['', 'לקוח, "בדיקה"']),
+      'תוכן הפניה': pick(['', long, 'שלום,\nיש לי שאלה']), טלפון: '050', 'סוג פניה': 'ישן', 'לינק לשיחה': 'https://example.com', 'סומן ב-CloudChat': '',
+    } as Record<string, string>)[h] ?? '')).join(','));
+  }
+  const fh = [...FEEDBACK_COLUMNS.slice(0, 2), 'שם לקוח', 'הערות', FEEDBACK_COLUMNS[2], 'מבחן'];
+  const fl = [fh.map(q).join(',')];
+  for (let i = 0; i < n / 2; i++) {
+    fl.push(fh.map((h) => q(({
+      תאריך: pick(dates), 'קוד מזהה': pick([`ID${i}`, '']), 'שם לקוח': pick(['', 'משוב']), הערות: pick(['', long, 'היה "טוב"']), קטגוריה: pick(['בקשת תנאים גמישים', '']),
+      מבחן: pick(['עבר', 'לא עבר', '', 'אחר']),
+    } as Record<string, string>)[h] ?? '')).join(','));
+  }
+  return { analysis: al.join('\r\n'), questions: ql.join('\n'), inquiries: il.join('\n'), feedback: fl.join('\r\n') };
+}
+
+function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string, ids = false, extra: Partial<Record<'analysis' | 'questions' | 'inquiries' | 'feedback', string>> = {}): unknown {
   const dir = mkdtempSync(join(tmpdir(), 'parity-'));
   const write = (name: string, text: string | undefined) => {
     if (text === undefined) return '-';
@@ -143,7 +190,10 @@ function viaPhp(leads: string, at: string, purchases?: string, mailings?: string
     writeFileSync(f, text);
     return f;
   };
-  const args = [write('leads.csv', leads), at, write('purchases.csv', purchases), write('mailings.csv', mailings), write('waves.csv', waves)];
+  const args = [
+    write('leads.csv', leads), at, write('purchases.csv', purchases), write('mailings.csv', mailings), write('waves.csv', waves),
+    write('analysis.csv', extra.analysis), write('questions.csv', extra.questions), write('inquiries.csv', extra.inquiries), write('feedback.csv', extra.feedback),
+  ];
   return JSON.parse(execFileSync('php', ['scripts/php-leads.php', ...args], { encoding: 'utf8', maxBuffer: 50e6, env: { ...process.env, OSHER_IDS: ids ? '1' : '' } }));
 }
 
@@ -201,6 +251,43 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     // הקובץ הציבורי בלי הקודים
     const json = pack(file);
     for (const ns of ids.leads.filter(Boolean).slice(0, 50)) expect(json).not.toContain(`"${ns}"`);
+  });
+
+  it('with the conversation insights tabs, and when one of them is missing or broken', () => {
+    const { leads, purchases } = fixture(150);
+    const tabs = insightsFixture(120);
+    const rows = (t: Partial<typeof tabs>): InsightRows => ({
+      analysis: t.analysis ? parseCsv(t.analysis) : null, questions: t.questions ? parseCsv(t.questions) : null,
+      inquiries: t.inquiries ? parseCsv(t.inquiries) : null, feedback: t.feedback ? parseCsv(t.feedback) : null,
+    });
+    const built = (t: Partial<typeof tabs>) => buildData(parseCsv(leads), parseCsv(purchases), new Date(at), null, null, rows(t));
+    const full = built(tabs);
+    const ins = full.file.insights;
+    expect(ins.analysis!.rows.length).toBe(120);
+    expect(ins.analysis!.readAt).toBe(at);
+    // פניות ומשובים מלפני 2/10 לא נכנסים; תאריך שלא פוענח נשאר
+    expect(ins.inquiries!.rows.length).toBeLessThan(120);
+    expect(ins.inquiries!.rows.some((r) => r.at === null)).toBe(true);
+    expect(ins.feedback!.rows.some((r) => r.exam === 'passed') && ins.feedback!.rows.some((r) => r.exam === 'failed')).toBe(true);
+    expect(ins.questions!.rows.every((r) => r.text.trim() !== '')).toBe(true);
+    // שם וטקסט רק בקובץ הפרטי, ובאורך מוגבל
+    expect(full.ids.analysis!.names.some((n) => n !== '')).toBe(true);
+    expect(full.ids.inquiries!.texts.some((t) => t.endsWith('…'))).toBe(true);
+    expect(full.ids.questions!.some((e) => e.length === 3)).toBe(true);
+    const json = pack(full.file);
+    for (const t of full.ids.inquiries!.texts.filter(Boolean).slice(0, 10)) expect(json).not.toContain(t.slice(0, 30));
+    expect(viaPhp(leads, at, purchases, undefined, undefined, false, tabs)).toEqual(JSON.parse(json));
+    expect(viaPhp(leads, at, purchases, undefined, undefined, true, tabs)).toEqual(JSON.parse(JSON.stringify(full.ids)));
+    // לשונית חסרה, או בלי עמודת חובה: רק החלק שלה null
+    const broken = { ...tabs, inquiries: undefined, feedback: tabs.feedback.replace('קטגוריה', 'סוג') };
+    const part = built(broken);
+    expect(part.file.insights.inquiries).toBeNull();
+    expect(part.file.insights.feedback).toBeNull();
+    expect(part.file.insights.analysis).not.toBeNull();
+    expect(viaPhp(leads, at, purchases, undefined, undefined, false, broken)).toEqual(JSON.parse(pack(part.file)));
+    // בלי אף לשונית: אובייקט ריק, כמו בקובץ ישן
+    expect(JSON.parse(pack(built({}).file)).insights).toEqual({});
+    expect((viaPhp(leads, at, purchases) as { insights: unknown }).insights).toEqual({});
   });
 
   it('fails the same way when a needed column is missing', () => {
