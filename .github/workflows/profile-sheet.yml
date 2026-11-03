@@ -31,6 +31,33 @@ jobs:
           # קובץ הנתונים נבנה ב-PHP, כמו בשרת
           php scripts/php-leads.php /tmp/csv/leads.csv "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" $(f purchases) $(f mailings) $(f waves) $(f analysis) $(f questions) $(f inquiries) $(f feedback) > /tmp/leads.json
           echo "נקרא ב-$(TZ=Asia/Jerusalem date '+%d/%m %H:%M') שעון ישראל"
+      # חד-פעמי, רק בענף הבדיקה: אותם מספרים לפני השינוי (קומיט הבסיס של ההנחיה) ואחריו, על אותו רגע בגיליון
+      - name: לפני ואחרי על אותו רגע בגיליון (#27)
+        continue-on-error: true
+        run: |
+          f() { [ -s "/tmp/csv/$1.csv" ] && echo "/tmp/csv/$1.csv" || echo -; }
+          AT=$(python3 -c "import json;print(json.load(open('/tmp/leads.json'))['generatedAt'])")
+          git fetch -q --depth=1 origin 3f26f148b21fc95a4645e826cabd221572ddbf6f
+          git worktree add -q /tmp/old FETCH_HEAD
+          ln -s "$PWD/node_modules" /tmp/old/node_modules
+          (cd /tmp/old && php scripts/php-leads.php /tmp/csv/leads.csv "$AT" $(f purchases) $(f mailings) $(f waves) > /tmp/old.json)
+          OLD=$(cd /tmp/old && { npx tsx scripts/check-numbers.ts /tmp/old.json 2>&1; npx tsx scripts/summary.ts /tmp/old.json 2>&1; })
+          NEW=$({ npx tsx scripts/check-numbers.ts /tmp/leads.json 2>&1; npx tsx scripts/summary.ts /tmp/leads.json 2>&1; })
+          if [ "$OLD" = "$NEW" ]; then R="זהה ($(echo "$NEW" | wc -l) שורות)"; else R="שונה, השורות שהשתנו:"$'\n'"$(diff <(echo "$OLD") <(echo "$NEW") | grep '^[<>]' | head -40)"; fi
+          OUT="לפני (3f26f14) ואחרי ($(git rev-parse --short HEAD)) על אותו רגע בגיליון ($AT), טווח הכול: $R"$'\n'"---"$'\n'"$NEW"
+          echo "$OUT"
+          python3 - "$OUT" <<'PY'
+          import sys
+          parts, cur = [], ''
+          for line in sys.argv[1].splitlines():
+              if len((cur + line).encode()) > 2500 and cur:
+                  parts.append(cur); cur = ''
+              cur += line + '\n'
+          parts.append(cur)
+          for i, p in enumerate(parts, 1):
+              p = p.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::notice title=לפני ואחרי {i}/{len(parts)}::{p}')
+          PY
       - name: תובנות שיחה, ספירות מהגיליון
         continue-on-error: true
         run: |
