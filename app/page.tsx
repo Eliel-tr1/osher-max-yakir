@@ -1,28 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BASE_PATH } from '@/lib/app';
+import { testLeadsOf, type Scope } from '@/lib/insights';
 import { unpack } from '@/lib/leads/file';
 import type { LeadsFile } from '@/lib/leads/types';
 import {
-  ACTIVATION_AMOUNTS, annotate, autoBucket, countBy, dupesIn, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange, matrixByMonth,
-  passFailOverTime, POPUP, previousRange, purchaseGaps, removedIn, SITE_BUY_MINUTES, sourceRows, summarize, testStats, timeSeries, TRACKING_BANNER_MIN, withPurchasesAfterEntry,
-  type Bucket, type Range,
+  annotate, autoBucket, capabilities, countBy, dupesIn, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange, matrixByMonth,
+  passFailOverTime, POPUP, previousRange, purchaseGaps, REASON_SALES, removedIn, sourceRows, summarize, testStats, timeSeries, withPurchasesAfterEntry,
+  type Bucket, type CapabilityId, type Range,
 } from '@/lib/metrics';
 import { PRESETS, rangeFor, type Preset } from '@/lib/ranges';
 import { AuthProvider, LoginControl, LoginGate } from './auth';
-import { BarList, Columns, fmtDateTime, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, SimpleTable, Ring, Sparkline, SplitList, Stats, money, nf, pct, pctOf } from './charts';
+import { fmtDateTime, nf, pct } from './charts';
 import { DataProvider } from './lists';
 import { ThemeToggle } from './theme';
-import { BotVsRest, type Measure } from './sections/botVsRest';
+import { Capabilities } from './sections/capabilities';
 import { CouponsSection } from './sections/coupons';
+import { BotHero } from './sections/hero';
+import { InsightsSection } from './sections/insights';
 import { MailingsSection } from './sections/mailings';
-import { PopupSection } from './sections/popup';
+import { OverTime } from './sections/overTime';
+import { PopupCompare, PopupSection } from './sections/popup';
 import { PurchasesSection, type Channel } from './sections/purchases';
-import { BucketChips, fmtBucket } from './sections/shared';
+import { ExamsCard, FunnelCard, HowCounted, SourcesCard, TeamTiles } from './sections/team';
 import { trackingBanner, TrackingSection, useTrackingHealth } from './sections/tracking';
 
-const BUCKET_WORD: Record<Bucket, string> = { day: 'יום', week: 'שבוע', month: 'חודש' };
 const ALL = '';
 const EMPTY: LeadsFile['leads'] = [];
 /** הגרסה של הבנייה. כשבשרת יש גרסה אחרת, הדף נטען מחדש לבד (הדפדפן שומר את הדף הישן בזיכרון) */
@@ -32,6 +35,8 @@ const BUILD = process.env.NEXT_PUBLIC_BUILD_SHA ?? '';
 const COMPARED: Preset[] = ['7d', '30d', 'month', 'prevMonth'];
 
 type Load = { state: 'loading' } | { state: 'locked' } | { state: 'error'; message: string } | { state: 'ready'; file: LeadsFile; checkedAt: Date };
+/** שתי לשוניות: הראשית (הבוט קודם) ו"לצוות" (הנחיית המנהל 3/11/2026, #27) */
+type Tab = 'main' | 'team';
 type Refresh = { state: 'idle' } | { state: 'waiting'; since: number } | { state: 'done' } | { state: 'error'; message: string };
 
 export default function Dashboard() {
@@ -42,7 +47,12 @@ export default function Dashboard() {
   const [source, setSource] = useState(ALL);
   const [proc, setProc] = useState(ALL);
   const [channel, setChannel] = useState<Channel>('all');
-  const [measure, setMeasure] = useState<Measure>('count');
+  const [tab, setTab] = useState<Tab>('main');
+  /** אילו סקשנים פתוחים: הכול סגור כברירת מחדל */
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  /** הסיבה שהרשימה שלה פתוחה בפירוט הרכישות */
+  const [chip, setChip] = useState<string | null>(null);
+  const scrollTo = useRef<string | null>(null);
   const [leadsBy, setLeadsBy] = useState<Bucket | null>(null);
   const [testsBy, setTestsBy] = useState<Bucket | null>(null);
   const [buysBy, setBuysBy] = useState<Bucket | null>(null);
@@ -79,6 +89,31 @@ export default function Dashboard() {
       return null;
     }
   }, []);
+
+  useEffect(() => {
+    if (window.location.hash === '#team') setTab('team');
+  }, []);
+  const chooseTab = (t: Tab) => {
+    setTab(t);
+    try {
+      history.replaceState(null, '', t === 'team' ? '#team' : `${window.location.pathname}${window.location.search}`);
+    } catch {
+      // בלי היסטוריה: הלשונית פשוט לא נשמרת בכתובת
+    }
+  };
+  const toggle = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: !o[id] })), []);
+  /** כרטיס יכולת: פותח את הפירוט שלו וגולל אליו */
+  const openDetail = useCallback((cap: CapabilityId, target: string) => {
+    if (cap === 'sales') setChip(REASON_SALES);
+    setOpen((o) => ({ ...o, [target]: true }));
+    scrollTo.current = target;
+  }, []);
+  useEffect(() => {
+    if (!scrollTo.current) return;
+    const el = document.getElementById(scrollTo.current);
+    scrollTo.current = null;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   // פעם אחת כשהדף נפתח: הנתונים מהשרת, ובדיקה שהדף עצמו לא גרסה ישנה מהמטמון. בלי שום בדיקה חוזרת:
   // הנתונים מתעדכנים רק בכפתור או ברענון של 06:30 (הנחיית המנהל 3/11/2026)
@@ -150,6 +185,7 @@ export default function Dashboard() {
     const purchasesAll = pick(range);
     const before = COMPARED.includes(preset) ? previousRange(range, now) : null;
     const auto = autoBucket(leads);
+    const scope: Scope = { range, keep: filtered ? keep : null, testLeads: testLeadsOf(file.insights.analysis?.rows ?? null) };
     const lb = leadsBy ?? auto;
     const tb = testsBy ?? auto;
     return {
@@ -158,6 +194,10 @@ export default function Dashboard() {
       purchasesAll,
       purchasesEver: pick({ from: null, to: null }),
       purchasesBefore: before ? pick(before) : null,
+      caps: capabilities({ leads, couponLeads: scoped, purchases: purchasesAll, people, mailings: file.mailings, range }),
+      scope,
+      filtered: !filtered,
+      missingDays: purchaseGaps(file.purchases).missing,
       dupes: dupesIn(file.dupes, range),
       summary: summarize(leads, purchasesAll),
       funnel: funnel(leads),
@@ -176,7 +216,7 @@ export default function Dashboard() {
       bySource: sourceRows(leads),
       bySourceRaw: sourceRows(leads, (l) => l.source),
     };
-  }, [file, all, preset, custom, source, proc, leadsBy, testsBy]);
+  }, [file, all, people, preset, custom, source, proc, leadsBy, testsBy]);
 
   if (load.state === 'loading') return <main className="page"><p className="status" role="status">טוען נתונים...</p></main>;
   if (load.state === 'locked') return <LoginGate onIn={() => { setLoad({ state: 'loading' }); fetchData(); }} />;
@@ -193,10 +233,13 @@ export default function Dashboard() {
   const ex = view.exams;
   const hasMail = !!(file.mailings && file.mailingWaves && file.mailingWaves.length > 0);
   const hasPopup = people.some((x) => x.lead.campaign === POPUP);
-  const jump: [string, string][] = [
-    ['bot', 'הבוט מול השאר'], ['buys', 'רכישות'], ['coupons', 'קופונים'], ...(hasMail ? [['mail', 'דיוור'] as [string, string]] : []),
-    ...(hasPopup ? [['popup', 'פופאפ'] as [string, string]] : []), ['tracking', 'תקינות קמפיינים'], ['exams', 'מבחנים'], ['sources', 'מקור הגעה'], ['how', 'איך נספר'],
-  ];
+  const red = health.last7 > 0;
+  const jump: [string, string][] = tab === 'main'
+    ? [
+      ['bot', 'מה הבוט הביא'], ['time', 'לאורך זמן'], ['insights', 'תובנות שיחה'], ['buys', 'רכישות'], ['coupons', 'קופונים'],
+      ...(hasMail ? [['mail', 'דיוור'] as [string, string]] : []), ...(hasPopup ? [['popup', 'פופאפ'] as [string, string]] : []),
+    ]
+    : [['funnel', 'משפך'], ['tracking', 'תקינות קמפיינים'], ['exams', 'מבחנים'], ['sources', 'מקור הגעה'], ...(hasPopup ? [['popupcmp', 'פופאפ מול השאר'] as [string, string]] : []), ['how', 'איך נספר']];
 
   return (
     <AuthProvider generatedAt={file.generatedAt}>
@@ -224,11 +267,13 @@ export default function Dashboard() {
           </header>
 
           {file.origin === 'demo' && <p className="notice" role="status">אלה נתוני הדגמה מומצאים, לא הטבלה האמיתית.</p>}
-          {trackingBanner(health) && (
-            <p className="notice error top-alert" role="alert">
-              {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking">לפרטים</a>
-            </p>
-          )}
+
+          <div className="tabs" role="tablist" aria-label="לשוניות">
+            <button type="button" role="tab" id="tab-main" aria-selected={tab === 'main'} aria-controls="panel-main" className={tab === 'main' ? 'on' : ''} onClick={() => chooseTab('main')}>הבוט</button>
+            <button type="button" role="tab" id="tab-team" aria-selected={tab === 'team'} aria-controls="panel-team" className={tab === 'team' ? 'on' : ''} onClick={() => chooseTab('team')}>
+              לצוות{red ? <span className="dot" role="img" aria-label="יש מה לתקן בתקינות הקמפיינים" /> : null}
+            </button>
+          </div>
 
           <section className="filters" aria-label="סינון">
             <div className="chips" role="group" aria-label="טווח תאריכים">
@@ -263,108 +308,39 @@ export default function Dashboard() {
             {jump.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}
           </nav>
 
-          <section className="top" aria-label="מספרי מפתח">
-            <Tile
-              label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`}
-              info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
-            />
-            <Tile
-              label="התחילו שיחה" value={nf.format(s.startedJourney)} ring={s.leads ? s.startedJourney / s.leads : null} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
-              info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
-            />
-            <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
-            <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
-            <Tile label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`} info="מתוך הלידים בטווח, בלי מי שקנה באתר בלי לעבור בבוט." />
-            <Tile label="קנו באתר בלי לעבור בבוט" value={nf.format(s.siteBuyers)} sub="לא במשפך" info={`ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`} />
-            <Tile label="הסירו את עצמם" value={nf.format(view.removed)} sub="לפי תאריך ההסרה" />
-            <article className="tile sparkcard">
-              <div className="sparkhead">
-                <p className="label">לידים לפי {BUCKET_WORD[view.leadsBy]}</p>
-                <BucketChips value={leadsBy} auto={view.auto} onChange={setLeadsBy} />
-              </div>
-              <Sparkline labels={view.leadsSeries.map((d) => fmtBucket(d.key, view.leadsBy))} values={view.leadsSeries.map((d) => d.values[0])} />
-            </article>
-          </section>
-
-          <section className="card slim" aria-labelledby="funnel-h">
-            <h2 id="funnel-h">
-              מהליד ועד הרכישה{' '}
-              <Info>כל שלב סופר רק מי שעבר גם את השלבים שלפניו, ולכן אף שלב לא גדול מהקודם. בלי מי שקנה באתר בלי לעבור בבוט. &quot;רכשו&quot; = מי שגם סיים שאלון.</Info>
-            </h2>
-            <FunnelStrip steps={[
-              { label: 'לידים', value: view.funnel.leads, sub: `בלי ${nf.format(s.siteBuyers)} שקנו באתר` },
-              { label: 'התחילו שיחה', value: view.funnel.started },
-              { label: 'התחילו שאלון', value: view.funnel.startedQ },
-              { label: 'סיימו שאלון', value: view.funnel.finishedQ },
-              { label: 'רכשו', value: view.funnel.bought },
-            ]} />
-          </section>
-
-          <BotVsRest all={view.purchasesAll} prev={view.purchasesBefore} by={buysBy} setBy={setBuysBy} measure={measure} setMeasure={setMeasure} />
-
-          <PurchasesSection all={view.purchasesAll} dupes={view.dupes} channel={channel} setChannel={setChannel} />
-
-          <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} />
-
-          {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} />}
-
-          <PopupSection people={people} range={view.range} rangeKey={rangeKey} />
-
-          <TrackingSection health={health} all={view.purchasesAll} />
-
-          <section className="card" id="exams" aria-labelledby="exams-h">
-            <div className="cardhead">
-              <h2 id="exams-h">מבחנים</h2>
-              <BucketChips value={testsBy} auto={view.auto} onChange={setTestsBy} />
+          {tab === 'main' ? (
+            <div role="tabpanel" id="panel-main" aria-labelledby="tab-main">
+              <BotHero all={view.purchasesAll} prev={view.purchasesBefore} />
+              <Capabilities caps={view.caps} onOpen={openDetail} />
+              <OverTime all={view.purchasesAll} missingDays={view.missingDays} by={buysBy} setBy={setBuysBy} />
+              <InsightsSection insights={file.insights} generatedAt={file.generatedAt} scope={view.scope} filtered={view.filtered} open={open} toggle={toggle} />
+              <section className="details" aria-labelledby="details-h">
+                <h2 id="details-h" className="sectlabel">פירוט</h2>
+                <PurchasesSection all={view.purchasesAll} channel={channel} setChannel={setChannel} open={!!open.buys} onToggle={() => toggle('buys')} chip={chip} setChip={setChip} />
+                <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} open={!!open.coupons} onToggle={() => toggle('coupons')} />
+                {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} open={!!open.mail} onToggle={() => toggle('mail')} />}
+                {hasPopup && <PopupSection people={people} range={view.range} rangeKey={rangeKey} open={!!open.popup} onToggle={() => toggle('popup')} />}
+              </section>
             </div>
-            <Stats items={[
-              { label: 'עשו מבחן', value: nf.format(ex.did) },
-              {
-                label: 'עברו', value: nf.format(ex.passed),
-                info: `מי שעבר ואז רכש מקבל בטבלה "לקוח פעיל", והתוצאה שלו נדרסת: ${nf.format(ex.overwritten)} כאלה בטווח. עד 19/10 שם המבחן לא נרשם, ולכן הפילוח לפי סוג כולל רק מבחנים עם שם. התאריך הוא תאריך הכניסה של הליד.`,
-              },
-              { label: 'נכשלו', value: nf.format(ex.failed) },
-              { label: 'אחוז מעבר', value: pctOf(ex.passRate), ring: ex.passRate },
-              { label: 'עברו ורכשו', value: nf.format(ex.passedAndBought), sub: 'מהעוברים', ring: ex.passed ? ex.passedAndBought / ex.passed : null },
-            ]} />
-            <Columns
-              labels={view.passFail.map((d) => fmtBucket(d.key, view.passFailBy))}
-              values={view.passFail.map((d) => [d.passed, d.failed])}
-              series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--series-2' }]}
-            />
-            <div className="three">
-              <div><h3>לפי סוג</h3><SplitList items={view.byFamily} /></div>
-              <div><h3>לפי גודל חשבון</h3><SplitList items={view.bySize} /></div>
-              <div><h3>לפי פלטפורמה</h3><SplitList items={view.byPlatform} /></div>
+          ) : (
+            <div role="tabpanel" id="panel-team" aria-labelledby="tab-team">
+              {trackingBanner(health) && (
+                <p className="notice error top-alert" role="alert">
+                  {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking">לפרטים</a>
+                </p>
+              )}
+              <TeamTiles s={s} removed={view.removed} dupes={view.dupes} leadsSeries={view.leadsSeries} leadsBy={view.leadsBy} autoBucket={view.auto} setLeadsBy={setLeadsBy} />
+              <FunnelCard funnel={view.funnel} siteBuyers={s.siteBuyers} conversion={pct(s.leadsWhoBought, s.leads)} />
+              <TrackingSection health={health} all={view.purchasesAll} />
+              <ExamsCard
+                ex={ex} by={testsBy} setBy={setTestsBy} auto={view.auto} passFail={view.passFail} passFailBy={view.passFailBy} byFamily={view.byFamily} bySize={view.bySize}
+                byPlatform={view.byPlatform} tests={view.tests} testMatrix={view.testMatrix}
+              />
+              <SourcesCard bySource={view.bySource} bySourceRaw={view.bySourceRaw} purchases={view.purchasesAll} />
+              <PopupCompare people={people} range={view.range} />
+              <HowCounted gaps={purchaseGaps(file.purchases)} />
             </div>
-            <ListBlock items={[
-              { id: 'tests', title: 'כל המבחנים', count: `${nf.format(view.tests.length)} מבחנים`, render: () => <SplitList items={view.tests} max={200} /> },
-              { id: 'testmonths', title: 'כמה נעשו מכל מבחן, לפי חודש', render: () => <HeatTable {...view.testMatrix} nameHeader="מבחן" /> },
-            ]} />
-          </section>
-
-          <section className="card" id="sources" aria-labelledby="sources-h">
-            <h2 id="sources-h">
-              מקור הגעה{' '}
-              <Info>
-                &quot;בוט וואטסאפ&quot;: נכנסו דרך הבוט. שם של ערוץ (ig, google, Klaviyo, vitrue): utm של האתר. &quot;מהאתר (מבחן או רכישה)&quot;: בטבלה כתוב שם של מבחן או מוצר במקום
-                מקור, כלומר הגיעו מהאתר בלי utm.
-              </Info>
-            </h2>
-            <BarList items={view.bySource.map((r) => ({ name: r.name, count: r.leads }))} extra={(n) => { const r = view.bySource.find((x) => x.name === n); return r ? `רכשו ${nf.format(r.bought)}` : null; }} />
-            <ListBlock items={[{
-              id: 'raw', title: 'הרשימה המלאה, כמו שכתוב בטבלה', count: `${nf.format(view.bySourceRaw.length)} מקורות`,
-              render: () => (
-                <SimpleTable
-                  max={200}
-                  headers={['מקור הגעה', 'לידים', 'התחילו שיחה', 'רכשו', 'שולם']}
-                  rows={view.bySourceRaw.map((r) => ({ key: r.name, cells: [r.name, nf.format(r.leads), nf.format(r.started), nf.format(r.bought), money.format(r.spent)] }))}
-                />
-              ),
-            }]} />
-          </section>
-
-          <HowCounted gaps={purchaseGaps(file.purchases)} />
+          )}
 
           <footer className="foot">
             {nf.format(file.sheetRows)} שורות בלשונית הלידים · {nf.format(file.purchaseRows)} שורות בלשונית הרכישות · נבדק בדפדפן ב-<bdi>{fmtDateTime(load.checkedAt.toISOString())}</bdi>
@@ -372,80 +348,5 @@ export default function Dashboard() {
         </main>
       </DataProvider>
     </AuthProvider>
-  );
-}
-
-function Tile({ label, value, sub, info, ring }: { label: string; value: string; sub?: string; info?: ReactNode; ring?: number | null }) {
-  return (
-    <article className={`tile${ring !== undefined ? ' has-ring' : ''}`}>
-      <div>
-        <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
-        <p className="value">{value}</p>
-        {sub ? <p className="sub">{sub}</p> : null}
-      </div>
-      {ring !== undefined && <Ring value={ring} size={60} label={label} />}
-    </article>
-  );
-}
-
-/** דרופ דאון אחד בתחתית הדף, "איך נספר", לפי סקשן. סגור כברירת מחדל (הנחיית המנהל, 1/11/2026) */
-function HowCounted({ gaps }: { gaps: { first: string | null; missing: string[] } }) {
-  const parts: [string, string[]][] = [
-    ['ראש הדף והמשפך', [
-      'ליד = אדם, לפי קוד מזהה. שורות מלפני 1/9/2026 והזמנות בדיקה לא נכנסות.',
-      `קנו באתר בלי לעבור בבוט: ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`,
-      'במשפך כל שלב סופר רק מי שעבר גם את השלבים שלפניו.',
-    ]],
-    ['רכישות', [
-      'רכישה = שורה בלשונית "רכישות", לפי תאריך הרכישה. קונים = קודים מזהים שונים.',
-      'של הבוט = "כן" בעמודה "של הבוט". כל ערך אחר = לא של הבוט. תא ריק = עוד לא הוכרע. את העמודה ואת "סיבה" ממלא הסוכן של המנהל בכל לילה, באיחור מכוון של יום או יומיים.',
-      'רכישה כפולה (אותו קונה ואותו סכום בתוך שתי דקות) נספרת פעם אחת. רכישה בלי סכום נספרת, אבל לא נכנסת לסכומים ולממוצע.',
-      'קונה שמסומן בלשונית הלידים ואין לו שורה ברכישות: הרכישה נלקחת משורת הליד, ונחשבת עוד לא הוכרעה.',
-      `דמי הפעלה: מוצר עם activation, או רכישה בלי שם מוצר בסכום ${ACTIVATION_AMOUNTS.join(', ')}.`,
-      'השוואה לתקופה הקודמת (▲▼): באותו אורך, צמוד לפני הטווח שבחרת. רק ב-7 ימים, 30 יום, החודש והחודש הקודם.',
-      ...(gaps.first
-        ? [`לשונית "רכישות" מתחילה בפועל ב-${fmtDay(gaps.first)}${gaps.missing.length ? `, וב-${gaps.missing.map(fmtDay).join(' וב-')} אין בה שורות: כנראה פער בנתונים, שעדיין נבדק` : ''}.`]
-        : []),
-    ]],
-    ['קופונים', [
-      'הופקו: אנשים עם קוד בעמודה "קופון הבוט", לפי "תאריך קופון". העמודה שומרת רק את הקופון האחרון של כל אדם, ולכן זה מינימום.',
-      'שומשו: רכישות עם קוד אישי של הבוט ב"קופון מהרכישה". זו אותה ספירה כמו בשורת הקופון האישי בטבלת הקודים.',
-    ]],
-    ['קמפיין הדיוור', [
-      'מהלשוניות "דיוורים" ו"דיוורים - סיכום". לא מושפע מטווח התאריכים.',
-      'קנו אחרי השליחה: לא בהכרח בזכות הדיוור. דרך הקישור (utm_source = vitrue): בוודאות מהדיוור.',
-    ]],
-    ['הפופאפ באתר', [
-      `נכנסו מהפופאפ: utm_campaign של האדם הוא ${POPUP}. זמן הכניסה: תאריך הכניסה המוקדם ביותר שלו.`,
-      'קנו אחרי הכניסה: לפי השעה, כולל רכישות של אותו אדם תחת קוד מזהה אחר עם אותו טלפון. חוזר = קנה גם לפני הכניסה.',
-    ]],
-    ['תקינות מעקב קמפיינים', [
-      `קמפיין שלא מולא: {campaignname} ודומיו (Google Ads), {{campaign.name}} ודומיו (Meta). פס אדום בראש הדף מ-${TRACKING_BANNER_MIN} אנשים ב-7 ימים.`,
-      'קמפיינים מובילים: רק utm_campaign של הרכישה עצמה, בלי הקמפיין של האדם.',
-    ]],
-    ['מבחנים', [
-      'עברו או נכשלו לפי "סטטוס". מי שעבר ואז רכש מקבל "לקוח פעיל" והתוצאה נדרסת.',
-      'בסוג, גודל או פלטפורמה בלי אף "עבר" מוצג "-" במקום אחוז מעבר.',
-    ]],
-  ];
-  return (
-    <section className="card how" id="how" aria-label="איך נספר">
-      <ListBlock
-        title="איך נספר"
-        items={[{
-          id: 'how', title: 'הגדרות והערות על הנתונים, לפי סקשן',
-          render: () => (
-            <div>
-              {parts.map(([title, lines]) => (
-                <div key={title}>
-                  <h3>{title}</h3>
-                  <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
-                </div>
-              ))}
-            </div>
-          ),
-        }]}
-      />
-    </section>
   );
 }

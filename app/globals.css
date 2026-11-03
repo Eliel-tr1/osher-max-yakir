@@ -162,8 +162,6 @@ button, input, select { font: inherit; color: inherit; }
 .slim { padding: 14px 18px; }
 .slim h2 { font-size: 16px; margin-bottom: 8px; }
 .funnel { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; }
-.funnel .fsub { font-size: 12px; color: var(--ink-2); line-height: 1.3; }
-.funnel.two-pct { margin-bottom: 6px; }
 .funnel li { display: grid; grid-template-rows: auto auto auto; gap: 2px; min-width: 0; align-content: start; }
 .funnel .bar { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); position: relative; overflow: hidden; }
 .funnel .bar::after { content: ''; position: absolute; inset: 0; width: var(--w); background: var(--series-1); border-radius: 4px; }
@@ -171,19 +169,8 @@ button, input, select { font: inherit; color: inherit; }
 .funnel .value { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .funnel .pct { font-size: 12px; color: var(--ink-3); min-height: 1.3em; }
 
-/* חלק מקופל */
-.fold { border-top: 1px solid var(--line); margin-top: 12px; }
-.fold summary { cursor: pointer; padding: 10px 2px; font-size: 14px; font-weight: 600; color: var(--ink-2); list-style: none; display: flex; align-items: center; gap: 8px; }
-.fold summary::-webkit-details-marker { display: none; }
-.fold summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: rotate(45deg); margin: 0 2px 3px 4px; transition: transform 0.15s; }
-.fold[open] summary::before { transform: rotate(-135deg); margin-bottom: -2px; }
-.fold summary .count { font-weight: 500; color: var(--ink-3); font-size: 13px; }
-.fold summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; border-radius: 6px; }
-.foldbody { padding: 2px 0 10px; }
-.chipsrow { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
 .hint.tight { margin: 4px 0 8px; }
 .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.tbc { font-size: 11px; background: var(--notice); color: var(--notice-ink); border-radius: 999px; padding: 1px 7px; }
 
 /* כרטיסים */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; min-width: 0; }
@@ -237,11 +224,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .heat thead th { color: var(--ink-2); font-weight: 600; }
 .heat tbody th, .heat tfoot th { text-align: right; font-weight: 500; max-width: 300px; overflow: hidden; text-overflow: ellipsis; unicode-bidi: plaintext; }
 .heat td small { display: block; color: var(--ink-3); font-size: 11px; font-weight: 400; }
-.heat td small.split-note { white-space: nowrap; }
-.breakdown td, .tests td { min-width: 76px; }
-.breakdown th.mode { color: var(--ink-3); }
-.breakdown .group-note th { font-size: 11px; color: var(--ink-3); font-weight: 500; padding-top: 0; }
-.breakdown thead tr:first-child th { vertical-align: bottom; }
+.tests td { min-width: 76px; }
 .tests { margin-top: 14px; }
 .tests tbody th button {
   background: none; border: 0; padding: 0; cursor: pointer; text-align: right; unicode-bidi: plaintext; font: inherit;
@@ -269,18 +252,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .list table { min-width: 640px; }
 .list td { text-align: right; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .list thead th { text-align: right; }
-.pager { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--ink-3); margin-top: 8px; }
-.pager button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; font-size: 13px; }
-.pager button:disabled { opacity: 0.45; cursor: default; }
-.pager button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
-.fold .fold { margin-top: 0; }
-.fold summary .ftitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; max-width: 60%; }
 .lists { margin-top: 6px; }
-
-/* החלק של הבוט, שורה מתחת לטבלה */
-.share { margin: 8px 0 14px; font-size: 14px; color: var(--ink-2); }
-.share strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-.keyed { display: inline-flex; align-items: center; gap: 6px; }
 
 .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 22px; margin-top: 8px; }
 .two h3, .box h3 { margin-top: 10px; }
@@ -295,7 +267,6 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 @media (max-width: 1000px) {
   .top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .three, .two { grid-template-columns: minmax(0, 1fr); }
-  .funnel.two-pct { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -304,7 +275,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
   .top { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .tile { padding: 12px; }
   .tile .value { font-size: 24px; }
-  .funnel, .funnel.two-pct { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats { gap: 6px 18px; }
   .barrow { grid-template-columns: minmax(80px, 42%) minmax(0, 1fr) 44px; gap: 8px; }
   .card { padding: 14px; }
@@ -342,14 +313,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .page section[id] { scroll-margin-top: 64px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--error-ink); margin-inline-start: 8px; vertical-align: middle; }
 
-/* כרטיס הבוט מול השאר */
-.vs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 4px 0 6px; }
-.vs .big { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.vs .big .label { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
-.vs .big .label i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-.vs .big .value { font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.vs .big .value small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-inline-start: 6px; }
-.vs .big .sub { font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* פסי 100% */
 .delta { font-size: 13px; color: var(--ink-2); font-weight: 600; margin-inline-start: 8px; white-space: nowrap; }
 .muted { color: var(--ink-3); font-size: 13px; margin: 2px 0 14px; }
 .bar100 { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 10px; align-items: center; margin: 6px 0; }
@@ -357,7 +321,8 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .b100track { display: flex; gap: 2px; height: 28px; border-radius: 6px; overflow: hidden; container-type: inline-size; }
 .b100part { display: flex; align-items: center; justify-content: center; min-width: 3px; }
 .b100text { font-size: 12px; font-weight: 700; color: var(--on-bot); white-space: nowrap; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
-.b100part:nth-child(2) .b100text { color: var(--on-notbot); }
+.b100part.on-notbot .b100text { color: var(--on-notbot); }
+.b100part.on-light .b100text { color: var(--ink); }
 .chipsline { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
 .chipsline button {
   border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; min-height: 36px;
@@ -395,6 +360,7 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .login { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: end; font-size: 13px; color: var(--ink-2); }
 .login .who { font-size: 12.5px; }
 .linkbtn { background: none; border: 0; color: var(--series-1); cursor: pointer; padding: 4px; font-size: 13px; }
+.refresh .linkbtn { background: none; color: var(--series-1); min-height: 28px; padding: 2px 4px; font-weight: 500; border-radius: 6px; }
 .login .err { color: var(--error-ink); }
 
 /* איך נספר */
@@ -408,11 +374,9 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 }
 
 @media (max-width: 760px) {
-  .vs { grid-template-columns: 1fr 1fr; gap: 10px 14px; }
   .bartable th:nth-child(2), .bartable td.barcell { display: none; }
   .bartable tbody th { white-space: normal; max-width: 46vw; min-width: 0; line-height: 1.3; }
   .bartable th, .bartable td { padding: 6px 5px; }
-  .vs .big .value { font-size: 30px; }
   .lsum, .lcount { min-width: 0; }
   .lrow > button { gap: 8px; }
 }
@@ -438,3 +402,189 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .gatebox button { min-height: 44px; border: 0; border-radius: 10px; background: var(--ink); color: var(--surface); font-weight: 600; cursor: pointer; }
 .gatebox button:disabled { opacity: 0.6; cursor: default; }
 .gatebox .err { color: var(--error-ink); margin: 0; font-size: 14px; }
+
+/* ===== "הבוט קודם" (הנחיית המנהל 3/11/2026, #27) ===== */
+
+/* לשוניות: הבוט / לצוות */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 0 14px; }
+.tabs button {
+  background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 8px 16px; min-height: 44px;
+  font-size: 15px; font-weight: 600; color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center;
+}
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--bot); }
+.tabs button:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; border-radius: 6px; }
+
+/* "מה הבוט הביא": מספר אחד ענק, לפחות פי 2 מכל מספר אחר בדף */
+.hero { padding: 18px 22px 14px; }
+.herotop { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'main ring'; align-items: center; gap: 6px 24px; }
+.heromain { grid-area: main; min-width: 0; }
+.card.hero h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink-2); }
+.heronum {
+  margin: 2px 0 10px; font-size: 64px; font-weight: 750; line-height: 1.05; letter-spacing: -0.02em; color: var(--bot);
+  font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px;
+}
+.heronum .delta { font-size: 16px; letter-spacing: 0; margin: 0; color: var(--ink-2); }
+.herosub { margin: 0; display: flex; flex-wrap: wrap; gap: 2px 22px; font-size: 14px; color: var(--ink-2); }
+.herosub b { font-size: 20px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; margin-inline-end: 5px; }
+.heroring { grid-area: ring; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.heroring .ringtext { font-size: 24px; font-weight: 750; }
+.herospark { margin-top: 12px; }
+.herospark .sparkfoot { margin-top: 2px; }
+.sparkcap { color: var(--ink-3); }
+.heroline { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* "מה הבוט עושה": חמישה כרטיסי יכולת. רק כחול ואפור */
+.caps { margin: 0 0 16px; }
+.capshead { font-size: 16px; font-weight: 600; color: var(--ink-2); margin: 2px 0 8px; }
+.caprow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.cap {
+  position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 8px;
+  display: flex; flex-direction: column; min-width: 0; transition: border-color 0.15s;
+}
+.cap:hover { border-color: var(--bot); }
+.cap:has(.capbtn:focus-visible) { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.capname { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 650; color: var(--ink); line-height: 1.25; }
+.capicon { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--bot); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.capnum { font-size: 26px; font-weight: 650; line-height: 1.1; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.capunit { font-size: 12px; color: var(--ink-3); line-height: 1.3; min-height: 2.6em; }
+.capmoney { font-size: 15px; font-weight: 650; color: var(--bot); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.cap .spark { margin-top: 6px; }
+.cap .sparkfoot { font-size: 11px; }
+.capbtn { position: absolute; inset: 0; width: 100%; background: transparent; border: 0; border-radius: var(--radius); cursor: pointer; padding: 0; }
+.capbtn:focus-visible { outline: none; }
+
+/* כרטיס נפתח (Fold): כל הפירוט סגור כברירת מחדל, ובכותרת מספרים קטנים או מספר אחד ומשפט */
+.card.fold { padding: 0; }
+.foldhead { display: flex; align-items: center; gap: 2px; padding-inline-end: 10px; }
+.card .foldtitle { margin: 0; flex: 1; min-width: 0; font-size: inherit; color: inherit; font-weight: inherit; }
+.foldtitle button {
+  width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; background: none; border: 0; border-radius: var(--radius);
+  padding: 12px 18px; min-height: 56px; cursor: pointer; text-align: start; color: var(--ink);
+}
+.foldtitle button:hover { background: var(--surface-2); }
+.foldtitle button:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.ftitle { font-size: 17px; font-weight: 650; flex: none; }
+.fbig { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; flex: none; }
+.fsent { flex: 1 1 0; min-width: 0; font-size: 13.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fstats { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 13px; color: var(--ink-2); margin-inline-start: auto; }
+.fstats b { font-size: 16px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+.foldtitle .lchev { flex: none; margin-inline-start: auto; }
+.fstats + .lchev { margin-inline-start: 0; }
+.fold.open > .foldhead .lchev { transform: rotate(180deg); }
+.card.fold > .foldbody { padding: 0 18px 16px; }
+.card.fold > .foldbody > h3:first-child, .card.fold > .foldbody > .cardhead:first-child h3 { margin-top: 4px; }
+
+/* "תובנות שיחה" (הנחיית המנהל 3/11/2026, #26): ארבעה כרטיסים סגורים ושורת הסרות */
+.insights { margin: 0 0 16px; }
+.secthead, .sectlabel { margin: 22px 0 8px; }
+.secthead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.secthead h2, .sectlabel { font-size: 18px; font-weight: 700; }
+.secthead h2 { margin: 0; }
+.secthead .muted { margin: 0; font-size: 12.5px; }
+.card.icard { margin-bottom: 8px; }
+.icard .foldtitle button { flex-wrap: nowrap; min-height: 52px; padding: 10px 16px; }
+.icard .ftitle { font-size: 15.5px; }
+.icard.open { margin-bottom: 14px; }
+.whyring { display: flex; align-items: center; gap: 14px; margin: 4px 0 2px; }
+.whyring p { margin: 0; font-size: 15px; }
+.whyring .ringtext { font-size: 15px; }
+.substeps { margin: 2px 0 8px; padding-inline-start: 12px; border-inline-start: 2px solid var(--line); }
+.barrow .name.has-tag { display: flex; flex-direction: column; white-space: normal; line-height: 1.25; }
+.barrow .name.has-tag > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barrow .tag {
+  align-self: start; font-size: 11px; font-weight: 600; color: var(--ink); white-space: nowrap; border-radius: 999px; padding: 0 7px; margin-top: 2px;
+  background: color-mix(in srgb, var(--series-2) 22%, var(--surface)); border: 1px solid var(--series-2);
+}
+.trends { display: grid; gap: 4px; margin: 2px 0 8px; }
+.trend { display: grid; grid-template-columns: minmax(100px, 220px) minmax(0, 1fr); gap: 12px; align-items: center; }
+.trendname { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.removals { font-size: 13.5px; color: var(--ink-2); margin-top: 2px; }
+.removals > button {
+  background: none; border: 0; padding: 6px 4px; min-height: 40px; cursor: pointer; color: inherit; display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 8px;
+}
+.removals > button:hover:not(:disabled) { background: var(--surface-2); }
+.removals > button:disabled { cursor: default; }
+.removals > button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.removals > button b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.removals.open .lchev { transform: rotate(180deg); }
+.removals ul { margin: 0 0 6px; padding-inline-start: 22px; }
+.muted.small { font-size: 12.5px; margin: 6px 0 8px; }
+p.small { font-size: 13px; margin: 6px 0; }
+p.small a { color: var(--series-1); font-weight: 600; }
+.list td .cliptext, .list td .qtext {
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; unicode-bidi: plaintext; text-align: right; line-height: 1.35;
+}
+.list td .cliptext { -webkit-line-clamp: 2; line-clamp: 2; min-width: 220px; max-width: 420px; }
+.list td .qtext { -webkit-line-clamp: 3; line-clamp: 3; min-width: 240px; max-width: 380px; }
+.list td:has(.cliptext), .list td:has(.qtext) { max-width: none; }
+.exlinks { display: inline-flex; gap: 8px; }
+.exlinks a { color: var(--series-1); font-weight: 600; text-decoration: none; }
+.exlinks a:hover { text-decoration: underline; }
+
+/* פירוט: הכותרת מעל ארבעת הסקשנים הסגורים */
+.details { margin-top: 4px; }
+.chipsline button.bot { border-color: var(--bot); }
+.chipsline button.bot:not([aria-expanded='true']) b { color: var(--bot); }
+.card h3.minor { font-size: 13.5px; margin: 10px 0 4px; }
+
+/* "לאורך זמן": קו החלק של הבוט על ציר משני, ויום בלי שורות בגיליון */
+.chart .gapbox { fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.chart .gapdot { fill: var(--ink-3); }
+.legend i.lineswatch { height: 3px; width: 14px; border-radius: 2px; vertical-align: middle; }
+.legend i.gapfull { background: none; border: 1.5px dashed var(--ink-3); }
+.legend i.gappart { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); vertical-align: middle; }
+.tip i.lineswatch { height: 3px; vertical-align: middle; }
+
+@media (max-width: 900px) {
+  /* כרטיסי היכולת בשורה אחת עם גלילה לצד, כדי שהדף לא יתארך */
+  .caprow {
+    display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; scrollbar-width: none;
+    margin: 0 -16px; padding: 0 16px 4px;
+  }
+  .caprow::-webkit-scrollbar { display: none; }
+  .cap { flex: 0 0 172px; scroll-snap-align: start; }
+}
+
+@media (max-width: 760px) {
+  .hero { padding: 14px 14px 12px; }
+  .heromain { display: contents; }
+  .herotop { grid-template-areas: 'title ring' 'num ring' 'sub sub'; gap: 0 12px; }
+  .card.hero h2 { grid-area: title; font-size: 15px; }
+  .heronum { grid-area: num; font-size: 48px; margin: 2px 0 6px; gap: 0 10px; }
+  .heronum .delta { font-size: 14px; }
+  .herosub { grid-area: sub; gap: 0 14px; font-size: 13px; }
+  .herosub b { font-size: 17px; margin-inline-end: 3px; }
+  .heroring { grid-area: ring; align-self: start; font-size: 12px; }
+  .heroring .ring { width: 84px; height: 84px; }
+  .herospark { margin-top: 8px; }
+  .heroline { font-size: 12.5px; }
+  .capnum { font-size: 22px; }
+  .tile .value { font-size: 22px; }
+  .foldtitle button { padding: 10px 14px; min-height: 52px; gap: 2px 10px; }
+  .ftitle { font-size: 16px; }
+  .fstats { flex-basis: 100%; order: 3; margin-inline-start: 0; gap: 0 12px; font-size: 12.5px; }
+  .fstats b { font-size: 14px; }
+  .icard .foldtitle button { padding: 8px 12px; gap: 8px; }
+  .icard .ftitle { font-size: 14.5px; }
+  .fbig { font-size: 19px; }
+  .fsent { font-size: 12.5px; }
+  .card.fold > .foldbody { padding: 0 14px 14px; }
+  .trend { grid-template-columns: minmax(0, 38%) minmax(0, 1fr); gap: 8px; }
+  /* בטלפון "מה הבוט הביא" צריך להיכנס במסך הראשון: כותרת וכפתורים בשורה אחת, סינון קומפקטי */
+  .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 10px; margin-bottom: 10px; }
+  .head h1 { font-size: 19px; white-space: nowrap; }
+  .head .sub { font-size: 12.5px; }
+  .refresh { gap: 2px; }
+  .refresh button { padding: 6px 10px; font-size: 14.5px; }
+  .refresh span[role='status']:empty { display: none; }
+  .notice { font-size: 13px; padding: 8px 12px; margin-bottom: 10px; }
+  .filters { gap: 8px; margin-bottom: 8px; }
+  .filters > .chips { gap: 5px; }
+  .filters > .chips button { padding: 4px 10px; font-size: 13.5px; min-height: 34px; }
+  .selects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
+  .selects select { max-width: none; width: 100%; }
+  .tabs { margin-bottom: 10px; }
+  .jump { margin-bottom: 10px; padding: 6px 0; }
+}

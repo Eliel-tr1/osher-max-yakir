@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, 'check/**']
-    paths: ['scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/check-bot-first.ts', 'scripts/profile-insights.py', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -16,6 +16,37 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # כל הלשוניות פעם אחת, כדי שכל הבדיקות בריצה יהיו על אותו רגע בגיליון. לשונית שלא נקראה = לשונית חסרה
+      - name: הורדת הלשוניות
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund >/dev/null
+          mkdir -p /tmp/csv
+          for t in leads:0 purchases:282711056 mailings:704173708 waves:359996576 analysis:710427304 questions:613597171 inquiries:1189797577 feedback:1067761873; do
+            n=${t%%:*}
+            curl -sfL -o "/tmp/csv/$n.csv" "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=${t#*:}" || rm -f "/tmp/csv/$n.csv"
+            if [ -s "/tmp/csv/$n.csv" ] && head -c 200 "/tmp/csv/$n.csv" | grep -qi '<html\|<!doctype'; then rm -f "/tmp/csv/$n.csv"; fi
+            [ -s "/tmp/csv/$n.csv" ] || echo "::warning::הלשונית $n לא נקראה"
+          done
+          f() { [ -s "/tmp/csv/$1.csv" ] && echo "/tmp/csv/$1.csv" || echo -; }
+          # קובץ הנתונים נבנה ב-PHP, כמו בשרת
+          php scripts/php-leads.php /tmp/csv/leads.csv "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" $(f purchases) $(f mailings) $(f waves) $(f analysis) $(f questions) $(f inquiries) $(f feedback) > /tmp/leads.json
+          echo "נקרא ב-$(TZ=Asia/Jerusalem date '+%d/%m %H:%M') שעון ישראל"
+      - name: תובנות שיחה, ספירות מהגיליון
+        continue-on-error: true
+        run: |
+          OUT=$(CSV_DIR=/tmp/csv python3 scripts/profile-insights.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 2>&1)
+          python3 - "$OUT" <<'PY'
+          import sys
+          parts, cur = [], ''
+          for line in sys.argv[1].splitlines():
+              if len((cur + line).encode()) > 2500 and cur:
+                  parts.append(cur); cur = ''
+              cur += line + '\n'
+          parts.append(cur)
+          for i, p in enumerate(parts, 1):
+              p = p.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::notice title=תובנות בגיליון {i}/{len(parts)}::{p}')
+          PY
       - name: עמודות ולשוניות חדשות
         continue-on-error: true
         run: |
@@ -38,15 +69,11 @@ jobs:
       - name: פרופיל
         run: |
           OUT=$(python3 scripts/profile-sheet.py 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU 'לידים' 2>&1) || { echo "::error::$(echo "$OUT" | tail -3 | tr '\n' ' ')"; exit 1; }
-          npm ci --ignore-scripts --no-audit --no-fund >/dev/null
-          npx tsx scripts/build-data.ts --sheet 1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU --gid 0 --purchases-gid 282711056 --out /tmp/leads.json >/dev/null
-          curl -sL -o /tmp/leads.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=0"
-          curl -sL -o /tmp/purchases.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=282711056"
-          curl -sL -o /tmp/mailings.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=704173708" || true
-          curl -sL -o /tmp/waves.csv "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=359996576" || true
-          PARITY=$(npx tsx scripts/parity-real.ts /tmp/leads.csv /tmp/purchases.csv /tmp/mailings.csv /tmp/waves.csv 2>&1 || true)
-          CHECK=$(npx tsx scripts/check-numbers.ts /tmp/leads.json /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)
-          CHECK="$CHECK"$'\n'"$(npx tsx scripts/popup-diag.ts /tmp/leads.csv /tmp/purchases.csv 2>&1 || true)"
+          C=/tmp/csv
+          PARITY=$(npx tsx scripts/parity-real.ts $C/leads.csv $C/purchases.csv $C/mailings.csv $C/waves.csv $C/analysis.csv $C/questions.csv $C/inquiries.csv $C/feedback.csv 2>&1 || true)
+          CHECK=$(npx tsx scripts/check-numbers.ts /tmp/leads.json 2>&1 || true)
+          CHECK="$CHECK"$'\n'"$(npx tsx scripts/check-bot-first.ts /tmp/leads.json 2>&1 || true)"
+          CHECK="$CHECK"$'\n'"$(npx tsx scripts/popup-diag.ts $C/leads.csv $C/purchases.csv 2>&1 || true)"
           OUT="$PARITY"$'\n'"$CHECK"$'\n'"$(npx tsx scripts/summary.ts /tmp/leads.json)"$'\n'"$OUT"
           echo "$OUT"
           # הערה אחת מוגבלת בגודל, אז מפצלים לחלקים של עד 2500 בתים

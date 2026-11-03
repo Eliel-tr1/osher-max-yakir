@@ -14,6 +14,8 @@ const OSHER_SHEET_GID = '0';            // הלשונית "לידים". ייצו
 const OSHER_PURCHASES_GID = '282711056'; // הלשונית "רכישות": שורה לכל רכישה (החלטת המנהל, 2026-10-29)
 const OSHER_MAILINGS_GID = '704173708';  // הלשונית "דיוורים": שורה לכל רכישה בקמפיין (31/10/2026). חסרה = הסקשן מוסתר
 const OSHER_WAVES_GID = '359996576';     // הלשונית "דיוורים - סיכום"
+// תובנות שיחה (הנחיית המנהל 3/11/2026). לא חובה: לשונית שלא נקראה נשארת מהרענון הקודם, עם הזמן שבו נקראה
+const OSHER_INSIGHT_GIDS = ['analysis' => '710427304', 'questions' => '613597171', 'inquiries' => '1189797577', 'feedback' => '1067761873'];
 const OSHER_MIN_GAP = 10;
 
 /** מתי נבנו הנתונים שבשרת עכשיו: רק תאריך ומספר שורות */
@@ -72,13 +74,22 @@ function osher_refresh(): array {
     [$mailingsCsv] = osher_fetch_tab(OSHER_MAILINGS_GID);
     [$wavesCsv] = osher_fetch_tab(OSHER_WAVES_GID);
 
+    $extra = [];
+    $failed = [];
+    foreach (OSHER_INSIGHT_GIDS as $k => $gid) {
+        [$csv, $err] = osher_fetch_tab($gid);
+        if ($err) $failed[] = $k;
+        $extra[$k] = $csv !== null ? osher_parse_csv($csv) : null;
+    }
+
     try {
         $built = osher_build(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')),
-            $mailingsCsv !== null ? osher_parse_csv($mailingsCsv) : null, $wavesCsv !== null ? osher_parse_csv($wavesCsv) : null);
-        $file = $built['file'];
+            $mailingsCsv !== null ? osher_parse_csv($mailingsCsv) : null, $wavesCsv !== null ? osher_parse_csv($wavesCsv) : null, $extra);
     } catch (RuntimeException $e) {
         return [422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']];
     }
+    osher_keep_failed_parts($built, $failed);
+    $file = $built['file'];
     if (!$file['leads']) return [422, ['ok' => false, 'error' => 'לא נמצאו לידים בטבלה. הנתונים הקודמים נשארו.']];
 
     // הקודים המזהים קודם, ואז הנתונים: דף שרואה נתונים חדשים מוצא כבר את הקודים שלהם. כשל בקודים לא מפיל את הרענון
@@ -93,6 +104,33 @@ function osher_refresh(): array {
         'purchases' => count($file['purchases']),
         'mailings' => $file['mailings'] === null ? null : count($file['mailings']),
         'mailingWaves' => $file['mailingWaves'] === null ? null : count($file['mailingWaves']),
+        'insights' => array_map(fn ($p) => $p === null ? null : count($p['rows']), $file['insights']),
+        'keptFromBefore' => $failed,
         'links' => $links,
     ]];
+}
+
+/**
+ * לשונית של תובנות השיחה שהקריאה שלה נכשלה: נשארים הנתונים הקודמים שלה, עם הזמן שבו נקראו (readAt), ולא נעלמים.
+ * הליד של כל שורה מחושב מחדש לפי הקוד המזהה, כי סדר הלידים יכול להשתנות בין רענונים.
+ */
+function osher_keep_failed_parts(array &$built, array $failed): void {
+    if (!$failed) return;
+    $prev = json_decode(osher_read_private('leads.json') ?? 'null', true);
+    $prevIds = json_decode(osher_read_private('ids.json') ?? 'null', true);
+    $leadOfNs = $built['leadOfNs'] ?? [];
+    foreach ($failed as $k) {
+        $part = $prev['insights'][$k] ?? null;
+        if (!is_array($part) || !isset($part['rows']) || !is_array($part['rows'])) continue;
+        $ids = $prevIds[$k] ?? null;
+        if ($k !== 'questions') {
+            if (!is_array($ids) || count($ids['ns'] ?? []) !== count($part['rows'])) continue;
+            foreach ($part['rows'] as $i => $row) {
+                $ns = $ids['ns'][$i];
+                $part['rows'][$i]['lead'] = $ns !== '' && array_key_exists($ns, $leadOfNs) ? $leadOfNs[$ns] : null;
+            }
+        }
+        $built['file']['insights'][$k] = $part;
+        $built['ids'][$k] = $ids;
+    }
 }

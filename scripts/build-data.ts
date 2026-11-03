@@ -5,13 +5,15 @@
  *       [--mailings-gid 704173708] [--waves-gid 359996576]
  *       הטבלה האמיתית (קריאה בלבד). gid 0 = הלשונית "לידים", purchases-gid = הלשונית "רכישות" (החלטת המנהל, 2026-10-29),
  *       mailings-gid = "דיוורים", waves-gid = "דיוורים - סיכום" (31/10/2026; לא חובה)
+ *       ולשוניות תובנות השיחה (3/11/2026; לא חובה): "ניתוח שיחות", "שאלות לסוכן", "פניות", "משובים"
+ *   --ids-out <path>: כותב גם את הקובץ הפרטי (קודים מזהים, שמות וטקסט חופשי). רק לבדיקה מקומית, לא לריפו
  * הקריאה היא ייצוא מלא של הלשונית: כוללת גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26).
  * בקובץ אין שמות, טלפונים ומיילים. אם מבנה הטבלה השתנה, הסקריפט נכשל ולא כותב כלום.
  */
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { demoLeadsFile } from '../lib/leads/demo';
-import { leadsFromRows } from '../lib/leads/fromSheet';
+import { demoData } from '../lib/leads/demo';
+import { buildData, type PrivateIds } from '../lib/leads/fromSheet';
 import { pack } from '../lib/leads/file';
 import type { LeadsFile } from '../lib/leads/types';
 import { parseCsv } from '../lib/sheet/parse';
@@ -43,8 +45,14 @@ async function optionalTab(id: string, gid: string): Promise<string[][] | null> 
   }
 }
 
-async function fromSheet(id: string, gid: string, purchasesGid: string, mailingsGid: string, wavesGid: string): Promise<LeadsFile> {
-  return leadsFromRows(await fetchTab(id, gid), await fetchTab(id, purchasesGid), new Date(), await optionalTab(id, mailingsGid), await optionalTab(id, wavesGid));
+/** הלשוניות של תובנות השיחה (הנחיית המנהל 3/11/2026) */
+export const INSIGHT_GIDS = { analysis: '710427304', questions: '613597171', inquiries: '1189797577', feedback: '1067761873' };
+
+async function fromSheet(id: string, gid: string, purchasesGid: string, mailingsGid: string, wavesGid: string): Promise<{ file: LeadsFile; ids: PrivateIds }> {
+  return buildData(await fetchTab(id, gid), await fetchTab(id, purchasesGid), new Date(), await optionalTab(id, mailingsGid), await optionalTab(id, wavesGid), {
+    analysis: await optionalTab(id, INSIGHT_GIDS.analysis), questions: await optionalTab(id, INSIGHT_GIDS.questions),
+    inquiries: await optionalTab(id, INSIGHT_GIDS.inquiries), feedback: await optionalTab(id, INSIGHT_GIDS.feedback),
+  });
 }
 
 async function main() {
@@ -54,12 +62,14 @@ async function main() {
   const purchasesGid = arg('--purchases-gid') ?? process.env.PURCHASES_GID ?? '282711056';
   const mailingsGid = arg('--mailings-gid') ?? process.env.MAILINGS_GID ?? '704173708';
   const wavesGid = arg('--waves-gid') ?? process.env.WAVES_GID ?? '359996576';
-  const file = process.argv.includes('--demo') || !sheet ? demoLeadsFile() : await fromSheet(sheet, gid, purchasesGid, mailingsGid, wavesGid);
+  const { file, ids } = process.argv.includes('--demo') || !sheet ? demoData() : await fromSheet(sheet, gid, purchasesGid, mailingsGid, wavesGid);
   if (file.origin === 'sheet' && file.leads.length === 0) throw new Error('לא נמצאו לידים בטבלה: לא מעדכן, כדי לא למחוק את מה שבאוויר');
   await mkdir(dirname(out), { recursive: true });
   const tmp = `${out}.tmp`;
   await writeFile(tmp, pack(file));
   await rename(tmp, out);
+  const idsOut = arg('--ids-out');
+  if (idsOut) await writeFile(idsOut, JSON.stringify(ids));
   console.log(`${file.origin}: ${file.sheetRows} שורות לידים -> ${file.leads.length} לידים, ${file.purchaseRows} שורות רכישות -> ${file.purchases.length} רכישות, דיוורים ${file.mailings?.length ?? 'חסר'} -> ${out}`);
 }
 

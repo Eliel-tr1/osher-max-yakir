@@ -9,28 +9,49 @@ import { BASE_PATH } from '@/lib/app';
  */
 export const CHAT_URL = 'https://console.thecloud.chat/inbox/';
 
+interface PrivateRows {
+  ns: string[];
+  names: string[];
+  texts: string[];
+}
+
 interface Ids {
   generatedAt: string;
   leads: string[];
   purchases: string[];
   mailings: string[];
+  /** תובנות שיחה (3/11/2026): קוד מזהה, שם וטקסט חופשי לכל שורה */
+  analysis?: PrivateRows | null;
+  inquiries?: PrivateRows | null;
+  feedback?: PrivateRows | null;
+  questions?: string[][] | null;
+  /** קישור ללשונית "שאלות לסוכן" בגיליון, רק אחרי כניסה */
+  questionsUrl?: string | null;
 }
 
 type Status = 'loading' | 'off' | 'out' | 'in';
-export type LinkKind = 'lead' | 'purchase' | 'mailing';
+export type LinkKind = 'lead' | 'purchase' | 'mailing' | 'analysis' | 'inquiry' | 'feedback';
+/** שורות של תובנות השיחה, שיש להן שם וטקסט בקובץ הפרטי */
+export type RowKind = 'analysis' | 'inquiry' | 'feedback';
 
 interface Auth {
   status: Status;
   /** הקודים מרענון אחר מהנתונים שבדף */
   stale: boolean;
   link: (kind: LinkKind, i: number | undefined) => string | null;
+  /** שם וטקסט חופשי לשורה של תובנות השיחה. '' = אין */
+  name: (kind: RowKind, i: number) => string;
+  text: (kind: RowKind, i: number) => string;
+  /** קישורים לשיחות לדוגמה של שאלה */
+  examples: (i: number) => string[];
+  questionsUrl: string | null;
   signIn: (password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   error: string | null;
 }
 
 const AuthContext = createContext<Auth>({
-  status: 'off', stale: false, link: () => null, signIn: async () => false, signOut: async () => {}, error: null,
+  status: 'off', stale: false, link: () => null, name: () => '', text: () => '', examples: () => [], questionsUrl: null, signIn: async () => false, signOut: async () => {}, error: null,
 });
 
 export function useAuth(): Auth {
@@ -88,17 +109,28 @@ export function AuthProvider({ generatedAt, children }: { generatedAt: string; c
   }, []);
 
   const fresh = ids !== null && ids.generatedAt === generatedAt;
+  const rowsOf = useCallback(
+    (kind: RowKind): PrivateRows | null => (!fresh || !ids ? null : (kind === 'analysis' ? ids.analysis : kind === 'inquiry' ? ids.inquiries : ids.feedback) ?? null),
+    [fresh, ids],
+  );
   const link = useCallback(
     (kind: LinkKind, i: number | undefined) => {
       if (!fresh || i === undefined || !ids) return null;
-      const ns = (kind === 'lead' ? ids.leads : kind === 'purchase' ? ids.purchases : ids.mailings)[i];
+      const list = kind === 'lead' ? ids.leads : kind === 'purchase' ? ids.purchases : kind === 'mailing' ? ids.mailings : rowsOf(kind)?.ns;
+      const ns = list?.[i];
       return ns ? `${CHAT_URL}${encodeURIComponent(ns)}` : null;
     },
+    [fresh, ids, rowsOf],
+  );
+  const name = useCallback((kind: RowKind, i: number) => rowsOf(kind)?.names[i] ?? '', [rowsOf]);
+  const text = useCallback((kind: RowKind, i: number) => rowsOf(kind)?.texts[i] ?? '', [rowsOf]);
+  const examples = useCallback(
+    (i: number) => (fresh && ids?.questions?.[i] ? ids.questions[i].map((ns) => `${CHAT_URL}${encodeURIComponent(ns)}`) : []),
     [fresh, ids],
   );
 
   return (
-    <AuthContext.Provider value={{ status, stale: status === 'in' && ids !== null && !fresh, link, signIn, signOut, error }}>
+    <AuthContext.Provider value={{ status, stale: status === 'in' && ids !== null && !fresh, link, name, text, examples, questionsUrl: ids?.questionsUrl ?? null, signIn, signOut, error }}>
       {children}
     </AuthContext.Provider>
   );

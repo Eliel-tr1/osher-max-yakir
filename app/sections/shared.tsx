@@ -1,7 +1,30 @@
 'use client';
 
-import type { Bucket } from '@/lib/metrics';
-import { fmtDay, fmtMonthShort } from '../charts';
+import { SIDE_LABEL, type BotSide, type Bucket } from '@/lib/metrics';
+import { fmtDay, fmtMonthShort, type Series } from '../charts';
+
+/** הצבעים של "של הבוט" מול השאר, אחידים בכל הדף (הנחיית המנהל, 1/11/2026) */
+export const SIDE: Record<BotSide, { color: string; hatch?: boolean }> = {
+  yes: { color: '--bot' },
+  no: { color: '--notbot' },
+  open: { color: '--open-b', hatch: true },
+};
+export const SIDE_SERIES: Series[] = (['yes', 'no', 'open'] as BotSide[]).map((k) => ({ key: k, label: SIDE_LABEL[k], ...SIDE[k] }));
+
+/** שם קצר לצ'יפ של סיבה (הקופון האישי, גם של איש קשר אחר, הוא צ'יפ אחד) */
+export function shortReason(name: string): string {
+  if (name.startsWith('קופון הבוט')) return 'קופון הבוט';
+  const m: Record<string, string> = {
+    'שיחה מכירתית לפני הרכישה': 'שיחה מכירתית',
+    'הבוט שלח קישור לאתר': 'קישור לאתר',
+    'קישור הבוט (vitrue)': 'קישור vitrue',
+    'הבוט שלח קופון או קישור רכישה': 'קופון או קישור רכישה',
+    'רכישה עד 72 שעות אחרי דיוור הבוט': 'אחרי דיוור',
+    'שיחה קצרה בלי קישור מהבוט': 'שיחה קצרה',
+    'שיחה שירותית בלי קישור מהבוט': 'שיחה שירותית',
+  };
+  return m[name] ?? name;
+}
 
 export const BUCKETS: { id: Bucket; label: string }[] = [
   { id: 'day', label: 'יום' },

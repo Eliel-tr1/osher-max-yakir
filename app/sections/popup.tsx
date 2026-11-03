@@ -2,16 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { botSide, fromPopup, inside, POPUP_START, popupCompare, popupFunnel, timeSeries, type Bucket, type CompareRow, type PopupPerson, type Range } from '@/lib/metrics';
-import { BarList, Columns, FunnelStrip, Info, ListBlock, RateBars, Stats, fmtDay, money, nf, pct } from '../charts';
+import { BarList, Columns, Fold, FunnelStrip, Info, ListBlock, RateBars, Stats, fmtDay, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum, peopleCount, PeopleList } from '../lists';
 import { BucketChips, fmtBucket } from './shared';
 
 /**
- * הפופאפ באתר (הנחיית המנהל, 31/10 ו-1/11/2026): מי שב-utm_campaign שלו כתוב popup_website.
- * זמן הכניסה הוא "תאריך כניסה" המוקדם ביותר שלו, וטווח התאריכים חל עליו.
+ * הפופאפ באתר (הנחיית המנהל, 31/10, 1/11 ו-3/11/2026): מי שב-utm_campaign שלו כתוב popup_website.
+ * זמן הכניסה הוא "תאריך כניסה" המוקדם ביותר שלו, וטווח התאריכים חל עליו. ההשוואה למי שלא הגיע מהפופאפ בלשונית "לצוות".
  */
-export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[]; range: Range; rangeKey: string }) {
+export function PopupSection({ people, range, rangeKey, open, onToggle }: { people: PopupPerson[]; range: Range; rangeKey: string; open: boolean; onToggle: () => void }) {
   const [by, setBy] = useState<Bucket | null>(null);
   const [lastKey, setLastKey] = useState(rangeKey);
   if (lastKey !== rangeKey) {
@@ -28,7 +28,6 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
       popup, b,
       f: popupFunnel(popup),
       series: timeSeries(popup, (x) => x.entry, b, 1, () => [1]),
-      cmp: popupCompare(people, range),
       steps: {
         sentence: popup.filter((x) => x.lead.messages === 1),
         two: popup.filter((x) => x.lead.messages === 2),
@@ -42,15 +41,15 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
   const { f } = v;
   if (!people.some((x) => fromPopup(x.lead))) return null;
 
-  const groups: [string, CompareRow, string][] = [
-    ['מהפופאפ', v.cmp.popup, '--bot'],
-    ['בוט וואטסאפ בלי הפופאפ', v.cmp.bot, '--notbot'],
-    ['כל מי שלא הגיע מהפופאפ', v.cmp.others, '--notbot'],
-  ];
-
   return (
-    <section className="card" id="popup" aria-labelledby="popup-h">
-      <h2 id="popup-h">הפופאפ באתר</h2>
+    <Fold
+      id="popup" title="הפופאפ באתר" open={open} onToggle={onToggle}
+      stats={[
+        { label: 'נכנסו', value: nf.format(f.entered) },
+        { label: 'שיחות אמיתיות', value: nf.format(f.real) },
+        { label: 'קנו אחרי הכניסה', value: nf.format(f.buyers) },
+      ]}
+    >
       <FunnelStrip
         fromPrev
         steps={[
@@ -95,24 +94,6 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
         </div>
       </div>
 
-      <h3>
-        מול מי שלא הגיע מהפופאפ, מ-{fmtDay(v.cmp.from)}{' '}
-        <Info>
-          אנשים שנכנסו מ-{fmtDay(v.cmp.from)} (שבוע עליית הפופאפ, או תחילת הטווח שבחרת). שיחה אמיתית: מתוך מי שהסוכן כבר סרק. &quot;כל מי שלא הגיע מהפופאפ&quot; כולל גם
-          מי שנכנס לטבלה כשקנה באתר, ולכן אחוז הרכישה שלו גבוה.
-        </Info>
-      </h3>
-      <div className="two">
-        <div>
-          <h3 className="minor">ניהלו שיחה אמיתית</h3>
-          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.scanned ? r.realRate : null, sub: r.scanned ? `${nf.format(r.real)} מתוך ${nf.format(r.scanned)}` : 'לא נסרקו', color: c }))} />
-        </div>
-        <div>
-          <h3 className="minor">קנו אחרי הכניסה</h3>
-          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.buyRate, sub: `${nf.format(r.buyers)} מתוך ${nf.format(r.people)}`, color: c }))} />
-        </div>
-      </div>
-
       <ListBlock
         note={note}
         items={[
@@ -124,6 +105,43 @@ export function PopupSection({ people, range, rangeKey }: { people: PopupPerson[
           { id: 'bot', title: 'רכישות של הבוט אחרי הכניסה', count: buysCount(v.bot), sum: buysSum(v.bot), render: () => <BuyList purchases={v.bot} /> },
         ]}
       />
+    </Fold>
+  );
+}
+
+/**
+ * הפופאפ מול מי שלא הגיע ממנו (עבר ללשונית "לצוות", הנחיית המנהל 3/11/2026). הקבוצה "כל מי שלא הגיע מהפופאפ" כוללת לידים
+ * שנוצרו ברגע הרכישה באתר, ולכן אחוז הרכישה שלה גבוה מאוד.
+ */
+export function PopupCompare({ people, range }: { people: PopupPerson[]; range: Range }) {
+  const cmp = useMemo(() => popupCompare(people, range), [people, range]);
+  if (!people.some((x) => fromPopup(x.lead))) return null;
+  const groups: [string, CompareRow, string][] = [
+    ['מהפופאפ', cmp.popup, '--bot'],
+    ['בוט וואטסאפ בלי הפופאפ', cmp.bot, '--notbot'],
+    ['כל מי שלא הגיע מהפופאפ', cmp.others, '--notbot'],
+  ];
+  return (
+    <section className="card" id="popupcmp" aria-labelledby="popupcmp-h">
+      <h2 id="popupcmp-h">
+        הפופאפ מול מי שלא הגיע ממנו, מ-{fmtDay(cmp.from)}{' '}
+        <Info>
+          אנשים שנכנסו מ-{fmtDay(cmp.from)} (שבוע עליית הפופאפ, או תחילת הטווח שבחרת). שיחה אמיתית: מתוך מי שהסוכן כבר סרק.
+        </Info>
+      </h2>
+      <p className="hint tight">
+        &quot;כל מי שלא הגיע מהפופאפ&quot; כולל לידים שנוצרו בטבלה ברגע הרכישה באתר, ולכן אחוז הרכישה שלו גבוה מאוד. זו לא השוואה של אותו קהל.
+      </p>
+      <div className="two">
+        <div>
+          <h3 className="minor">ניהלו שיחה אמיתית</h3>
+          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.scanned ? r.realRate : null, sub: r.scanned ? `${nf.format(r.real)} מתוך ${nf.format(r.scanned)}` : 'לא נסרקו', color: c }))} />
+        </div>
+        <div>
+          <h3 className="minor">קנו אחרי הכניסה</h3>
+          <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.buyRate, sub: `${nf.format(r.buyers)} מתוך ${nf.format(r.people)}`, color: c }))} />
+        </div>
+      </div>
     </section>
   );
 }

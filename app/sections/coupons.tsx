@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import type { Lead, Purchase } from '@/lib/leads/types';
 import { afterBotCoupon, autoBucket, BOT_COUPON_GROUP, botCoupons, COUPON_RECORDED_FROM, botCouponSeries, couponRows, SPOOKY, type Bucket, type Range } from '@/lib/metrics';
-import { BarList, Bars100, BarTable, Columns, fmtDay, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
+import { BarList, Bars100, BarTable, Columns, fmtDay, Fold, Info, Legend, ListBlock, Stats, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum } from '../lists';
-import { SIDE } from './botVsRest';
+import { SIDE } from './shared';
 import { BucketChips, Chips, fmtBucket } from './shared';
 
 /** שם הקוד לתצוגה, עם הסבר קצר לקופונים המוכרים */
@@ -16,8 +16,11 @@ function CodeName({ name }: { name: string }) {
   return <>{name}</>;
 }
 
-/** סקשן הקופונים (הנחיית המנהל, 31/10 ו-1/11/2026) */
-export function CouponsSection({ people, all, ever, range, rangeKey }: {
+/** כמה קודים מוצגים בטבלה לפני "להציג את כל ה-N" (הנחיית המנהל 3/11/2026) */
+const TOP_CODES = 5;
+
+/** סקשן הקופונים (הנחיית המנהל, 31/10, 1/11 ו-3/11/2026). סגור כברירת מחדל */
+export function CouponsSection({ people, all, ever, range, rangeKey, open, onToggle }: {
   /** הלידים אחרי סינון המקור והתהליך, להפקת הקופונים */
   people: Lead[];
   all: Purchase[];
@@ -25,6 +28,8 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
   ever: Purchase[];
   range: Range;
   rangeKey: string;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const [sort, setSort] = useState<'count' | 'money'>('count');
   const [by, setBy] = useState<Bucket | null>(null);
@@ -39,29 +44,26 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
     const made = people.filter((l) => l.botCoupon && l.couponAt).map((l) => ({ at: l.couponAt! }));
     const auto = autoBucket(made);
     const b = by ?? auto;
-    const groups = new Map<string, Purchase[]>();
-    for (const p of all) {
-      if (!p.coupon) continue;
-      const g = groups.get(p.coupon);
-      if (g) g.push(p);
-      else groups.set(p.coupon, [p]);
-    }
     return {
       auto, b,
       bc: botCoupons(people, all, range),
       after: afterBotCoupon(people, ever, range),
       series: botCouponSeries(people, range, b),
       rows: couponRows(all, sort),
-      groups,
       none: all.filter((p) => !p.coupon).length,
     };
   }, [people, all, ever, range, by, sort]);
   const withCoupon = all.length - v.none;
 
   return (
-    <section className="card" id="coupons" aria-labelledby="coupons-h">
-      <h2 id="coupons-h">קופונים</h2>
-
+    <Fold
+      id="coupons" title="קופונים" open={open} onToggle={onToggle}
+      stats={[
+        { label: 'הופקו', value: nf.format(v.bc.made) },
+        { label: 'שומשו', value: nf.format(v.bc.used) },
+        { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made) },
+      ]}
+    >
       <h3>הקופון האישי של הבוט</h3>
       <Stats items={[
         {
@@ -69,7 +71,7 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
           sub: v.bc.undated ? `ועוד ${nf.format(v.bc.undated)} בלי תאריך` : undefined,
         },
         { label: 'שומשו', value: `${nf.format(v.bc.used)} רכישות`, sub: money.format(v.bc.usedPaid) },
-        { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made), ring: v.bc.made ? v.bc.used / v.bc.made : null },
+        { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made), sub: 'הקופון תקף יום אחד', ring: v.bc.made ? v.bc.used / v.bc.made : null },
       ]} />
       <p className="hint tight">
         הפקות לפי {v.b === 'day' ? 'יום' : v.b === 'week' ? 'שבוע' : 'חודש'}{' '}
@@ -98,15 +100,15 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
           label="הקוד שהוקלד"
           parts={[
             { value: v.after.byKind.personal.length, color: '--bot', text: nf.format(v.after.byKind.personal.length), more: 'הקוד האישי' },
-            { value: v.after.byKind.generic.length, color: '--series-2', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
-            { value: v.after.byKind.none.length, color: '--notbot', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
+            { value: v.after.byKind.generic.length, color: '--notbot', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
+            { value: v.after.byKind.none.length, color: '--open-b', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
           ]}
         />
-        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--series-2' }, { label: 'בלי קוד', color: '--notbot' }]} />
+        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--notbot' }, { label: 'בלי קוד', color: '--open-b' }]} />
         {v.after.generic.length > 0 && (
           <>
             <h3>הקודים הכלליים שהוקלדו במקום</h3>
-            <BarList items={v.after.generic} max={6} color="--series-2" />
+            <BarList items={v.after.generic} max={6} color="--notbot" />
           </>
         )}
         <p className="hint tight">ועוד {nf.format(v.after.activation.length)} רכישות דמי הפעלה</p>
@@ -142,6 +144,7 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
           : <Legend items={[{ label: 'סכום', color: SIDE.yes.color }]} />}
         <BarTable
           headers={['קוד', '', 'רכישות', 'סכום', 'של הבוט']}
+          max={TOP_CODES}
           rows={v.rows.map((r) => ({
             key: r.name,
             name: <CodeName name={r.name} />,
@@ -153,14 +156,6 @@ export function CouponsSection({ people, all, ever, range, rangeKey }: {
           }))}
         />
       </div>
-
-      <ListBlock
-        note={note}
-        items={v.rows.map((r) => {
-          const g = v.groups.get(r.name) ?? [];
-          return { id: `c-${r.name}`, title: r.name, count: buysCount(g), sum: buysSum(g), render: () => <BuyList purchases={g} /> };
-        })}
-      />
-    </section>
+    </Fold>
   );
 }
