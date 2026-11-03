@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { BASE_PATH, REFRESH_MS } from '@/lib/app';
+import { BASE_PATH } from '@/lib/app';
 import { unpack } from '@/lib/leads/file';
 import type { LeadsFile } from '@/lib/leads/types';
 import {
@@ -80,28 +80,25 @@ export default function Dashboard() {
     }
   }, []);
 
+  // פעם אחת כשהדף נפתח: הנתונים מהשרת, ובדיקה שהדף עצמו לא גרסה ישנה מהמטמון. בלי שום בדיקה חוזרת:
+  // הנתונים מתעדכנים רק בכפתור או ברענון של 06:30 (הנחיית המנהל 3/11/2026)
   useEffect(() => {
-    const check = () => {
-      fetchData();
-      if (!BUILD) return;
-      fetch(`${BASE_PATH}/version.json?t=${Date.now()}`, { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((v: { sha?: string } | null) => {
-          if (!v?.sha || v.sha === BUILD) return;
-          // פעם אחת לכל גרסה, כדי שלא ייווצר מעגל אם הדפדפן מחזיר שוב את הדף הישן
-          try {
-            if (sessionStorage.getItem('osher-reload') === v.sha) return;
-            sessionStorage.setItem('osher-reload', v.sha);
-          } catch {
-            return;
-          }
-          window.location.reload();
-        })
-        .catch(() => null);
-    };
-    check();
-    const id = setInterval(check, REFRESH_MS);
-    return () => clearInterval(id);
+    fetchData();
+    if (!BUILD) return;
+    fetch(`${BASE_PATH}/version.json?t=${Date.now()}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v: { sha?: string } | null) => {
+        if (!v?.sha || v.sha === BUILD) return;
+        // פעם אחת לכל גרסה, כדי שלא ייווצר מעגל אם הדפדפן מחזיר שוב את הדף הישן
+        try {
+          if (sessionStorage.getItem('osher-reload') === v.sha) return;
+          sessionStorage.setItem('osher-reload', v.sha);
+        } catch {
+          return;
+        }
+        window.location.reload();
+      })
+      .catch(() => null);
   }, [fetchData]);
 
   /** כפתור הרענון: השרת קורא את הטבלה עכשיו (refresh.php), ואז הדף טוען את הנתונים החדשים */

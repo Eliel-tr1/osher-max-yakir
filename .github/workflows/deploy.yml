@@ -77,9 +77,8 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         run: |
           npm ci
-          # הנתונים האמיתיים נבנים לפני הבנייה. אם הטבלה לא נקראת או שמבנה עמודה השתנה, הפריסה נעצרת
-          npx tsx scripts/build-data.ts --sheet "$SHEET_ID" --gid "$SHEET_GID" --purchases-gid "$PURCHASES_GID"
-          # הגרסה נכנסת לבנייה, כדי שדף פתוח ייטען מחדש לבד כשעולה גרסה חדשה
+          # הנתונים לא נבנים כאן: בשרת, באותה פונקציה של הכפתור ושל 06:30 (הנחיית המנהל 3/11/2026). ראו השלב "רענון ותזמון"
+          # הגרסה נכנסת לבנייה, כדי שדף שנפתח מהמטמון ייטען מחדש פעם אחת כשעלתה גרסה חדשה
           NEXT_PUBLIC_BUILD_SHA="${GITHUB_SHA::7}" npm run check
       - name: אריזה
         if: steps.gate.outputs.ready == 'true'
@@ -87,6 +86,8 @@ jobs:
           REL="${GITHUB_SHA::7}"
           echo "{\"app\":\"osher-max-dashboard\",\"sha\":\"$REL\",\"builtAt\":\"$(date -u +%FT%TZ)\"}" > out/version.json
           touch out/.osher-max-dashboard
+          # נתוני ההדגמה שבריפו לא עולים לאתר. הנתונים האמיתיים בשרת, מחוץ לאתר
+          rm -rf out/data
           tar -czf release.tgz -C out .
       - name: העלאה והחלפה
         if: steps.gate.outputs.ready == 'true'
@@ -99,6 +100,50 @@ jobs:
           sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:$STATE/release-$REL.tgz"
           sshpass -e scp -P "${PORT:-22}" $OPTS deploy/static-deploy.sh "$USER@$HOST:$STATE/static-deploy.sh"
           sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "bash ~/$STATE/static-deploy.sh $REL ~/$STATE/release-$REL.tgz"
+      - name: רענון ותזמון יומי (06:30 שעון ישראל)
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          # הרענון האוטומטי היחיד: crontab בשרת, פעם ביום ב-06:30 לפי שעון ישראל (הנחיית המנהל 3/11/2026).
+          # מותקן רק אם השעון של השרת הוא שעון ישראל, כולל קיץ וחורף. כל שורה אחרת של רענון הדשבורד נמחקת; שורות אחרות לא נוגעים בהן.
+          # אחרי הפריסה הנתונים נבנים פעם אחת באותה פונקציה (מבנה הנתונים יכול להשתנות עם הקוד), וזו גם הריצה לבדיקה.
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
+          OUT=$(sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'bash -s' 2>&1 <<'REMOTE' | grep -v "bashrc"
+          umask 077
+          STATE="$HOME/.cache/osher-max-dashboard"; mkdir -p "$STATE"
+          SCRIPT="$HOME/htdocs/ai.vitrue.co.il/oshermax/refresh-cron.php"
+          TAG="osher-max-dashboard:refresh"
+          PHP=$(command -v php)
+          ZONE=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || readlink /etc/localtime)
+          SUMMER=$(date -d "2026-07-01 12:00 UTC" +%z); WINTER=$(date -d "2026-01-01 12:00 UTC" +%z)
+          OK=no
+          case "$ZONE" in *Asia/Jerusalem*|*Asia/Tel_Aviv*|*Israel*) [ "$SUMMER" = "+0300" ] && [ "$WINTER" = "+0200" ] && OK=yes ;; esac
+          echo "שעון השרת: $ZONE, קיץ $SUMMER, חורף $WINTER, שעון ישראל: $OK"
+          CUR=$(crontab -l 2>"$STATE/ct.err"); RC=$?
+          if [ $RC -ne 0 ] && ! grep -qi "no crontab" "$STATE/ct.err"; then echo "crontab -l נכשל, לא נגעתי ב-crontab"; exit 1; fi
+          [ $RC -ne 0 ] && CUR=""
+          printf "%s\n" "$CUR" > "$STATE/crontab.bak"
+          MINE='osher-max-dashboard|oshermax/refresh|refresh-cron\.php'
+          KEEP=$(printf "%s\n" "$CUR" | grep -vE "$MINE" | sed '/^$/d')
+          echo "שורות רענון של הדשבורד שנמחקו: $(printf "%s\n" "$CUR" | grep -cE "$MINE")"
+          if [ "$OK" = yes ]; then
+            LINE="30 6 * * * $PHP $SCRIPT >> $STATE/refresh-cron.log 2>&1 # $TAG"
+            if [ -n "$KEEP" ]; then printf "%s\n%s\n" "$KEEP" "$LINE" | crontab -; else printf "%s\n" "$LINE" | crontab -; fi
+          elif [ -n "$KEEP" ]; then printf "%s\n" "$KEEP" | crontab -; else crontab -r 2>/dev/null || true; fi
+          AFTER=$(crontab -l 2>/dev/null)
+          if [ "$(printf "%s\n" "$AFTER" | grep -vE "$MINE" | sed '/^$/d')" != "$KEEP" ]; then
+            echo "שורות אחרות ב-crontab השתנו: מחזיר את הגיבוי"; crontab "$STATE/crontab.bak"; exit 1
+          fi
+          echo "תזמונים של הדשבורד אחרי הניקוי: $(printf "%s\n" "$AFTER" | grep -cE "$MINE")"
+          printf "%s\n" "$AFTER" | grep -E "$MINE" | sed "s#$HOME#~#g"
+          echo "שורות פעילות ב-crontab בסך הכול: $(printf "%s\n" "$AFTER" | grep -cvE '^[[:space:]]*(#|$)')"
+          echo "הסוכן הלילי ב-crontab: $(printf "%s\n" "$AFTER" | grep -v '^[[:space:]]*#' | grep -c 'osher-max-''agent')"
+          echo "ריצה לבדיקה: $("$PHP" "$SCRIPT" | tail -1 | cut -c1-400)"
+          REMOTE
+          )
+          echo "$OUT"
+          NOTE="${OUT//'%'/%25}"; NOTE="${NOTE//$'\r'/}"; NOTE="${NOTE//$'\n'/%0A}"
+          echo "::notice title=רענון ותזמון::$NOTE"
+          echo "$OUT" | grep -q "^ריצה לבדיקה: [0-9TZ:-]* 200 " || { echo "::error::הריצה לבדיקה של הרענון נכשלה"; exit 1; }
       - name: הגדרת הכניסה בסיסמה (רק אם יש סוד)
         if: steps.gate.outputs.ready == 'true'
         env:

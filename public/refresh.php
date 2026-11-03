@@ -1,28 +1,14 @@
 <?php
 /**
- * כפתור הרענון של הדשבורד: קורא את לשוניות הלידים והרכישות מגוגל שיטס, מנקה כפילויות ופרטים אישיים,
- * ומחליף את קובץ הנתונים (מחוץ לתיקיית האתר, מוגש דרך data.php). הכול בשרת, בלי גיטהאב ובלי מפתחות.
+ * כפתור הרענון של הדשבורד: קורא את הגיליון עכשיו, דרך הפונקציה האחת שבונה את הנתונים (_refresh.php).
  * GET  -> מצב: מתי הנתונים נבנו (רק תאריך ומספר שורות)
- * POST -> רענון, רק למי שנכנס בסיסמה. לכל היותר פעם ב-10 שניות; לחיצות בזמן רענון מחכות לו.
- * העיבוד עצמו ב-_leads.php, שנבדק מול גרסת ה-TypeScript (tests/parity.test.ts).
+ * POST -> רענון, רק למי שנכנס בסיסמה. כניסה לדף לא מפעילה רענון (הנחיית המנהל 3/11/2026).
  */
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Robots-Tag: noindex');
 
-require __DIR__ . '/_leads.php';
-require __DIR__ . '/_auth.php';
-
-const SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
-const SHEET_GID = '0';            // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
-const PURCHASES_GID = '282711056'; // הלשונית "רכישות": שורה לכל רכישה (החלטת המנהל, 2026-10-29)
-const MAILINGS_GID = '704173708';  // הלשונית "דיוורים": שורה לכל רכישה בקמפיין (31/10/2026). חסרה = הסקשן מוסתר
-const WAVES_GID = '359996576';     // הלשונית "דיוורים - סיכום"
-
-const MIN_GAP = 10;
-
-$dataFile = osher_data_file();
-$dataDir = dirname($dataFile);
+require __DIR__ . '/_refresh.php';
 
 function out(int $code, array $body): void {
     http_response_code($code);
@@ -30,94 +16,8 @@ function out(int $code, array $body): void {
     exit;
 }
 
-function current_meta(string $file): array {
-    $head = @file_get_contents($file, false, null, 0, 400) ?: '';
-    preg_match('/"generatedAt":"([^"]+)"/', $head, $g);
-    preg_match('/"sheetRows":(\d+)/', $head, $r);
-    return ['generatedAt' => $g[1] ?? null, 'sheetRows' => isset($r[1]) ? (int) $r[1] : null];
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    out(200, ['ok' => true] + current_meta($dataFile));
-}
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    out(405, ['ok' => false, 'error' => 'method']);
-}
-if (!osher_auth_in()) {
-    out(401, ['ok' => false, 'error' => 'צריך להיכנס']);
-}
-if (!is_dir($dataDir) && !@mkdir($dataDir, 0700, true)) {
-    out(500, ['ok' => false, 'error' => 'אין תיקיית נתונים']);
-}
-
-// נעילה: רענון אחד בכל פעם. מי שמגיע באמצע מחכה, ומקבל את התוצאה של אותו רענון.
-$lock = fopen($dataDir . '/.refresh.lock', 'c');
-if (!$lock || !flock($lock, LOCK_EX)) {
-    out(500, ['ok' => false, 'error' => 'נעילה נכשלה']);
-}
-$meta = current_meta($dataFile);
-$age = $meta['generatedAt'] ? time() - strtotime($meta['generatedAt']) : PHP_INT_MAX;
-if ($age < MIN_GAP) {
-    out(200, ['ok' => true, 'reused' => true] + $meta);
-}
-
-/** ייצוא CSV מלא של לשונית אחת (כולל שורות שמוסתרות בסינון). מחזיר [csv, שגיאה] */
-function fetch_tab(string $gid): array {
-    $url = 'https://docs.google.com/spreadsheets/d/' . rawurlencode(SHEET_ID) . '/export?format=csv&gid=' . $gid;
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 40,
-        CURLOPT_USERAGENT => 'osher-max-dashboard',
-    ]);
-    $csv = curl_exec($ch);
-    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-    if ($csv === false || $code !== 200) {
-        error_log("osher-max refresh: sheet gid $gid HTTP $code $err");
-        return [null, 'קריאת הטבלה נכשלה (' . ($err ?: "HTTP $code") . '). הנתונים הקודמים נשארו.'];
-    }
-    if (preg_match('/^\s*</', $csv)) {
-        return [null, 'גוגל החזיר דף ולא טבלה: כנראה הטבלה לא משותפת לצפייה. הנתונים הקודמים נשארו.'];
-    }
-    return [$csv, null];
-}
-
-[$leadsCsv, $err] = fetch_tab(SHEET_GID);
-if ($err) out(502, ['ok' => false, 'error' => $err]);
-[$purchasesCsv, $err] = fetch_tab(PURCHASES_GID);
-if ($err) out(502, ['ok' => false, 'error' => $err]);
-
-// לשוניות הדיוורים לא חובה: כשהקריאה נכשלת הסקשן מוסתר, והשאר מתעדכן
-[$mailingsCsv] = fetch_tab(MAILINGS_GID);
-[$wavesCsv] = fetch_tab(WAVES_GID);
-
-try {
-    $built = osher_build(osher_parse_csv($leadsCsv), osher_parse_csv($purchasesCsv), new DateTimeImmutable('now', new DateTimeZone('UTC')),
-        $mailingsCsv !== null ? osher_parse_csv($mailingsCsv) : null, $wavesCsv !== null ? osher_parse_csv($wavesCsv) : null);
-    $file = $built['file'];
-} catch (RuntimeException $e) {
-    out(422, ['ok' => false, 'error' => $e->getMessage() . '. הנתונים הקודמים נשארו.']);
-}
-if (!$file['leads']) {
-    out(422, ['ok' => false, 'error' => 'לא נמצאו לידים בטבלה. הנתונים הקודמים נשארו.']);
-}
-
-if (!osher_write_private('leads.json', osher_pack($file))) {
-    out(500, ['ok' => false, 'error' => 'שמירת הנתונים נכשלה']);
-}
-// הקודים המזהים לקישורים לשיחות: מחוץ לתיקיית האתר, ומוגשים רק אחרי כניסה (links.php). כשל כאן לא מפיל את הרענון
-$links = osher_write_private('ids.json', json_encode($built['ids'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-out(200, [
-    'ok' => true,
-    'generatedAt' => $file['generatedAt'],
-    'sheetRows' => $file['sheetRows'],
-    'purchaseRows' => $file['purchaseRows'],
-    'leads' => count($file['leads']),
-    'purchases' => count($file['purchases']),
-    'mailings' => $file['mailings'] === null ? null : count($file['mailings']),
-    'mailingWaves' => $file['mailingWaves'] === null ? null : count($file['mailingWaves']),
-    'links' => $links,
-]);
+if ($_SERVER['REQUEST_METHOD'] === 'GET') out(200, ['ok' => true] + osher_current_meta(osher_data_file()));
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') out(405, ['ok' => false, 'error' => 'method']);
+if (!osher_auth_in()) out(401, ['ok' => false, 'error' => 'צריך להיכנס']);
+[$code, $body] = osher_refresh();
+out($code, $body);
