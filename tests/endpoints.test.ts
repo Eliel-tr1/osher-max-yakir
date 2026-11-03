@@ -55,5 +55,9 @@ describe.skipIf(!php)('server gates', () => {
     expect((await fetch(`${base}/data.php`)).status).toBe(401);
     expect((await fetch(`${base}/links.php`)).status).toBe(401);
     expect((await fetch(`${base}/_refresh.php`)).status).not.toBe(500);
+    // קריאת הגיליון עם חשבון שירות (#29): גישה ישירה לא עושה כלום ולא מחזירה כלום
+    const gs = await fetch(`${base}/_gsheet.php`);
+    expect(gs.status).not.toBe(500);
+    expect(await gs.text()).toBe('');
   });
 });

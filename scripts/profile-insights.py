@@ -3,6 +3,12 @@
 ההערות של הריצה ציבוריות (ראו #25)."""
 import csv, collections, io, os, re, sys, urllib.request
 
+
+def sheet_open(url, timeout):
+    """קריאה מהגיליון. עם GOOGLE_TOKEN (חשבון שירות, #29) הבקשה נשלחת עם טוקן, אחרת בקישור הציבורי"""
+    tok = os.environ.get('GOOGLE_TOKEN')
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': f'Bearer {tok}'} if tok else {}), timeout=timeout)
+
 SHEET = sys.argv[1]
 TABS = {'ניתוח שיחות': '710427304', 'שאלות לסוכן': '613597171', 'פניות': '1189797577', 'משובים': '1067761873', 'לידים': '0'}
 # עם CSV_DIR קוראים את הלשוניות שכבר הורדו (אותו רגע כמו שאר הבדיקות בריצה), לפי שם הקובץ
@@ -41,7 +47,7 @@ def load(gid):
     else:
         url = f'https://docs.google.com/spreadsheets/d/{SHEET}/export?format=csv&gid={gid}'
         try:
-            text = urllib.request.urlopen(url, timeout=90).read().decode('utf-8-sig')
+            text = sheet_open(url, 90).read().decode('utf-8-sig')
         except Exception as e:  # noqa: BLE001
             return None, type(e).__name__
     if text.lstrip().startswith('<'):

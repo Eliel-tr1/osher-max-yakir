@@ -31,6 +31,7 @@ description: איך כותבים קוד בפרויקט הזה - מבנה, שמו
 | `scripts/build-data.ts` | בונה את קובץ הנתונים, מהטבלה או הדגמה |
 | `public/_refresh.php` | `osher_refresh()`: הפונקציה האחת שבונה את הנתונים. קוראים לה הכפתור (`refresh.php`) והרענון של 06:30 (`refresh-cron.php`, שורת פקודה בלבד) |
 | `public/_leads.php` | תרגום של `fromSheet.ts` ל-PHP. `tests/parity.test.ts` דורש תוצאה זהה |
+| `public/_gsheet.php`, `scripts/google-token.php` | קריאת הגיליון עם חשבון שירות (#29): טוקן לקריאה בלבד ממפתח פרטי. בלי מפתח, הקישור הציבורי |
 | `public/data.php`, `links.php`, `auth.php`, `_auth.php` | הנתונים, הקובץ הפרטי והכניסה. הכול רק אחרי כניסה |
 | `scripts/check-numbers.ts`, `check-bot-first.ts`, `profile-insights.py`, `parity-real.ts` | בדיקות על הגיליון האמיתי ב"פרופיל טבלה": ספירות בלבד, כי ההערות ב-Actions ציבוריות |
 | `tests/` | בדיקות Vitest |

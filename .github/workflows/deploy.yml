@@ -100,6 +100,23 @@ jobs:
           sshpass -e scp -P "${PORT:-22}" $OPTS release.tgz "$USER@$HOST:$STATE/release-$REL.tgz"
           sshpass -e scp -P "${PORT:-22}" $OPTS deploy/static-deploy.sh "$USER@$HOST:$STATE/static-deploy.sh"
           sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" "bash ~/$STATE/static-deploy.sh $REL ~/$STATE/release-$REL.tgz"
+      - name: חשבון שירות של Google (רק אם יש סוד)
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+        run: |
+          # קריאת הגיליון עם חשבון שירות (#29), לפני הריצה לבדיקה, כדי שהיא תראה מאיפה נקרא. המפתח רק בסוד ובתיקייה הפרטית
+          # בשרת (מחוץ לאתר, לבעלים בלבד), ולא מודפס. בלי הסוד הקריאה נשארת בקישור הציבורי. מפתח שכבר בשרת נשאר גם כשאין סוד,
+          # כדי שקריאה לא תישבר אחרי שהשיתוף של הגיליון הוגבל.
+          if [ -z "$GOOGLE_SA_JSON" ]; then
+            echo "::notice title=חשבון שירות::אין סוד GOOGLE_SA_JSON. הגיליון נקרא כמו קודם"
+            exit 0
+          fi
+          printf '%s' "$GOOGLE_SA_JSON" | python3 -c 'import json, sys; k = json.load(sys.stdin); sys.exit(0 if k.get("type") == "service_account" and k.get("client_email") and k.get("private_key") else 1)' >/dev/null 2>&1 \
+            || { echo "::error::הסוד GOOGLE_SA_JSON הוא לא קובץ מפתח (JSON) של חשבון שירות"; exit 1; }
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
+          printf '%s' "$GOOGLE_SA_JSON" | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'umask 077; mkdir -p ~/osher-max-private && cat > ~/osher-max-private/google-sa.json.tmp && mv ~/osher-max-private/google-sa.json.tmp ~/osher-max-private/google-sa.json && rm -f ~/osher-max-private/google-token.json'
+          echo "::notice title=חשבון שירות::המפתח נכתב לשרת. הריצה לבדיקה בשלב הבא תראה אם הגיליון נקרא איתו (source)"
       - name: רענון ותזמון יומי (06:30 שעון ישראל)
         if: steps.gate.outputs.ready == 'true'
         run: |
@@ -137,7 +154,7 @@ jobs:
           printf "%s\n" "$AFTER" | grep -E "$MINE" | sed "s#$HOME#~#g"
           echo "שורות פעילות ב-crontab בסך הכול: $(printf "%s\n" "$AFTER" | grep -cvE '^[[:space:]]*(#|$)')"
           echo "הסוכן הלילי ב-crontab: $(printf "%s\n" "$AFTER" | grep -v '^[[:space:]]*#' | grep -c 'osher-max-''agent')"
-          echo "ריצה לבדיקה: $("$PHP" "$SCRIPT" | tail -1 | cut -c1-400)"
+          echo "ריצה לבדיקה: $("$PHP" "$SCRIPT" | tail -1 | cut -c1-700)"
           REMOTE
           )
           echo "$OUT"

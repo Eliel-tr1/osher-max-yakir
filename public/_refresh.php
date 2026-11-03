@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/_leads.php';
 require_once __DIR__ . '/_auth.php';
+require_once __DIR__ . '/_gsheet.php';
 
 const OSHER_SHEET_ID = '1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU';
 const OSHER_SHEET_GID = '0';            // הלשונית "לידים". ייצוא מלא: כולל גם שורות שמוסתרות בסינון בטבלה (החלטת המנהל, 2026-10-26)
@@ -26,15 +27,21 @@ function osher_current_meta(string $file): array {
     return ['generatedAt' => $g[1] ?? null, 'sheetRows' => isset($r[1]) ? (int) $r[1] : null];
 }
 
-/** ייצוא CSV מלא של לשונית אחת (כולל שורות שמוסתרות בסינון). מחזיר [csv, שגיאה] */
-function osher_fetch_tab(string $gid): array {
-    $url = 'https://docs.google.com/spreadsheets/d/' . rawurlencode(OSHER_SHEET_ID) . '/export?format=csv&gid=' . $gid;
+/**
+ * ייצוא CSV מלא של לשונית אחת (כולל שורות שמוסתרות בסינון). עם טוקן של חשבון שירות (#29) או בלי (הקישור הציבורי).
+ * מחזיר [csv, שגיאה]. OSHER_SHEET_EXPORT מחליף את הכתובת רק בבדיקות ({id} ו-{gid}).
+ */
+function osher_fetch_tab(string $gid, ?string $token = null): array {
+    $tpl = getenv('OSHER_SHEET_EXPORT') ?: 'https://docs.google.com/spreadsheets/d/{id}/export?format=csv&gid={gid}';
+    $url = str_replace(['{id}', '{gid}'], [rawurlencode(OSHER_SHEET_ID), rawurlencode($gid)], $tpl);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_TIMEOUT => 40,
         CURLOPT_USERAGENT => 'osher-max-dashboard',
+        // curl לא שולח את הכותרת הזו לשרת אחר אחרי הפניה, ו-Google מפנה לכתובת חתומה שלא צריכה אותה
+        CURLOPT_HTTPHEADER => $token ? ['Authorization: Bearer ' . $token] : [],
     ]);
     $csv = curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -48,6 +55,19 @@ function osher_fetch_tab(string $gid): array {
         return [null, 'גוגל החזיר דף ולא טבלה: כנראה הטבלה לא משותפת לצפייה. הנתונים הקודמים נשארו.'];
     }
     return [$csv, null];
+}
+
+/**
+ * הלשונית הראשונה של כל רענון: אם חשבון השירות לא מצליח לקרוא (למשל הגיליון עוד לא שותף איתו), חוזרים לקישור
+ * הציבורי לכל הרענון, ואומרים את זה בתשובה. אחרי שהשיתוף יוגבל, הקישור הציבורי ייכשל והנתונים הקודמים יישארו.
+ */
+function osher_fetch_with_fallback(string $gid, array &$auth): array {
+    [$csv, $err] = osher_fetch_tab($gid, $auth['token']);
+    if ($err !== null && $auth['token'] !== null) {
+        $auth = ['token' => null, 'source' => 'public', 'note' => 'חשבון השירות לא הצליח לקרוא את הגיליון, נקרא בקישור הציבורי: ' . $err];
+        [$csv, $err] = osher_fetch_tab($gid, null);
+    }
+    return [$csv, $err];
 }
 
 /**
@@ -66,18 +86,21 @@ function osher_refresh(): array {
     $age = $meta['generatedAt'] ? time() - strtotime($meta['generatedAt']) : PHP_INT_MAX;
     if ($age < OSHER_MIN_GAP) return [200, ['ok' => true, 'reused' => true] + $meta];
 
-    [$leadsCsv, $err] = osher_fetch_tab(OSHER_SHEET_GID);
-    if ($err) return [502, ['ok' => false, 'error' => $err]];
-    [$purchasesCsv, $err] = osher_fetch_tab(OSHER_PURCHASES_GID);
-    if ($err) return [502, ['ok' => false, 'error' => $err]];
+    // חשבון שירות כשיש מפתח בשרת (#29), אחרת הקישור הציבורי
+    $auth = osher_sheet_auth();
+    [$leadsCsv, $err] = osher_fetch_with_fallback(OSHER_SHEET_GID, $auth);
+    if ($err) return [502, ['ok' => false, 'error' => $err, 'source' => $auth['source']]];
+    $token = $auth['token'];
+    [$purchasesCsv, $err] = osher_fetch_tab(OSHER_PURCHASES_GID, $token);
+    if ($err) return [502, ['ok' => false, 'error' => $err, 'source' => $auth['source']]];
     // לשוניות הדיוורים לא חובה: כשהקריאה נכשלת הסקשן מוסתר, והשאר מתעדכן
-    [$mailingsCsv] = osher_fetch_tab(OSHER_MAILINGS_GID);
-    [$wavesCsv] = osher_fetch_tab(OSHER_WAVES_GID);
+    [$mailingsCsv] = osher_fetch_tab(OSHER_MAILINGS_GID, $token);
+    [$wavesCsv] = osher_fetch_tab(OSHER_WAVES_GID, $token);
 
     $extra = [];
     $failed = [];
     foreach (OSHER_INSIGHT_GIDS as $k => $gid) {
-        [$csv, $err] = osher_fetch_tab($gid);
+        [$csv, $err] = osher_fetch_tab($gid, $token);
         if ($err) $failed[] = $k;
         $extra[$k] = $csv !== null ? osher_parse_csv($csv) : null;
     }
@@ -97,6 +120,9 @@ function osher_refresh(): array {
     if (!osher_write_private('leads.json', osher_pack($file))) return [500, ['ok' => false, 'error' => 'שמירת הנתונים נכשלה']];
     return [200, [
         'ok' => true,
+        // מאיפה נקרא: חשבון שירות או הקישור הציבורי, ולמה לא חשבון שירות (בלי פרטי המפתח). בהתחלה, כדי שלא ייחתך בפלט של הפריסה
+        'source' => $auth['source'],
+        'sourceNote' => $auth['note'],
         'generatedAt' => $file['generatedAt'],
         'sheetRows' => $file['sheetRows'],
         'purchaseRows' => $file['purchaseRows'],

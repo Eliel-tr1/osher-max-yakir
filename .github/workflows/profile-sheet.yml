@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, 'check/**']
-    paths: ['scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/check-bot-first.ts', 'scripts/profile-insights.py', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
+    paths: ['scripts/google-token.php', 'public/_gsheet.php', 'scripts/popup-diag.ts', 'scripts/check-numbers.ts', 'scripts/check-bot-first.ts', 'scripts/profile-insights.py', 'scripts/profile-new.py', 'scripts/profile-sheet.py', 'scripts/summary.ts', 'scripts/parity-real.ts', 'scripts/people-profile.py', '.github/workflows/profile-sheet.yml']
 
 jobs:
   profile:
@@ -16,14 +16,31 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # אחרי שהשיתוף של הגיליון יוגבל (#29): טוקן לקריאה בלבד מחשבון השירות, לכל הקריאות בריצה. בלי הסוד, כמו היום
+      - name: טוקן לקריאה (רק אם יש סוד)
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+        run: |
+          [ -n "$GOOGLE_SA_JSON" ] || { echo "אין סוד GOOGLE_SA_JSON: קריאה בקישור הציבורי"; exit 0; }
+          umask 077
+          printf '%s' "$GOOGLE_SA_JSON" > "$RUNNER_TEMP/sa.json"
+          if T=$(php scripts/google-token.php "$RUNNER_TEMP/sa.json"); then
+            echo "::add-mask::$T"
+            echo "GOOGLE_TOKEN=$T" >> "$GITHUB_ENV"
+            echo "קריאה עם חשבון שירות"
+          else
+            echo "::warning::חשבון השירות לא קיבל טוקן, קריאה בקישור הציבורי"
+          fi
+          rm -f "$RUNNER_TEMP/sa.json"
       # כל הלשוניות פעם אחת, כדי שכל הבדיקות בריצה יהיו על אותו רגע בגיליון. לשונית שלא נקראה = לשונית חסרה
       - name: הורדת הלשוניות
         run: |
           npm ci --ignore-scripts --no-audit --no-fund >/dev/null
           mkdir -p /tmp/csv
+          AUTH=(); [ -n "${GOOGLE_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $GOOGLE_TOKEN")
           for t in leads:0 purchases:282711056 mailings:704173708 waves:359996576 analysis:710427304 questions:613597171 inquiries:1189797577 feedback:1067761873; do
             n=${t%%:*}
-            curl -sfL -o "/tmp/csv/$n.csv" "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=${t#*:}" || rm -f "/tmp/csv/$n.csv"
+            curl -sfL "${AUTH[@]}" -o "/tmp/csv/$n.csv" "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/export?format=csv&gid=${t#*:}" || rm -f "/tmp/csv/$n.csv"
             if [ -s "/tmp/csv/$n.csv" ] && head -c 200 "/tmp/csv/$n.csv" | grep -qi '<html\|<!doctype'; then rm -f "/tmp/csv/$n.csv"; fi
             [ -s "/tmp/csv/$n.csv" ] || echo "::warning::הלשונית $n לא נקראה"
           done

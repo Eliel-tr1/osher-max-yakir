@@ -1,6 +1,12 @@
 """פרופיל של העמודות והלשוניות החדשות (31/10/2026): רק כותרות, ספירות ופורמטים.
 בלי שמות, טלפונים, מיילים, קודים מזהים, קישורים או קודי קופון אישיים. ערך חופשי מוצג רק אם הוא חוזר לפחות פעמיים."""
-import csv, collections, io, re, sys, urllib.request
+import csv, collections, io, os, re, sys, urllib.request
+
+
+def sheet_open(url, timeout):
+    """קריאה מהגיליון. עם GOOGLE_TOKEN (חשבון שירות, #29) הבקשה נשלחת עם טוקן, אחרת בקישור הציבורי"""
+    tok = os.environ.get('GOOGLE_TOKEN')
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': f'Bearer {tok}'} if tok else {}), timeout=timeout)
 
 SHEET = sys.argv[1]
 TABS = {'רכישות': '282711056', 'לידים': '0', 'דיוורים': '704173708', 'דיוורים - סיכום': '359996576'}
@@ -11,7 +17,7 @@ PTB = re.compile(r'^PTB-[0-9A-F]{10}$', re.I)
 def load(gid):
     url = f'https://docs.google.com/spreadsheets/d/{SHEET}/export?format=csv&gid={gid}'
     try:
-        text = urllib.request.urlopen(url, timeout=90).read().decode('utf-8-sig')
+        text = sheet_open(url, 90).read().decode('utf-8-sig')
     except Exception as e:  # noqa: BLE001
         return None, str(e)
     if text.lstrip().startswith('<'):

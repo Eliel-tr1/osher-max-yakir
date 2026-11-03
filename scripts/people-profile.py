@@ -5,13 +5,19 @@
 הגעה = קוד מזהה אחד (שורות כפולות של אותו קוד מתאחדות, ונשארת השורה המלאה יותר, כמו בדשבורד).
 אדם = 9 הספרות האחרונות של הטלפון.
 """
-import collections, csv, io, re, sys, urllib.parse, urllib.request
+import collections, csv, io, os, re, sys, urllib.parse, urllib.request
 from datetime import datetime
+
+
+def sheet_open(url, timeout):
+    """קריאה מהגיליון. עם GOOGLE_TOKEN (חשבון שירות, #29) הבקשה נשלחת עם טוקן, אחרת בקישור הציבורי"""
+    tok = os.environ.get('GOOGLE_TOKEN')
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': f'Bearer {tok}'} if tok else {}), timeout=timeout)
 
 SHEET = sys.argv[1]
 TAB = sys.argv[2] if len(sys.argv) > 2 else 'לידים'
 url = f'https://docs.google.com/spreadsheets/d/{SHEET}/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(TAB)}'
-rows = list(csv.reader(io.StringIO(urllib.request.urlopen(url, timeout=60).read().decode('utf-8-sig'))))
+rows = list(csv.reader(io.StringIO(sheet_open(url, 60).read().decode('utf-8-sig'))))
 h = rows[0]
 data = [r for r in rows[1:] if any(c.strip() for c in r)]
 

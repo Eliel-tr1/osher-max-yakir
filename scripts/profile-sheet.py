@@ -1,11 +1,17 @@
 """פרופיל של לשונית הלידים: רק ספירות ושמות של קטגוריות. בלי שמות, טלפונים ומיילים."""
-import csv, collections, io, re, sys, urllib.request, urllib.parse
+import csv, collections, io, os, re, sys, urllib.request, urllib.parse
 from datetime import datetime
+
+
+def sheet_open(url, timeout):
+    """קריאה מהגיליון. עם GOOGLE_TOKEN (חשבון שירות, #29) הבקשה נשלחת עם טוקן, אחרת בקישור הציבורי"""
+    tok = os.environ.get('GOOGLE_TOKEN')
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'Authorization': f'Bearer {tok}'} if tok else {}), timeout=timeout)
 
 SHEET = sys.argv[1]
 TAB = sys.argv[2] if len(sys.argv) > 2 else 'לידים'
 url = f'https://docs.google.com/spreadsheets/d/{SHEET}/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(TAB)}'
-text = urllib.request.urlopen(url, timeout=60).read().decode('utf-8')
+text = sheet_open(url, 60).read().decode('utf-8')
 rows = list(csv.reader(io.StringIO(text)))
 h = rows[0]
 data = [r for r in rows[1:] if any(c.strip() for c in r)]
