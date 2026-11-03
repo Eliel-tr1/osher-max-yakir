@@ -34,6 +34,15 @@ jobs:
             echo "== יציאה ל-api.github.com"; curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.github.com/zen; echo
             echo "== יציאה ל-Google Sheets"; curl -s -L -o /tmp/osher-probe.csv -w "%{http_code} %{content_type} %{time_total}s" --max-time 30 "https://docs.google.com/spreadsheets/d/1nTqoRITyNlLJO4Pld0H4SRMIbT21oudBw6mDBoxXaUU/gviz/tq?tqx=out:csv&sheet=%D7%9C%D7%99%D7%93%D7%99%D7%9D"; echo " $(wc -c < /tmp/osher-probe.csv 2>/dev/null) bytes"; rm -f /tmp/osher-probe.csv
             echo "== PHP-FPM"; php -r "echo ini_get(\"max_execution_time\"), \"s, memory \", ini_get(\"memory_limit\");"; echo
+            echo "== crontab (קריאה בלבד: רק שורות של הדשבורד והסוכן מוצגות, וגם בהן מחרוזות ארוכות מוסתרות)"
+            CT=$(crontab -l 2>&1); echo "שורות פעילות: $(printf "%s\n" "$CT" | grep -cvE "^[[:space:]]*(#|$)")"
+            printf "%s\n" "$CT" | grep -nE "osher" | sed -E "s/[A-Za-z0-9_+\/=-]{24,}/***/g" || echo "אין שורות עם osher"
+            echo "הסוכן הלילי (osher-max-agent) ב-crontab: $(printf "%s\n" "$CT" | grep -v "^[[:space:]]*#" | grep -c "osher-max-agent")"
+            echo "שורות ב-40 6 או 40 22: $(printf "%s\n" "$CT" | grep -cE "^[[:space:]]*40[[:space:]]+(0?6|22)[[:space:]]")"
+            echo "תהליך של הסוכן רץ עכשיו: $(pgrep -fc osher-max-agent 2>/dev/null || echo 0)"
+            echo "== כלים לרענון"; for c in curl wget php crontab; do command -v $c >/dev/null && echo "$c: יש" || echo "$c: אין"; done
+            echo "== תיקייה פרטית"; ls -la "$HOME/osher-max-private" 2>/dev/null | awk "NR>1 {print \$1, \$5, \$9}"
+            echo "== אזור זמן בשרת: $(date +%Z) $(date +%H:%M)"
             D="$HOME/htdocs/ai.vitrue.co.il"
             echo "== האתר ai.vitrue.co.il"
             if [ -d "$D" ]; then
