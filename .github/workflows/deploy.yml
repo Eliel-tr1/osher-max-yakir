@@ -188,7 +188,8 @@ jobs:
             echo "::notice title=גישת קריאה::אין סוד DASHBOARD_READ_TOKEN: הגישה בלי סיסמה סגורה"
             exit 0
           fi
-          T=$(printf '%s' "$DASHBOARD_READ_TOKEN" | tr -d '[:space:]')
+          # רווחים בהתחלה ובסוף לא נחשבים, כמו בבדיקה ב-PHP (trim)
+          T=$(python3 -c 'import os; print(os.environ["DASHBOARD_READ_TOKEN"].strip(" \t\n\r\0\x0b"), end="")')
           if [ ${#T} -lt 24 ]; then
             echo "::error::DASHBOARD_READ_TOKEN קצר מדי: צריך לפחות 24 תווים אקראיים. הגישה לא הוגדרה"
             exit 1
@@ -198,6 +199,8 @@ jobs:
           echo "::notice title=גישת קריאה::הוגדרה (רק data.php, בכותרת X-Dashboard-Read-Token)"
       - name: הכתובת מציגה את הגרסה החדשה?
         if: steps.gate.outputs.ready == 'true'
+        env:
+          DASHBOARD_READ_TOKEN: ${{ secrets.DASHBOARD_READ_TOKEN }}
         run: |
           REL="${GITHUB_SHA::7}"
           for i in $(seq 1 12); do
@@ -206,7 +209,13 @@ jobs:
               BTN=$(curl -s --max-time 30 "${SITE_URL}refresh.php" | head -c 300)
               DATA=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data.php"); OLD=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data/leads.json")
               BAD=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Dashboard-Read-Token: not-the-secret-$(date +%s)" "${SITE_URL}data.php")
-              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). מצב הנתונים: $BTN. בלי כניסה: data.php $DATA, data/leads.json $OLD, עם סוד שגוי בכותרת $BAD"
+              # עם הסוד הנכון (#28): רק קוד התשובה, בלי הנתונים. הסוד מוסתר בלוג
+              GOOD="אין סוד"
+              if [ -n "$DASHBOARD_READ_TOKEN" ]; then
+                T=$(python3 -c 'import os; print(os.environ["DASHBOARD_READ_TOKEN"].strip(" \t\n\r\0\x0b"), end="")')
+                GOOD=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Dashboard-Read-Token: $T" "${SITE_URL}data.php")
+              fi
+              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). מצב הנתונים: $BTN. בלי כניסה: data.php $DATA, data/leads.json $OLD, עם סוד שגוי בכותרת $BAD, עם הסוד הנכון $GOOD"
               exit 0
             fi
             sleep 5

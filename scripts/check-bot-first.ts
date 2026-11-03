@@ -8,7 +8,9 @@ import {
   abandonView, feedbackView, inquiryView, questionView, removalView, testLeadsOf, TEST_REASON, type Scope,
 } from '../lib/insights';
 import { unpack } from '../lib/leads/file';
-import { annotate, botHero, capabilities, inRange, mailingLevels, withPurchasesAfterEntry, type Range } from '../lib/metrics';
+import {
+  annotate, botHero, botSide, capabilities, fromPopup, inRange, mailingLevels, mailingRecipients, REASON_SALES, reasonStarts, withPurchasesAfterEntry, type Range,
+} from '../lib/metrics';
 
 const file = unpack(JSON.parse(readFileSync(process.argv[2], 'utf8')));
 const all: Range = { from: null, to: null };
@@ -31,6 +33,16 @@ out.push(`כרטיסי היכולת (הכול): שיחות מכירה ${n(caps.s
 out.push(`סכום ה-€: שלושת הכרטיסים לפי סיבה ${e(byReason)} ${byReason <= h.paid ? '≤' : '>'} ${e(h.paid)} של הבוט; כל החמישה ${e(five)} ${five <= h.paid ? '≤' : '>'} ${e(h.paid)}`);
 const lv = mailingLevels(file.mailings ?? []);
 out.push(`דיוור, שלוש רמות: דרך הקישור ${lv.link.length} · רק הקוד SPOOKY ${lv.spooky.length} · שאר הרכישות עד 72 שעות ${lv.rest.length}`);
+
+// למה כרטיסי היכולת יחד גדולים מה-€ של הבוט: חפיפה עם שיחות המכירה. רכישות הנמענים כולן "של הבוט" = כן (החלטת המנהל 1/11)
+const rec = mailingRecipients(file.mailings ?? []);
+const recSales = rec.filter((m) => reasonStarts(m, [REASON_SALES]));
+const unmarked = rec.filter((m) => m.bot !== 'yes');
+out.push(`רכישות נמענים עד 72 שעות: ${rec.length} · של הבוט ${rec.filter((m) => m.bot === 'yes').length} · לא מסומנות של הבוט ${unmarked.length} · גם שיחה מכירתית ${recSales.length} (${e(recSales.reduce((s, m) => s + (m.amount && m.amount > 0 ? m.amount : 0), 0))})`);
+if (unmarked.length) out.push(`::warning title=דיוור::${unmarked.length} רכישות של נמענים לא מסומנות "של הבוט" = כן. לכתוב ב-issue למנהל (החלטה 1/11: כולן של הבוט)`);
+const popupBot = people.filter((x) => fromPopup(x.lead)).flatMap((x) => x.after).filter((p) => botSide(p) === 'yes');
+const popupSales = popupBot.filter((p) => reasonStarts(p, [REASON_SALES]));
+out.push(`פופאפ, רכישות הבוט אחרי הכניסה: ${popupBot.length} · מתוכן גם שיחה מכירתית ${popupSales.length} (${e(popupSales.reduce((s, p) => s + (p.amount && p.amount > 0 ? p.amount : 0), 0))})`);
 
 // ---------- "תובנות שיחה" ----------
 const ins = file.insights;
