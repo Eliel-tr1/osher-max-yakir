@@ -279,7 +279,7 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
     $withRows = [];
     foreach ($rows as $r) if ($r['p']['lead'] !== null) $withRows[$r['p']['lead']] = true;
     foreach ($leads as $i => $l) {
-        if (($l['qStatus'] === 'converted' || $l['qStatus'] === 'payment') && !isset($withRows[$i])) {
+        if (($l['qStatus'] === 'converted' || $l['qStatus'] === 'payment') && !isset($withRows[$i]) && !(($l['product'] ?? null) !== null && preg_match(OSHER_TEST_PRODUCT, $l['product']))) {
             $rows[] = ['ns' => $kept[$i]['ns'], 'phone' => null, 'p' => ['at' => $l['at'], 'lead' => $i, 'product' => $l['product'] ?? $l['test'], 'amount' => $l['amount'],
                 'source' => null, 'sourceGroup' => null, 'campaign' => null, 'fromLead' => true, 'bot' => null,
                 'reason' => null, 'coupon' => null, 'buyer' => $buyerId($kept[$i]['ns']), 'person' => 0]];

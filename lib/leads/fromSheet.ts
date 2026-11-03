@@ -323,7 +323,7 @@ export function buildData(
   // קונים שמסומנים בלשונית הלידים ואין להם אף שורה בלשונית הרכישות: הרכישה האחרונה שלהם נלקחת משם
   const withRows = new Set(rows.map((r) => r.p.lead).filter((l): l is number => l !== null));
   leads.forEach((l, i) => {
-    if ((l.qStatus === 'converted' || l.qStatus === 'payment') && !withRows.has(i)) {
+    if ((l.qStatus === 'converted' || l.qStatus === 'payment') && !withRows.has(i) && !(l.product && TEST_PRODUCT.test(l.product))) {
       // רכישה משורת ליד: אין לה תא "של הבוט", ולכן היא עוד לא הוכרעה
       rows.push({
         ns: kept[i].ns,
