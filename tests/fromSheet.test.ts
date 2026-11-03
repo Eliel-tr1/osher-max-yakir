@@ -59,6 +59,16 @@ describe('leadsFromRows', () => {
     expect(file.purchases.map((p) => p.product)).toEqual(['One Step Assessment - 100K - MT5']);
   });
 
+  it('does not bring a test order back through the lead row', () => {
+    const file = leadsFromRows([
+      HEADER,
+      row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00', 'סטטוס שאלון': 'payment', 'מוצר שנקנה': 'בדיקת n8n דרך Make' }),
+      row({ ...base, 'קוד מזהה': 'u2', 'תאריך כניסה': '01/10/2026 11:00:00', 'סטטוס שאלון': 'converted', 'מוצר שנקנה': 'Lightning Pro' }),
+    ], [PHEADER]);
+    expect(file.leads).toHaveLength(2);
+    expect(file.purchases.map((p) => [p.product, p.fromLead])).toEqual([['Lightning Pro', true]]);
+  });
+
   it('drops the same purchase written twice within two minutes, keeps a repeat purchase later', () => {
     const file = leadsFromRows([HEADER, row({ ...base, 'תאריך כניסה': '01/10/2026 10:00:00' })], [
       PHEADER,
