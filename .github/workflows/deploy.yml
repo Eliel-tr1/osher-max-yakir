@@ -175,6 +175,27 @@ jobs:
           python3 -c 'import hashlib, json, os, re, secrets; salt = secrets.token_hex(16); it = 300000; print(json.dumps({"salt": salt, "iter": it, "hash": hashlib.pbkdf2_hmac("sha256", re.sub(r"[\s\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff\"]", "", os.environ["DASHBOARD_PASSWORD"]).encode(), salt.encode(), it).hex()}))' \
             | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'umask 077; mkdir -p ~/osher-max-private && cat > ~/osher-max-private/auth.json.tmp && mv ~/osher-max-private/auth.json.tmp ~/osher-max-private/auth.json && rm -f ~/osher-max-private/attempts.json'
           echo "::notice title=כניסה::הוגדרה"
+      - name: גישת קריאה עם סוד בכותרת (רק אם יש סוד)
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          DASHBOARD_READ_TOKEN: ${{ secrets.DASHBOARD_READ_TOKEN }}
+        run: |
+          # #28: קריאה של data.php בלי סיסמה, עם הכותרת X-Dashboard-Read-Token (בשביל b2b-cmd). לשרת נכתב רק גיבוב (PBKDF2 עם מלח
+          # אקראי), מחוץ לאתר. הסוד לא נשמר ולא מודפס. בלי הסוד, הקובץ נמחק והגישה סגורה (כך מבטלים אותה).
+          OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
+          if [ -z "$DASHBOARD_READ_TOKEN" ]; then
+            sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'rm -f ~/osher-max-private/read-token.json'
+            echo "::notice title=גישת קריאה::אין סוד DASHBOARD_READ_TOKEN: הגישה בלי סיסמה סגורה"
+            exit 0
+          fi
+          T=$(printf '%s' "$DASHBOARD_READ_TOKEN" | tr -d '[:space:]')
+          if [ ${#T} -lt 24 ]; then
+            echo "::error::DASHBOARD_READ_TOKEN קצר מדי: צריך לפחות 24 תווים אקראיים. הגישה לא הוגדרה"
+            exit 1
+          fi
+          T="$T" python3 -c 'import hashlib, json, os, secrets; salt = secrets.token_hex(16); it = 60000; print(json.dumps({"salt": salt, "iter": it, "hash": hashlib.pbkdf2_hmac("sha256", os.environ["T"].encode(), salt.encode(), it).hex()}))' \
+            | sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'umask 077; mkdir -p ~/osher-max-private && cat > ~/osher-max-private/read-token.json.tmp && mv ~/osher-max-private/read-token.json.tmp ~/osher-max-private/read-token.json && rm -f ~/osher-max-private/read-attempts.json'
+          echo "::notice title=גישת קריאה::הוגדרה (רק data.php, בכותרת X-Dashboard-Read-Token)"
       - name: הכתובת מציגה את הגרסה החדשה?
         if: steps.gate.outputs.ready == 'true'
         run: |
@@ -184,7 +205,8 @@ jobs:
               CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL")
               BTN=$(curl -s --max-time 30 "${SITE_URL}refresh.php" | head -c 300)
               DATA=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data.php"); OLD=$(curl -s -o /dev/null -w "%{http_code}" "${SITE_URL}data/leads.json")
-              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). מצב הנתונים: $BTN. בלי כניסה: data.php $DATA, data/leads.json $OLD"
+              BAD=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Dashboard-Read-Token: not-the-secret-$(date +%s)" "${SITE_URL}data.php")
+              echo "::notice title=פריסה::הדשבורד באוויר: $SITE_URL (גרסה $REL, הדף עונה $CODE). מצב הנתונים: $BTN. בלי כניסה: data.php $DATA, data/leads.json $OLD, עם סוד שגוי בכותרת $BAD"
               exit 0
             fi
             sleep 5

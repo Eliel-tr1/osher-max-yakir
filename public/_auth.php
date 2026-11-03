@@ -73,9 +73,12 @@ const OSHER_FAIL_WINDOW = 900;
 const OSHER_FAIL_PER_IP = 5;
 const OSHER_FAIL_TOTAL = 30;
 
-/** הגבלת ניסיונות: עד 5 שגויים מאותה כתובת ועד 30 בסך הכול ב-15 דקות. הכתובת נשמרת מגובבת */
-function osher_auth_blocked(string $ip, int $now): bool {
-    $log = json_decode(osher_read_private('attempts.json') ?? '[]', true);
+/**
+ * הגבלת ניסיונות: עד 5 שגויים מאותה כתובת ועד 30 בסך הכול ב-15 דקות. הכתובת נשמרת מגובבת.
+ * $file: קובץ נפרד לכל דלת (סיסמה, או הסוד של גישת הקריאה), כדי שניסיונות באחת לא יחסמו את השנייה
+ */
+function osher_auth_blocked(string $ip, int $now, string $file = 'attempts.json'): bool {
+    $log = json_decode(osher_read_private($file) ?? '[]', true);
     if (!is_array($log)) $log = [];
     $recent = array_filter($log, fn ($a) => is_array($a) && ($a['t'] ?? 0) > $now - OSHER_FAIL_WINDOW);
     $key = hash('sha256', $ip);
@@ -83,12 +86,33 @@ function osher_auth_blocked(string $ip, int $now): bool {
     return count($mine) >= OSHER_FAIL_PER_IP || count($recent) >= OSHER_FAIL_TOTAL;
 }
 
-function osher_auth_failed(string $ip, int $now): void {
-    $log = json_decode(osher_read_private('attempts.json') ?? '[]', true);
+function osher_auth_failed(string $ip, int $now, string $file = 'attempts.json'): void {
+    $log = json_decode(osher_read_private($file) ?? '[]', true);
     if (!is_array($log)) $log = [];
     $log = array_values(array_filter($log, fn ($a) => is_array($a) && ($a['t'] ?? 0) > $now - OSHER_FAIL_WINDOW));
     $log[] = ['t' => $now, 'ip' => hash('sha256', $ip)];
-    osher_write_private('attempts.json', json_encode(array_slice($log, -200)));
+    osher_write_private($file, json_encode(array_slice($log, -200)));
+}
+
+/**
+ * גישת קריאה בלי סיסמה (#28, הנחיית המנהל 3/11/2026): סוד בכותרת X-Dashboard-Read-Token, רק לקובץ הנתונים (data.php).
+ * לא לקודים המזהים (links.php) ולא לרענון. בשרת נשמר רק גיבוב (PBKDF2 עם מלח) ב-read-token.json, שהפריסה כותבת
+ * מהסוד DASHBOARD_READ_TOKEN. בלי הקובץ, הגישה סגורה.
+ */
+const OSHER_READ_ATTEMPTS = 'read-attempts.json';
+
+function osher_read_token_config(): ?array {
+    $c = json_decode(osher_read_private('read-token.json') ?? 'null', true);
+    if (!is_array($c) || empty($c['salt']) || empty($c['hash']) || (int) ($c['iter'] ?? 0) < 10000) return null;
+    return ['salt' => (string) $c['salt'], 'iter' => (int) $c['iter'], 'hash' => strtolower((string) $c['hash'])];
+}
+
+/** הסוד שנשלח נכון? השוואה בזמן קבוע. גישה שלא הוגדרה = תמיד לא */
+function osher_read_token_ok(string $given): bool {
+    $cfg = osher_read_token_config();
+    $given = trim($given);
+    if (!$cfg || $given === '' || strlen($given) > 300) return false;
+    return hash_equals($cfg['hash'], hash_pbkdf2('sha256', $given, $cfg['salt'], $cfg['iter']));
 }
 
 function osher_auth_secret(): ?string {
