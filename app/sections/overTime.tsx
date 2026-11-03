@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { Purchase } from '@/lib/leads/types';
 import { autoBucket, botSeries, bucketOf, moneyShareSeries, type Bucket } from '@/lib/metrics';
-import { Columns, Info } from '../charts';
+import { Columns, fmtDay, Info } from '../charts';
 import { BucketChips, fmtBucket, SIDE_SERIES } from './shared';
 
 /**
@@ -16,12 +16,19 @@ export function OverTime({ all, missingDays, by, setBy }: { all: Purchase[]; mis
     const b = by ?? auto;
     const series = botSeries(all, b, 'money');
     const share = new Map(moneyShareSeries(all, b).map((x) => [x.key, x.share]));
-    const missing = new Map<string, number>();
-    for (const d of missingDays) missing.set(bucketOf(`${d}T12:00:00.000Z`, b), (missing.get(bucketOf(`${d}T12:00:00.000Z`, b)) ?? 0) + 1);
+    // יום בלי אף שורה בלשונית הרכישות (למשל 3/10 ו-17/10): "אין נתונים", לא 0
+    const missing = new Map<string, string[]>();
+    for (const d of missingDays) {
+      const k = bucketOf(`${d}T12:00:00.000Z`, b);
+      missing.set(k, [...(missing.get(k) ?? []), d]);
+    }
     return {
       auto, b, series,
       share: series.map((d) => share.get(d.key) ?? null),
-      gaps: series.map((d) => (missing.has(d.key) ? (b === 'day' ? 'full' : 'part') : null) as 'full' | 'part' | null),
+      gaps: series.map((d) => {
+        const days = missing.get(d.key);
+        return days ? { full: b === 'day', text: `אין נתונים ל-${days.map(fmtDay).join(', ')}` } : null;
+      }),
     };
   }, [all, missingDays, by]);
   return (

@@ -100,15 +100,15 @@ export function CouponsSection({ people, all, ever, range, rangeKey, open, onTog
           label="הקוד שהוקלד"
           parts={[
             { value: v.after.byKind.personal.length, color: '--bot', text: nf.format(v.after.byKind.personal.length), more: 'הקוד האישי' },
-            { value: v.after.byKind.generic.length, color: '--series-2', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
-            { value: v.after.byKind.none.length, color: '--notbot', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
+            { value: v.after.byKind.generic.length, color: '--notbot', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
+            { value: v.after.byKind.none.length, color: '--open-b', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
           ]}
         />
-        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--series-2' }, { label: 'בלי קוד', color: '--notbot' }]} />
+        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--notbot' }, { label: 'בלי קוד', color: '--open-b' }]} />
         {v.after.generic.length > 0 && (
           <>
             <h3>הקודים הכלליים שהוקלדו במקום</h3>
-            <BarList items={v.after.generic} max={6} color="--series-2" />
+            <BarList items={v.after.generic} max={6} color="--notbot" />
           </>
         )}
         <p className="hint tight">ועוד {nf.format(v.after.activation.length)} רכישות דמי הפעלה</p>

@@ -88,8 +88,12 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
       </div>
       <div className="two">
         <div>
-          <h3>לפי סוג מוצר <Info>עד 20/10 שם המוצר לא נרשם בלשונית הרכישות, ולכן רכישות מלפני כן בלי שם מופיעות כ&quot;לפני 20/10 (בלי שם מוצר)&quot;.</Info></h3>
-          <BarList items={v.families.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = v.families.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
+          <h3>לפי סוג מוצר <Info>עד 20/10 שם המוצר לא נרשם בלשונית הרכישות, ולכן רכישות מלפני כן בלי שם מופיעות כ&quot;לפני 20/10 (בלי שם מוצר)&quot;. בכחול: רכישות של הבוט.</Info></h3>
+          <BarList
+            items={v.families.map((f) => ({ name: f.name, count: f.count }))} color={channel === 'bot' ? '--bot' : '--notbot'}
+            part={channel === 'all' ? (n) => v.families.find((x) => x.name === n)?.bot ?? 0 : undefined}
+            extra={(n) => { const f = v.families.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }}
+          />
         </div>
         <div>
           <h3>קונים חוזרים <Info>כמה מהקונים קנו יותר מפעם אחת, בכל צד לפי הרכישות שלו באותו צד. &quot;לא של הבוט&quot; כולל גם מה שעוד לא הוכרע. הפירוט המלא ברשימות למטה.</Info></h3>
@@ -102,13 +106,13 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
                   key={k}
                   label={k === 'bot' ? SIDE_LABEL.yes : SIDE_LABEL.no}
                   parts={[
-                    { value: once, color: k === 'bot' ? '--bot' : '--notbot', text: pct(once, total), more: 'פעם אחת' },
-                    { value: total - once, color: '--series-2', text: pct(total - once, total), more: 'חזרו' },
+                    { value: total - once, color: k === 'bot' ? '--bot' : '--notbot', text: pct(total - once, total), more: 'חזרו' },
+                    { value: once, color: '--open-a', text: pct(once, total), more: 'פעם אחת' },
                   ]}
                 />
               );
             })}
-            <p className="hint tight">{nf.format(repeatTotal.bot + repeatTotal.other)} קונים. כתום = קנו יותר מפעם אחת</p>
+            <p className="hint tight">{nf.format(repeatTotal.bot + repeatTotal.other)} קונים. החלק הצבוע = קנו יותר מפעם אחת</p>
           </div>
         </div>
       </div>

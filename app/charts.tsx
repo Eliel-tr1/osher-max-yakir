@@ -57,7 +57,8 @@ export function pctOf(ratio: number | null): string {
 function niceMax(v: number): number {
   if (v <= 4) return 4;
   const p = 10 ** Math.floor(Math.log10(v));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+  // מדרגות צפופות, כדי שהעמודה הגבוהה תמלא את רוב הגובה (חצי התקרה הוא הקו האמצעי, ולכן גם הוא מספר עגול)
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
   return 10 * p;
 }
 
@@ -117,8 +118,8 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   extraTip?: (i: number) => string | null;
   /** קו של אחוז (0 עד 1) על ציר משני מימין (הנחיית המנהל 3/11/2026). null = אין ערך בתקופה */
   line?: { values: (number | null)[]; label: string; color: string };
-  /** תקופות עם ימים בלי שורות בגיליון: "full" = אין נתונים בכלל (לא 0), "part" = חסר חלק */
-  gaps?: ('full' | 'part' | null)[];
+  /** תקופות עם ימים בלי שורות בגיליון. full = כל התקופה (פס מקווקו "אין נתונים" ולא 0), אחרת נקודה מתחת לעמודה. text לחלונית */
+  gaps?: ({ full: boolean; text: string } | null)[];
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth();
@@ -138,6 +139,10 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   const y = (v: number) => padT + (H - padT - padB) * (1 - v / max);
   const every = labelEvery ?? Math.max(1, Math.ceil(n / Math.max(3, Math.floor(W / 64))));
   const ticks = [0, max / 2, max];
+  const gapLegend: { label: string; color: string; gap: 'full' | 'part' }[] = [
+    ...(gaps?.some((g, i) => g?.full && totals[i] === 0) ? [{ label: 'אין נתונים', color: '--ink-3', gap: 'full' as const }] : []),
+    ...(gaps?.some((g, i) => g && !(g.full && totals[i] === 0)) ? [{ label: 'חסרים ימים', color: '--ink-3', gap: 'part' as const }] : []),
+  ];
   return (
     <div className="chart" dir="ltr" ref={box}>
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={series.map((s) => s.label).join(', ')} onMouseLeave={() => setHover(null)}>
@@ -150,7 +155,6 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
             {line && <text x={W - padR + 6} y={y(t) + 4} className="tick" textAnchor="start">{pctFmt.format(k / 2)}</text>}
           </g>
         ))}
-        {gaps?.some((g) => g === 'full') && !series.some((s) => s.hatch) && <HatchDef id={uid} />}
         {values.map((v, i) => {
           const x = padL + slot * i + (slot - bw) / 2;
           let acc = 0;
@@ -158,10 +162,10 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
           return (
             <g key={labels[i]} onMouseEnter={() => setHover(i)}>
               <rect x={padL + slot * i} y={padT} width={slot} height={H - padT - padB} fill="transparent" />
-              {gap === 'full' && totals[i] === 0 && (
-                <rect x={x} y={padT} width={bw} height={H - padT - padB} fill={`url(#${uid}-hatch)`} opacity={0.5} rx={2}><title>אין נתונים</title></rect>
+              {gap?.full && totals[i] === 0 && (
+                <rect x={x + 0.75} y={padT + 0.75} width={Math.max(1, bw - 1.5)} height={H - padT - padB - 1.5} className="gapbox" rx={2}><title>{gap.text}</title></rect>
               )}
-              {gap === 'part' && <circle cx={x + bw / 2} cy={H - padB + 3} r={2} className="gapdot" />}
+              {gap && !(gap.full && totals[i] === 0) && <circle cx={x + bw / 2} cy={H - padB + 3} r={2} className="gapdot"><title>{gap.text}</title></circle>}
               {v.map((val, s) => {
                 if (!val) return null;
                 const top = y(acc + val);
@@ -171,7 +175,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
                 const h = Math.max(1, bottom - top - (s > 0 ? 1.5 : 0));
                 return <path key={s} d={barPath(x, top, bw, h, isTop)} fill={fillOf(series[s], uid)} opacity={hover === null || hover === i ? 1 : 0.55} />;
               })}
-              {slot >= 34 && totals[i] > 0 && (
+              {slot >= 34 && totals[i] > 0 && !line && (
                 <text x={x + bw / 2} y={y(totals[i]) - 4} className="cap" textAnchor="middle">{isMoney ? nf.format(Math.round(totals[i])) : nf.format(totals[i])}</text>
               )}
               {(i % every === 0 || i === n - 1) && (
@@ -198,8 +202,7 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
       {hover !== null && (
         <div className="tip" dir="rtl" style={{ left: `${((padL + slot * hover + slot / 2) / W) * 100}%` }}>
           <strong>{labels[hover]}</strong>
-          {gaps?.[hover] === 'full' && totals[hover] === 0 ? <span>אין נתונים: אין שורות בגיליון</span> : null}
-          {gaps?.[hover] === 'part' ? <span>חסרים נתונים לחלק מהימים</span> : null}
+          {gaps?.[hover] ? <span>{gaps[hover]!.text}</span> : null}
           {line && line.values[hover] !== null ? <span><i className="lineswatch" style={{ background: `var(${line.color})` }} />{line.label}: {pctFmt.format(line.values[hover]!)}</span> : null}
           {series.map((s, k) => (
             <span key={s.key}><i className={s.hatch ? 'hatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}: {f.format(values[hover][k])}</span>
@@ -208,7 +211,9 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
           {extraTip?.(hover) ? <span>{extraTip(hover)}</span> : null}
         </div>
       )}
-      {series.length > 1 && <Legend items={[...series, ...(line ? [{ label: line.label, color: line.color, line: true }] : [])]} />}
+      {(series.length > 1 || gapLegend.length > 0) && (
+        <Legend items={[...(series.length > 1 ? series : []), ...(line ? [{ label: line.label, color: line.color, line: true }] : []), ...gapLegend]} />
+      )}
     </div>
   );
 }
@@ -220,7 +225,7 @@ function barPath(x: number, y: number, w: number, h: number, roundTop: boolean):
 }
 
 /** גרף קטן בלי צירים, לכרטיס בחלק העליון. ריחוף מראה את הערך. */
-export function Sparkline({ labels, values, color = '--series-1', height = 56, format = (v) => nf.format(v), max: fixedMax, label = 'לאורך זמן' }: {
+export function Sparkline({ labels, values, color = '--series-1', height = 56, format = (v) => nf.format(v), max: fixedMax, label = 'לאורך זמן', caption }: {
   labels: string[];
   /** null = אין ערך בתקופה (בלי עמודה) */
   values: (number | null)[];
@@ -230,6 +235,8 @@ export function Sparkline({ labels, values, color = '--series-1', height = 56, f
   /** תקרה קבועה, למשל 1 לאחוזים */
   max?: number;
   label?: string;
+  /** כיתוב קצר באמצע השורה שמתחת, בין התאריך הראשון לאחרון */
+  caption?: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth(260);
@@ -251,8 +258,11 @@ export function Sparkline({ labels, values, color = '--series-1', height = 56, f
           );
         })}
       </svg>
-      <div className="sparkfoot" dir="rtl">
-        {hover === null ? <><span>{labels[0]}</span><span>{labels[n - 1]}</span></> : <strong>{labels[hover]}: {values[hover] === null ? '-' : format(values[hover]!)}</strong>}
+      {/* הזמן זורם משמאל לימין כמו העמודות: התאריך הראשון משמאל והאחרון מימין */}
+      <div className="sparkfoot" dir="ltr">
+        {hover === null
+          ? <><span>{labels[0]}</span>{caption ? <span className="sparkcap" dir="rtl">{caption}</span> : null}<span>{labels[n - 1]}</span></>
+          : <strong dir="rtl">{labels[hover]}: {values[hover] === null ? '-' : format(values[hover]!)}</strong>}
       </div>
     </div>
   );
@@ -277,7 +287,7 @@ export function Stats({ items }: { items: { label: string; value: string; sub?: 
 }
 
 /** רשימה מדורגת עם פס אופקי לכל שורה. הערך ליד קצה הפס, ואפשר להוסיף ערך משני (למשל סכום). */
-export function BarList({ items, color = '--series-1', max: maxShown = 8, selected, onSelect, extra, colorOf, tagOf }: {
+export function BarList({ items, color = '--series-1', max: maxShown = 8, selected, onSelect, extra, colorOf, tagOf, part }: {
   items: { name: string; count: number }[];
   color?: string;
   max?: number;
@@ -289,6 +299,8 @@ export function BarList({ items, color = '--series-1', max: maxShown = 8, select
   colorOf?: (name: string) => string | undefined;
   /** כיתוב קטן ליד השם */
   tagOf?: (name: string) => string | null;
+  /** חלק מהשורה בצבע הבוט (למשל רכישות של הבוט), והשאר בצבע השורה */
+  part?: (name: string) => number;
 }) {
   const [all, setAll] = useState(false);
   if (!items.length) return <p className="empty">אין נתונים בטווח הזה</p>;
@@ -299,16 +311,26 @@ export function BarList({ items, color = '--series-1', max: maxShown = 8, select
       {shown.map((it) => {
         const Tag = onSelect ? 'button' : 'div';
         const ex = extra?.(it.name);
+        const bot = part ? Math.min(it.count, part(it.name)) : null;
         return (
           <Tag
             key={it.name}
-            className={`barrow${selected === it.name ? ' on' : ''}`}
+            className={`barrow${bot !== null ? ' split' : ''}${selected === it.name ? ' on' : ''}`}
             {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(it.name), 'aria-pressed': selected === it.name } : {})}
           >
-            <span className="name" title={it.name} dir="auto">{it.name}{tagOf?.(it.name) ? <small className="tag">{tagOf(it.name)}</small> : null}</span>
-            <span className="track">
-              <span className="fill" style={{ width: `${(it.count / top) * 100}%`, background: `var(${colorOf?.(it.name) ?? color})` }} />
-            </span>
+            {tagOf?.(it.name)
+              ? <span className="name has-tag" title={it.name} dir="auto"><span>{it.name}</span><small className="tag">{tagOf(it.name)}</small></span>
+              : <span className="name" title={it.name} dir="auto">{it.name}</span>}
+            {bot !== null ? (
+              <span className="track" title={`של הבוט ${nf.format(bot)} מתוך ${nf.format(it.count)}`}>
+                {bot > 0 ? <span className="fill" style={{ width: `${(bot / top) * 100}%`, background: 'var(--bot)' }} /> : null}
+                <span className="fill second" style={{ width: `${((it.count - bot) / top) * 100}%`, insetInlineStart: `${(bot / top) * 100}%`, background: `var(${color})` }} />
+              </span>
+            ) : (
+              <span className="track">
+                <span className="fill" style={{ width: `${(it.count / top) * 100}%`, background: `var(${colorOf?.(it.name) ?? color})` }} />
+              </span>
+            )}
             <span className="num">{nf.format(it.count)}{ex ? <small>{ex}</small> : null}</span>
           </Tag>
         );
@@ -335,7 +357,7 @@ export function SplitList({ items, max: maxShown = 8 }: { items: { name: string;
           <span className="name" title={it.name} dir="auto">{it.name}</span>
           <span className="track" title={`עברו ${nf.format(it.passed)}, נכשלו ${nf.format(it.failed)}`}>
             <span className="fill" style={{ width: `${(it.passed / top) * 100}%`, background: 'var(--series-1)' }} />
-            <span className="fill second" style={{ width: `${(it.failed / top) * 100}%`, insetInlineStart: `${(it.passed / top) * 100}%`, background: 'var(--series-2)' }} />
+            <span className="fill second" style={{ width: `${(it.failed / top) * 100}%`, insetInlineStart: `${(it.passed / top) * 100}%`, background: 'var(--notbot)' }} />
           </span>
           <span className="num">{nf.format(it.total)}<small>{it.passed === 0 ? '-' : `${pctOf(it.passRate)} עברו`}</small></span>
         </div>
@@ -499,10 +521,15 @@ export function Ring({ value, size = 52, color = '--bot', label }: { value: numb
 }
 
 /** מקרא: ריבוע צבע ושם לכל סדרה */
-export function Legend({ items }: { items: { label: string; color: string; hatch?: boolean; line?: boolean }[] }) {
+export function Legend({ items }: { items: { label: string; color: string; hatch?: boolean; line?: boolean; gap?: 'full' | 'part' }[] }) {
   return (
     <div className="legend" dir="rtl">
-      {items.map((s) => <span key={s.label}><i className={s.hatch ? 'hatch' : s.line ? 'lineswatch' : undefined} style={s.hatch ? undefined : { background: `var(${s.color})` }} />{s.label}</span>)}
+      {items.map((s) => (
+        <span key={s.label}>
+          <i className={s.hatch ? 'hatch' : s.gap ? `gap${s.gap}` : s.line ? 'lineswatch' : undefined} style={s.hatch || s.gap ? undefined : { background: `var(${s.color})` }} />
+          {s.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -651,6 +678,9 @@ export function Delta({ value }: { value: number | null }) {
   );
 }
 
+/** צבע הטקסט על חלק בפס: לבן על כחול, כהה על אפור בהיר */
+const ON_PART: Record<string, string> = { '--notbot': 'on-notbot', '--open-a': 'on-light', '--open-b': 'on-light' };
+
 /** פס של 100%: חלק לכל צד, עם האחוז כתוב על החלק כשיש לו מקום */
 export function Bars100({ label, parts }: { label: string; parts: { value: number; color: string; hatch?: boolean; text: string; more?: string }[] }) {
   const total = parts.reduce((s, p) => s + p.value, 0);
@@ -662,58 +692,12 @@ export function Bars100({ label, parts }: { label: string; parts: { value: numbe
           const w = total ? (p.value / total) * 100 : 0;
           if (!w) return null;
           return (
-            <span key={p.color} className={`b100part${p.hatch ? ' hatch' : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={`${p.text}${p.more ? ` ${p.more}` : ''}`}>
+            <span key={p.color} className={`b100part${p.hatch ? ' hatch on-light' : ''}${ON_PART[p.color] ? ` ${ON_PART[p.color]}` : ''}`} style={{ width: `${w}%`, ...(p.hatch ? {} : { background: `var(${p.color})` }) }} title={`${p.text}${p.more ? ` ${p.more}` : ''}`}>
               {w >= 14 ? <span className="b100text">{p.text}{p.more ? <span className="b100more"> {p.more}</span> : null}</span> : null}
             </span>
           );
         })}
       </span>
-    </div>
-  );
-}
-
-/**
- * קו של אחוז לאורך זמן, ביישור לעמודות שמעליו (אותו רוחב ואותן עמודות). ציר אחד, מ-0% עד 100%.
- * במקום ציר משני בגרף העמודות: שני גרפים זה מעל זה, כדי שלא יהיו שני סולמות על אותו גרף.
- */
-export function ShareStrip({ labels, values, color = '--series-1', height = 64, label }: { labels: string[]; values: (number | null)[]; color?: string; height?: number; label: string }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const { box, W } = useWidth();
-  const n = values.length;
-  if (!n) return <div ref={box} />;
-  const padL = 34;
-  const padT = 8;
-  const padB = 6;
-  const slot = (W - padL - 4) / n;
-  const x = (i: number) => padL + slot * i + slot / 2;
-  const y = (v: number) => padT + (height - padT - padB) * (1 - v);
-  const pts = values.map((v, i) => (v === null ? null : [x(i), y(v)] as const));
-  let d = '';
-  pts.forEach((p, i) => {
-    if (!p) return;
-    d += `${!pts[i - 1] ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)} `;
-  });
-  return (
-    <div className="chart share" dir="ltr" ref={box}>
-      <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
-        {[0, 0.5, 1].map((t) => (
-          <g key={t}>
-            <line x1={padL} x2={W} y1={y(t)} y2={y(t)} className="grid" />
-            <text x={padL - 6} y={y(t) + 4} className="tick" textAnchor="end">{pctFmt.format(t)}</text>
-          </g>
-        ))}
-        <path d={d} fill="none" stroke={`var(${color})`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {pts.map((p, i) => (
-          <g key={labels[i]} onMouseEnter={() => setHover(i)}>
-            <rect x={padL + slot * i} y={0} width={slot} height={height} fill="transparent" />
-            {p && hover === i ? <circle cx={p[0]} cy={p[1]} r={4} fill={`var(${color})`} stroke="var(--surface)" strokeWidth={2} /> : null}
-          </g>
-        ))}
-      </svg>
-      <div className="sparkfoot" dir="rtl">
-        <span>{label}</span>
-        {hover !== null ? <strong>{labels[hover]}: {values[hover] === null ? '-' : pctFmt.format(values[hover]!)}</strong> : null}
-      </div>
     </div>
   );
 }

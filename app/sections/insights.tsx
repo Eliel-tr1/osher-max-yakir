@@ -6,7 +6,7 @@ import {
   type ExamFilter, type Indexed, type Scope,
 } from '@/lib/insights';
 import type { AnalysisRow, FeedbackRow, InquiryRow, Insights } from '@/lib/leads/types';
-import { Bars100, BarList, Columns, Fold, fmtDate, fmtDateTime, Info, ListBlock, MoreTable, Ring, nf, pct, pctOf } from '../charts';
+import { Bars100, BarList, Fold, fmtDate, fmtDateTime, Info, ListBlock, MoreTable, Ring, Sparkline, nf, pct, pctOf } from '../charts';
 import { ChatLink, useAuth, useLinkNote, type RowKind } from '../auth';
 import { Chips, fmtBucket } from './shared';
 
@@ -135,8 +135,6 @@ function AbandonCard({ rows, scope, open, onToggle }: { rows: AnalysisRow[] | nu
 
 // ---------- פניות שירות ----------
 
-const TREND_COLORS = ['--series-1', '--series-2', '--series-3'];
-
 function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | null; scope: Scope; open: boolean; onToggle: () => void }) {
   const note = useLinkNote();
   const v = useMemo(() => (rows ? inquiryView(rows, scope) : null), [rows, scope]);
@@ -161,13 +159,22 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
             extra={(n) => { const c = v.cats.find((x) => x.name === n); return c ? `${nf.format(c.people)} אנשים · ${pctOf(c.share)}` : null; }}
           />
           {v.pending ? <p className="muted small">{nf.format(v.pending)} עוד בסיווג</p> : null}
-          <h3>לפי שבוע</h3>
-          <Columns
-            labels={v.weekly.map((d) => fmtBucket(d.key, 'week'))}
-            values={v.weekly.map((d) => d.values)}
-            series={[...v.top3.map((name, k) => ({ key: name, label: name, color: TREND_COLORS[k] })), { key: 'rest', label: 'שאר הנושאים', color: '--notbot' }]}
-            height={130}
-          />
+          {v.top3.length > 0 ? (
+            <>
+              <h3>לפי שבוע <Info>שלושת הנושאים הגדולים בטווח, כל אחד בגרף משלו ובאותו סולם, כדי שלא יהיו צבעים נוספים.</Info></h3>
+              <div className="trends">
+                {v.top3.map((name, k) => (
+                  <div key={name} className="trend">
+                    <span className="trendname" title={name}>{name}</span>
+                    <Sparkline
+                      labels={v.weekly.map((d) => fmtBucket(d.key, 'week'))} values={v.weekly.map((d) => d.values[k])} color="--bot" height={28}
+                      max={Math.max(1, ...v.weekly.flatMap((d) => d.values.slice(0, v.top3.length)))} label={`${name} לפי שבוע`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
           <ListBlock
             note={note}
             items={v.cats.map((c) => ({ id: `inq-${c.name}`, title: c.name, count: `${nf.format(c.count)} פניות`, render: () => <TextList kind="inquiry" rows={c.rows} head="תוכן הפנייה" /> }))}
@@ -239,8 +246,8 @@ function QuestionCard({ insights, scope, filtered, open, onToggle }: { insights:
           <Bars100
             label="ענו"
             parts={[
-              { value: v.answered, color: '--bot', text: `${nf.format(v.answered)} מתוך ${nf.format(v.all.length)}`, more: 'ענו' },
-              { value: v.waiting, color: '--open-a', text: `${nf.format(v.waiting)} ממתינות` },
+              { value: v.answered, color: '--bot', text: nf.format(v.answered), more: `מתוך ${nf.format(v.all.length)}` },
+              { value: v.waiting, color: '--open-a', text: nf.format(v.waiting), more: 'ממתינות' },
             ]}
           />
           {filtered ? <p className="muted small">לא מסונן לפי מקור ותהליך</p> : null}

@@ -126,7 +126,7 @@ export function ExamsCard({ ex, by, setBy, auto, passFail, passFailBy, byFamily,
       <Columns
         labels={passFail.map((d) => fmtBucket(d.key, passFailBy))}
         values={passFail.map((d) => [d.passed, d.failed])}
-        series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--series-2' }]}
+        series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--notbot' }]}
       />
       <div className="three">
         <div><h3>לפי סוג</h3><SplitList items={byFamily} /></div>

@@ -42,7 +42,7 @@ export function BotHero({ all, prev }: { all: Purchase[]; prev: Purchase[] | nul
       <div className="herospark">
         <Sparkline
           labels={v.share.map((d) => fmtBucket(d.key, 'week'))} values={v.share.map((d) => d.share)} color="--bot" height={40} max={1}
-          format={(x) => pctOf(x)} label="החלק של הבוט לפי שבוע"
+          format={(x) => pctOf(x)} label="החלק של הבוט מההכנסות, לפי שבוע" caption="החלק של הבוט, לפי שבוע"
         />
       </div>
       <p className="heroline">

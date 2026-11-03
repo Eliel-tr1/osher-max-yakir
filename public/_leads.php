@@ -313,6 +313,8 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
             'dupes' => $dupes,
             'insights' => $insights['file'],
         ],
+        // לשימוש בשרת בלבד (לא בקובץ ולא בקובץ הפרטי): הליד של כל קוד מזהה, כדי לחבר מחדש חלק שנשאר מרענון קודם
+        'leadOfNs' => $leadOfNs,
         'ids' => array_merge([
             'generatedAt' => $at,
             'leads' => array_map(fn ($r) => $r['ns'], $kept),
