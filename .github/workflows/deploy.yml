@@ -179,13 +179,18 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         env:
           DASHBOARD_READ_TOKEN: ${{ secrets.DASHBOARD_READ_TOKEN }}
+          # רק לאבחון כשהסוד לא מגיע: מזה מודפסים שמות דומים של סודות שהפריסה רואה. אף פעם לא ערכים
+          SEEN_SECRETS: ${{ toJSON(secrets) }}
         run: |
           # #28: קריאה של data.php בלי סיסמה, עם הכותרת X-Dashboard-Read-Token (בשביל b2b-cmd). לשרת נכתב רק גיבוב (PBKDF2 עם מלח
           # אקראי), מחוץ לאתר. הסוד לא נשמר ולא מודפס. בלי הסוד, הקובץ נמחק והגישה סגורה (כך מבטלים אותה).
+          # רק שמות שמכילים DASHBOARD, READ או TOKEN (כדי לזהות שם עם טעות), וכמה סודות יש בסך הכול. ההערות ציבוריות
+          NAMES=$(python3 -c 'import json, os, re; k = [n for n in json.loads(os.environ.get("SEEN_SECRETS") or "{}") if n != "github_token"]; m = sorted(n for n in k if re.search("DASHBOARD|READ|TOKEN", n, re.I)); print((", ".join(m) or "אין") + " (מתוך " + str(len(k)) + " סודות)")')
+          unset SEEN_SECRETS
           OPTS="-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20"
           if [ -z "$DASHBOARD_READ_TOKEN" ]; then
             sshpass -e ssh -p "${PORT:-22}" $OPTS "$USER@$HOST" 'rm -f ~/osher-max-private/read-token.json'
-            echo "::notice title=גישת קריאה::אין סוד DASHBOARD_READ_TOKEN: הגישה בלי סיסמה סגורה"
+            echo "::notice title=גישת קריאה::אין סוד DASHBOARD_READ_TOKEN: הגישה בלי סיסמה סגורה. שמות דומים שהפריסה רואה: $NAMES. הסוד צריך להיות ב-Settings > Secrets and variables > Actions > Repository secrets"
             exit 0
           fi
           # רווחים בהתחלה ובסוף לא נחשבים, כמו בבדיקה ב-PHP (trim)
