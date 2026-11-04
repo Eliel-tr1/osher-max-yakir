@@ -1,0 +1,55 @@
+name: תצוגה מקדימה
+
+# בונה את הדף על נתוני ההדגמה ומצלם אותו ברוחבי מחשב, טאבלט וטלפון, כדי לראות שינוי בתצוגה לפני פריסה (#34).
+# בלי סודות, בלי השרת ובלי נתונים אמיתיים. הצילומים נשמרים ב-artifact של הריצה ל-14 יום.
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'lib/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'scripts/preview.mjs'
+      - 'scripts/preview-shots.mjs'
+      - '.github/workflows/preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: בנייה על נתוני ההדגמה
+        run: |
+          npm ci --no-audit --no-fund
+          npm run data:demo
+          npm run build
+      - name: צילום
+        run: |
+          npm i --no-save --no-audit --no-fund playwright@1.48.2
+          npx playwright install chromium --with-deps
+          node scripts/preview.mjs &
+          for i in $(seq 1 20); do curl -sf http://localhost:4173/oshermax/ >/dev/null && break; sleep 1; done
+          node scripts/preview-shots.mjs http://localhost:4173/oshermax/ /tmp/preview
+      - name: שמירת הצילומים
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ github.run_number }}
+          path: /tmp/preview
+          retention-days: 14
+          if-no-files-found: warn
