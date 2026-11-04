@@ -102,6 +102,8 @@ export default function Dashboard() {
     }
   };
   const toggle = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: !o[id] })), []);
+  /** קישור לסקשן סגור פותח אותו, כדי שלא יגיעו לכותרת בלבד */
+  const reveal = useCallback((id: string) => setOpen((o) => ({ ...o, [id]: true })), []);
   /** כרטיס יכולת: פותח את הפירוט שלו וגולל אליו */
   const openDetail = useCallback((cap: CapabilityId, target: string) => {
     if (cap === 'sales') setChip(REASON_SALES);
@@ -305,7 +307,7 @@ export default function Dashboard() {
           </section>
 
           <nav className="jump" aria-label="קפיצה לסקשן">
-            {jump.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}
+            {jump.map(([id, label]) => <a key={id} href={`#${id}`} onClick={() => reveal(id)}>{label}</a>)}
           </nav>
 
           {tab === 'main' ? (
@@ -326,18 +328,18 @@ export default function Dashboard() {
             <div role="tabpanel" id="panel-team" aria-labelledby="tab-team">
               {trackingBanner(health) && (
                 <p className="notice error top-alert" role="alert">
-                  {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking">לפרטים</a>
+                  {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking" onClick={() => reveal('tracking')}>לפרטים</a>
                 </p>
               )}
-              <TeamTiles s={s} removed={view.removed} dupes={view.dupes} leadsSeries={view.leadsSeries} leadsBy={view.leadsBy} autoBucket={view.auto} setLeadsBy={setLeadsBy} />
+              <TeamTiles s={s} removed={view.removed} dupes={view.dupes} leadsSeries={view.leadsSeries} leadsBy={view.leadsBy} autoBucket={view.auto} setLeadsBy={setLeadsBy} open={!!open['t-more']} onToggle={() => toggle('t-more')} />
               <FunnelCard funnel={view.funnel} siteBuyers={s.siteBuyers} conversion={pct(s.leadsWhoBought, s.leads)} />
-              <TrackingSection health={health} all={view.purchasesAll} />
+              <TrackingSection health={health} all={view.purchasesAll} open={!!open.tracking} onToggle={() => toggle('tracking')} />
               <ExamsCard
                 ex={ex} by={testsBy} setBy={setTestsBy} auto={view.auto} passFail={view.passFail} passFailBy={view.passFailBy} byFamily={view.byFamily} bySize={view.bySize}
-                byPlatform={view.byPlatform} tests={view.tests} testMatrix={view.testMatrix}
+                byPlatform={view.byPlatform} tests={view.tests} testMatrix={view.testMatrix} open={!!open.exams} onToggle={() => toggle('exams')}
               />
-              <SourcesCard bySource={view.bySource} bySourceRaw={view.bySourceRaw} purchases={view.purchasesAll} />
-              <PopupCompare people={people} range={view.range} />
+              <SourcesCard bySource={view.bySource} bySourceRaw={view.bySourceRaw} purchases={view.purchasesAll} open={!!open.sources} onToggle={() => toggle('sources')} />
+              <PopupCompare people={people} range={view.range} open={!!open.popupcmp} onToggle={() => toggle('popupcmp')} />
               <HowCounted gaps={purchaseGaps(file.purchases)} />
             </div>
           )}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { botSide, fromPopup, inside, POPUP_START, popupCompare, popupFunnel, timeSeries, type Bucket, type CompareRow, type PopupPerson, type Range } from '@/lib/metrics';
-import { BarList, Columns, Fold, FunnelStrip, Info, ListBlock, RateBars, Stats, fmtDay, money, nf, pct } from '../charts';
+import { BarList, Columns, Fold, FunnelStrip, ListBlock, RateBars, Stats, fmtDay, money, nf, pct, pctOf } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum, peopleCount, PeopleList } from '../lists';
 import { BucketChips, fmtBucket } from './shared';
@@ -113,7 +113,7 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
  * הפופאפ מול מי שלא הגיע ממנו (עבר ללשונית "לצוות", הנחיית המנהל 3/11/2026). הקבוצה "כל מי שלא הגיע מהפופאפ" כוללת לידים
  * שנוצרו ברגע הרכישה באתר, ולכן אחוז הרכישה שלה גבוה מאוד.
  */
-export function PopupCompare({ people, range }: { people: PopupPerson[]; range: Range }) {
+export function PopupCompare({ people, range, open, onToggle }: { people: PopupPerson[]; range: Range; open: boolean; onToggle: () => void }) {
   const cmp = useMemo(() => popupCompare(people, range), [people, range]);
   if (!people.some((x) => fromPopup(x.lead))) return null;
   const groups: [string, CompareRow, string][] = [
@@ -122,13 +122,14 @@ export function PopupCompare({ people, range }: { people: PopupPerson[]; range: 
     ['כל מי שלא הגיע מהפופאפ', cmp.others, '--notbot'],
   ];
   return (
-    <section className="card" id="popupcmp" aria-labelledby="popupcmp-h">
-      <h2 id="popupcmp-h">
-        הפופאפ מול מי שלא הגיע ממנו, מ-{fmtDay(cmp.from)}{' '}
-        <Info>
-          אנשים שנכנסו מ-{fmtDay(cmp.from)} (שבוע עליית הפופאפ, או תחילת הטווח שבחרת). שיחה אמיתית: מתוך מי שהסוכן כבר סרק.
-        </Info>
-      </h2>
+    <Fold
+      id="popupcmp" title={<>הפופאפ מול מי שלא הגיע ממנו, מ-{fmtDay(cmp.from)}</>} open={open} onToggle={onToggle}
+      stats={[
+        { label: 'קנו מהפופאפ', value: pctOf(cmp.popup.buyRate) },
+        { label: 'קנו בבוט בלי הפופאפ', value: pctOf(cmp.bot.buyRate) },
+      ]}
+      info={<>אנשים שנכנסו מ-{fmtDay(cmp.from)} (שבוע עליית הפופאפ, או תחילת הטווח שבחרת). שיחה אמיתית: מתוך מי שהסוכן כבר סרק.</>}
+    >
       <p className="hint tight">
         &quot;כל מי שלא הגיע מהפופאפ&quot; כולל לידים שנוצרו בטבלה ברגע הרכישה באתר, ולכן אחוז הרכישה שלו גבוה מאוד. זו לא השוואה של אותו קהל.
       </p>
@@ -142,6 +143,6 @@ export function PopupCompare({ people, range }: { people: PopupPerson[]; range: 
           <RateBars rows={groups.map(([name, r, c]) => ({ name, rate: r.buyRate, sub: `${nf.format(r.buyers)} מתוך ${nf.format(r.people)}`, color: c }))} />
         </div>
       </div>
-    </section>
+    </Fold>
   );
 }

@@ -789,6 +789,8 @@ export function ListBlock({ items, title = 'רשימות', note }: { items: List
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape' && open && items.some((i) => i.id === open)) {
       const btn = rowRefs.current.get(open);
+      // רשימה בתוך רשימה: Esc סוגר רק את הפנימית
+      e.stopPropagation();
       setOpen(null);
       btn?.focus();
     }

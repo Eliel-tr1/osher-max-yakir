@@ -117,28 +117,33 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
         </div>
       </div>
 
-      <div className="box">
-        <h3>
-          {ACTIVATION}{' '}
-          <Info>תשלום אחרי מעבר אתגר כדי לפתוח את החשבון הממומן. נספר מוצר שבשם שלו יש activation, או רכישה בלי שם מוצר בסכום של דמי הפעלה (109, 139, 169, 249, 259, 349, 399).</Info>
-        </h3>
-        <Stats items={[
-          { label: 'רכישות', value: nf.format(v.activation.length), sub: `${pct(v.activation.length, all.length)} מכל הרכישות`, ring: all.length ? v.activation.length / all.length : null },
-          { label: 'סכום', value: money.format(v.act.all.paid) },
-        ]} />
-        <Bars100
-          label="רכישות"
-          parts={[
-            { value: v.act.yes.purchases, color: '--bot', text: nf.format(v.act.yes.purchases), more: SIDE_LABEL.yes },
-            { value: v.act.rest.purchases, color: '--notbot', text: nf.format(v.act.rest.purchases), more: SIDE_LABEL.no },
-          ]}
-        />
-      </div>
-
       <ListBlock
+        title="פירוט"
         note={note}
         items={[
-          { id: 'activation', title: ACTIVATION, count: buysCount(v.activation), sum: buysSum(v.activation), render: () => <BuyList purchases={v.activation} /> },
+          {
+            id: 'activation', title: ACTIVATION, count: buysCount(v.activation), sum: buysSum(v.activation),
+            render: () => (
+              <>
+                <p className="hint tight">
+                  איך לקרוא{' '}
+                  <Info>תשלום אחרי מעבר אתגר כדי לפתוח את החשבון הממומן. נספר מוצר שבשם שלו יש activation, או רכישה בלי שם מוצר בסכום של דמי הפעלה (109, 139, 169, 249, 259, 349, 399).</Info>
+                </p>
+                <Stats items={[
+                  { label: 'רכישות', value: nf.format(v.activation.length), sub: `${pct(v.activation.length, all.length)} מכל הרכישות`, ring: all.length ? v.activation.length / all.length : null },
+                  { label: 'סכום', value: money.format(v.act.all.paid) },
+                ]} />
+                <Bars100
+                  label="רכישות"
+                  parts={[
+                    { value: v.act.yes.purchases, color: '--bot', text: nf.format(v.act.yes.purchases), more: SIDE_LABEL.yes },
+                    { value: v.act.rest.purchases, color: '--notbot', text: nf.format(v.act.rest.purchases), more: SIDE_LABEL.no },
+                  ]}
+                />
+                <BuyList purchases={v.activation} />
+              </>
+            ),
+          },
           {
             id: 'products', title: 'כל המוצרים', count: `${nf.format(v.products.length)} מוצרים`,
             render: () => (

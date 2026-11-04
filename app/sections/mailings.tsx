@@ -71,27 +71,28 @@ export function MailingsSection({ mailings, waves, open, onToggle }: { mailings:
         color="--bot"
       />
 
-      <h3>לפי גל</h3>
-      <Columns
-        labels={v.waves.map((w) => w.wave)}
-        values={v.waves.map((w) => [w.delivered ?? 0, w.undelivered ?? 0])}
-        series={[{ key: 'delivered', label: 'נמסרו', color: '--bot' }, { key: 'undelivered', label: 'לא נמסרו', color: '--notbot' }]}
-        labelEvery={1}
-      />
-
       <ListBlock
+        title="פירוט"
         note={note}
         items={[
           {
-            id: 'waves', title: 'טבלת הגלים', count: `${nf.format(v.waves.length)} גלים`,
+            id: 'waves', title: 'לפי גל', count: `${nf.format(v.waves.length)} גלים`,
             render: () => (
-              <SimpleTable
-                headers={['גל', 'תאריך שליחה', 'נשלחו', 'נמסרו', 'קונים', 'רכישות', 'סכום', 'רכישות דרך הקישור']}
-                rows={rows.map((w) => ({
-                  key: w.wave,
-                  cells: [w.wave, fmtSheetDay(w.sentDay), n(w.sent), n(w.delivered), n(w.buyers), n(w.purchases), eur(w.amount), w.viaLinkPurchases === null ? '-' : `${nf.format(w.viaLinkPurchases)} · ${eur(w.viaLinkAmount)}`],
-                }))}
-              />
+              <>
+                <Columns
+                  labels={v.waves.map((w) => w.wave)}
+                  values={v.waves.map((w) => [w.delivered ?? 0, w.undelivered ?? 0])}
+                  series={[{ key: 'delivered', label: 'נמסרו', color: '--bot' }, { key: 'undelivered', label: 'לא נמסרו', color: '--notbot' }]}
+                  labelEvery={1}
+                />
+                <SimpleTable
+                  headers={['גל', 'תאריך שליחה', 'נשלחו', 'נמסרו', 'קונים', 'רכישות', 'סכום', 'רכישות דרך הקישור']}
+                  rows={rows.map((w) => ({
+                    key: w.wave,
+                    cells: [w.wave, fmtSheetDay(w.sentDay), n(w.sent), n(w.delivered), n(w.buyers), n(w.purchases), eur(w.amount), w.viaLinkPurchases === null ? '-' : `${nf.format(w.viaLinkPurchases)} · ${eur(w.viaLinkAmount)}`],
+                  }))}
+                />
+              </>
             ),
           },
           { id: 'recipients', title: 'רכישות של נמענים אחרי השליחה', count: buysCount(v.recipients), sum: buysSum(v.recipients), render: () => <MailList rows={v.recipients} /> },
