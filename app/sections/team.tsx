@@ -7,7 +7,7 @@ import {
   type Bucket, type ExamSummary, type Funnel, type Matrix, type PassFailRow, type SourceRow, type Summary,
 } from '@/lib/metrics';
 import { INSIGHTS_FROM } from '@/lib/insights';
-import { BarList, Columns, fmtDay, FunnelStrip, HeatTable, Info, ListBlock, money, nf, pct, pctOf, Ring, SimpleTable, Sparkline, SplitList, Stats } from '../charts';
+import { BarList, Columns, fmtDay, Fold, FunnelStrip, HeatTable, Info, ListBlock, money, nf, pct, pctOf, Ring, SimpleTable, Sparkline, SplitList, Stats } from '../charts';
 import { BucketChips, fmtBucket } from './shared';
 
 /**
@@ -31,7 +31,7 @@ function Tile({ label, value, sub, info, ring }: { label: string; value: string;
 }
 
 /** המספרים שהיו בראש הדף עד 3/11, עכשיו לצוות */
-export function TeamTiles({ s, removed, dupes, leadsSeries, leadsBy, autoBucket, setLeadsBy }: {
+export function TeamTiles({ s, removed, dupes, leadsSeries, leadsBy, autoBucket, setLeadsBy, open, onToggle }: {
   s: Summary;
   removed: number;
   dupes: number;
@@ -39,34 +39,49 @@ export function TeamTiles({ s, removed, dupes, leadsSeries, leadsBy, autoBucket,
   leadsBy: Bucket;
   autoBucket: Bucket;
   setLeadsBy: (b: Bucket | null) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <section className="top" aria-label="מספרי מפתח" id="team-top">
-      <Tile
-        label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`}
-        info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
-      />
-      <Tile
-        label="התחילו שיחה" value={nf.format(s.startedJourney)} ring={s.leads ? s.startedJourney / s.leads : null} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
-        info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
-      />
-      <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
-      <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
-      <Tile
-        label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`}
-        info="אחוז ההמרה של הדשבורד: מתוך הלידים בטווח (בלי מי שקנה באתר בלי לעבור בבוט), כמה רכשו. זה המספר היחיד שנקרא אחוז המרה."
-      />
-      <Tile label="קנו באתר בלי לעבור בבוט" value={nf.format(s.siteBuyers)} sub="לא במשפך" info={`ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`} />
-      <Tile label="הסירו את עצמם" value={nf.format(removed)} sub="לפי תאריך ההסרה בלשונית הלידים" />
-      <Tile label="רכישות כפולות" value={nf.format(dupes)} sub="לא נספרו" info="אותה רכישה שנכתבה בגיליון פעמיים: אותו קונה ואותו סכום בתוך שתי דקות. נספרת פעם אחת." />
-      <article className="tile sparkcard">
-        <div className="sparkhead">
-          <p className="label">לידים לפי {BUCKET_WORD[leadsBy]}</p>
-          <BucketChips value={leadsBy === autoBucket ? null : leadsBy} auto={autoBucket} onChange={setLeadsBy} />
+    <>
+      <section className="top" aria-label="מספרי מפתח" id="team-top">
+        <Tile
+          label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`}
+          info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
+        />
+        <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
+        <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
+        <Tile
+          label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`}
+          info="אחוז ההמרה של הדשבורד: מתוך הלידים בטווח (בלי מי שקנה באתר בלי לעבור בבוט), כמה רכשו. זה המספר היחיד שנקרא אחוז המרה."
+        />
+      </section>
+      <Fold
+        id="t-more" title="עוד מספרים" open={open} onToggle={onToggle}
+        stats={[
+          { label: 'התחילו שיחה', value: nf.format(s.startedJourney) },
+          { label: 'הסירו את עצמם', value: nf.format(removed) },
+          { label: 'כפולות', value: nf.format(dupes) },
+        ]}
+      >
+        <div className="top">
+          <Tile
+            label="התחילו שיחה" value={nf.format(s.startedJourney)} ring={s.leads ? s.startedJourney / s.leads : null} sub={`שיחה אמיתית: ${nf.format(s.realConversations)}`}
+            info={`ענו לצ'אטבוט (עמודה I). שיחה אמיתית לפי הסוכן שקורא את השיחות: ${nf.format(s.realConversations)} מתוך ${nf.format(s.aiAnalyzed)} שנסרקו, מתוכן מכירתית ${nf.format(s.salesConversations)}.`}
+          />
+          <Tile label="קנו באתר בלי לעבור בבוט" value={nf.format(s.siteBuyers)} sub="לא במשפך" info={`ליד שנוצר עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלו, או אחריה. לא נכנס למשפך ולאחוז ההמרה.`} />
+          <Tile label="הסירו את עצמם" value={nf.format(removed)} sub="לפי תאריך ההסרה בלשונית הלידים" />
+          <Tile label="רכישות כפולות" value={nf.format(dupes)} sub="לא נספרו" info="אותה רכישה שנכתבה בגיליון פעמיים: אותו קונה ואותו סכום בתוך שתי דקות. נספרת פעם אחת." />
         </div>
-        <Sparkline labels={leadsSeries.map((d) => fmtBucket(d.key, leadsBy))} values={leadsSeries.map((d) => d.values[0])} label="לידים לאורך זמן" />
-      </article>
-    </section>
+        <article className="tile sparkcard">
+          <div className="sparkhead">
+            <p className="label">לידים לפי {BUCKET_WORD[leadsBy]}</p>
+            <BucketChips value={leadsBy === autoBucket ? null : leadsBy} auto={autoBucket} onChange={setLeadsBy} />
+          </div>
+          <Sparkline labels={leadsSeries.map((d) => fmtBucket(d.key, leadsBy))} values={leadsSeries.map((d) => d.values[0])} label="לידים לאורך זמן" />
+        </article>
+      </Fold>
+    </>
   );
 }
 
@@ -93,7 +108,7 @@ export function FunnelCard({ funnel, siteBuyers, conversion }: { funnel: Funnel;
 }
 
 /** מבחנים: עשו מבחן = עברו + נכשלו + בלי תוצאה (הנחיית המנהל 3/11/2026) */
-export function ExamsCard({ ex, by, setBy, auto, passFail, passFailBy, byFamily, bySize, byPlatform, tests, testMatrix }: {
+export function ExamsCard({ ex, by, setBy, auto, passFail, passFailBy, byFamily, bySize, byPlatform, tests, testMatrix, open, onToggle }: {
   ex: ExamSummary;
   by: Bucket | null;
   setBy: (b: Bucket | null) => void;
@@ -105,11 +120,20 @@ export function ExamsCard({ ex, by, setBy, auto, passFail, passFailBy, byFamily,
   byPlatform: PassFailRow[];
   tests: PassFailRow[];
   testMatrix: Matrix;
+  open: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <section className="card" id="exams" aria-labelledby="exams-h">
+    <Fold
+      id="exams" title="מבחנים" open={open} onToggle={onToggle}
+      stats={[
+        { label: 'עשו מבחן', value: nf.format(ex.did) },
+        { label: 'עברו', value: nf.format(ex.passed) },
+        { label: 'אחוז מעבר', value: pctOf(ex.passRate) },
+      ]}
+    >
       <div className="cardhead">
-        <h2 id="exams-h">מבחנים</h2>
+        <span />
         <BucketChips value={by} auto={auto} onChange={setBy} />
       </div>
       <Stats items={[
@@ -128,31 +152,34 @@ export function ExamsCard({ ex, by, setBy, auto, passFail, passFailBy, byFamily,
         values={passFail.map((d) => [d.passed, d.failed])}
         series={[{ key: 'passed', label: 'עברו', color: '--series-1' }, { key: 'failed', label: 'נכשלו', color: '--notbot' }]}
       />
-      <div className="three">
-        <div><h3>לפי סוג</h3><SplitList items={byFamily} /></div>
-        <div><h3>לפי גודל חשבון</h3><SplitList items={bySize} /></div>
-        <div><h3>לפי פלטפורמה</h3><SplitList items={byPlatform} /></div>
-      </div>
-      <ListBlock items={[
+      <ListBlock title="פירוט" items={[
+        { id: 'family', title: 'לפי סוג', render: () => <SplitList items={byFamily} /> },
+        { id: 'size', title: 'לפי גודל חשבון', render: () => <SplitList items={bySize} /> },
+        { id: 'platform', title: 'לפי פלטפורמה', render: () => <SplitList items={byPlatform} /> },
         { id: 'tests', title: 'כל המבחנים', count: `${nf.format(tests.length)} מבחנים`, render: () => <SplitList items={tests} max={200} /> },
         { id: 'testmonths', title: 'כמה נעשו מכל מבחן, לפי חודש', render: () => <HeatTable {...testMatrix} nameHeader="מבחן" /> },
       ]} />
-    </section>
+    </Fold>
   );
 }
 
 /** מקור הגעה של הלידים, ומקור הרכישה (utm) שעבר מכרטיס הרכישות */
-export function SourcesCard({ bySource, bySourceRaw, purchases }: { bySource: SourceRow[]; bySourceRaw: SourceRow[]; purchases: Purchase[] }) {
+export function SourcesCard({ bySource, bySourceRaw, purchases, open, onToggle }: { bySource: SourceRow[]; bySourceRaw: SourceRow[]; purchases: Purchase[]; open: boolean; onToggle: () => void }) {
   const sources = purchaseSources(purchases);
   return (
-    <section className="card" id="sources" aria-labelledby="sources-h">
-      <h2 id="sources-h">
-        מקור הגעה{' '}
-        <Info>
+    <Fold
+      id="sources" title="מקור הגעה" open={open} onToggle={onToggle}
+      stats={[
+        { label: 'מקורות', value: nf.format(bySource.length) },
+        { label: 'מקור מוביל', value: bySource[0]?.name ?? '-' },
+      ]}
+      info={(
+        <>
           &quot;בוט וואטסאפ&quot;: נכנסו דרך הבוט. שם של ערוץ (ig, google, Klaviyo, vitrue): utm של האתר. &quot;מהאתר (מבחן או רכישה)&quot;: בטבלה כתוב שם של מבחן או מוצר במקום
           מקור, כלומר הגיעו מהאתר בלי utm.
-        </Info>
-      </h2>
+        </>
+      )}
+    >
       <div className="two">
         <div>
           <h3>לידים</h3>
@@ -173,7 +200,7 @@ export function SourcesCard({ bySource, bySourceRaw, purchases }: { bySource: So
           />
         ),
       }]} />
-    </section>
+    </Fold>
   );
 }
 

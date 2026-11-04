@@ -252,18 +252,27 @@ function QuestionCard({ insights, scope, filtered, open, onToggle }: { insights:
           />
           {filtered ? <p className="muted small">לא מסונן לפי מקור ותהליך</p> : null}
           {questionsUrl ? <p className="small"><a href={questionsUrl} target="_blank" rel="noopener noreferrer">לענות בגיליון, בלשונית &quot;שאלות לסוכן&quot; ↗</a></p> : null}
-          <MoreTable
-            headers={['שאלה', 'קטגוריה', 'מופעים', 'נשאל לאחרונה', 'סטטוס', 'תשובת יקיר', 'שיחות']}
-            rows={v.shown.map(({ r, i }) => ({
-              key: `q-${i}`,
-              cells: [
-                <span key="t" className="qtext">{r.text}</span>, r.category ?? '-', nf.format(r.count), r.lastAt ? fmtDate(r.lastAt) : '-', r.status ?? '-',
-                r.answer ? <span key="a" className="qtext">{r.answer}</span> : '-',
-                <span key="e" className="exlinks">{examples(i).map((u, k) => <a key={u} href={u} target="_blank" rel="noopener noreferrer">{k + 1}↗</a>)}</span>,
-              ],
-            }))}
-          />
-          {v.shown.length === 0 ? <p className="empty">אין שאלות שהופיעו פעמיים ומעלה בטווח הזה</p> : null}
+          {v.shown.length === 0 ? <p className="empty">אין שאלות שהופיעו פעמיים ומעלה בטווח הזה</p> : (
+            <ListBlock
+              title="פירוט"
+              items={[{
+                id: 'questions', title: 'השאלות', count: `${nf.format(v.shown.length)} שאלות`,
+                render: () => (
+                  <MoreTable
+                    headers={['שאלה', 'קטגוריה', 'מופעים', 'נשאל לאחרונה', 'סטטוס', 'תשובת יקיר', 'שיחות']}
+                    rows={v.shown.map(({ r, i }) => ({
+                      key: `q-${i}`,
+                      cells: [
+                        <span key="t" className="qtext">{r.text}</span>, r.category ?? '-', nf.format(r.count), r.lastAt ? fmtDate(r.lastAt) : '-', r.status ?? '-',
+                        r.answer ? <span key="a" className="qtext">{r.answer}</span> : '-',
+                        <span key="e" className="exlinks">{examples(i).map((u, k) => <a key={u} href={u} target="_blank" rel="noopener noreferrer">{k + 1}↗</a>)}</span>,
+                      ],
+                    }))}
+                  />
+                ),
+              }]}
+            />
+          )}
         </>
       )}
     </Fold>

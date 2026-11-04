@@ -83,79 +83,92 @@ export function CouponsSection({ people, all, ever, range, rangeKey, open, onTog
       <div className="cardhead"><span /><BucketChips value={by} auto={v.auto} onChange={setBy} /></div>
       <Columns labels={v.series.map((d) => fmtBucket(d.key, v.b))} values={v.series.map((d) => d.values)} series={[{ key: 'made', label: 'הופקו', color: '--bot' }]} />
 
-      <div className="box">
-        <h3>
-          מה קנו מי שקיבלו קופון{' '}
-          <Info>
-            מי שקיבל קופון אישי מהבוט בטווח, וכל מה שקנה מרגע הקופון והלאה, גם תחת קוד מזהה אחר עם אותו טלפון. הלקוח מקליד את הקוד בעצמו, והוובהוק רושם מה הוקלד
-            (&quot;קופון מהרכישה&quot;). דמי הפעלה בנפרד, כי שם לא מקלידים קופון. הקוד נרשם בכל רכישה רק מ-{fmtDay(COUPON_RECORDED_FROM)}, ולפני כן &quot;בלי קוד&quot; כולל גם
-            רכישות שהקוד שלהן לא נרשם.
-          </Info>
-        </h3>
-        <Stats items={[
-          { label: 'קיבלו קופון', value: nf.format(v.after.holders) },
-          { label: 'קנו אחר כך', value: nf.format(v.after.buyers), sub: 'אתגר או מוצר', ring: v.after.holders ? v.after.buyers / v.after.holders : null },
-        ]} />
-        <Bars100
-          label="הקוד שהוקלד"
-          parts={[
-            { value: v.after.byKind.personal.length, color: '--bot', text: nf.format(v.after.byKind.personal.length), more: 'הקוד האישי' },
-            { value: v.after.byKind.generic.length, color: '--notbot', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
-            { value: v.after.byKind.none.length, color: '--open-b', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
-          ]}
-        />
-        <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--notbot' }, { label: 'בלי קוד', color: '--open-b' }]} />
-        {v.after.generic.length > 0 && (
-          <>
-            <h3>הקודים הכלליים שהוקלדו במקום</h3>
-            <BarList items={v.after.generic} max={6} color="--notbot" />
-          </>
-        )}
-        <p className="hint tight">ועוד {nf.format(v.after.activation.length)} רכישות דמי הפעלה</p>
-        <ListBlock
-          note={note}
-          items={[
-            { id: 'ac-personal', title: 'קנו עם הקוד האישי', count: buysCount(v.after.byKind.personal), sum: buysSum(v.after.byKind.personal), render: () => <BuyList purchases={v.after.byKind.personal} /> },
-            { id: 'ac-generic', title: 'קנו עם קוד כללי', count: buysCount(v.after.byKind.generic), sum: buysSum(v.after.byKind.generic), render: () => <BuyList purchases={v.after.byKind.generic} /> },
-            { id: 'ac-none', title: 'קנו בלי קוד', count: buysCount(v.after.byKind.none), sum: buysSum(v.after.byKind.none), render: () => <BuyList purchases={v.after.byKind.none} /> },
-            { id: 'ac-act', title: 'דמי הפעלה אחרי הקופון', count: buysCount(v.after.activation), sum: buysSum(v.after.activation), render: () => <BuyList purchases={v.after.activation} /> },
-          ]}
-        />
-      </div>
-
-      <div className="box">
-        <div className="cardhead">
-          <h3>
-            כל הקודים ברכישות{' '}
-            <Info>הקוד נקרא מ&quot;קופון מהרכישה&quot;, באותיות גדולות. ריק, &quot;-&quot; ו-empty הם רכישה בלי קופון. קוד אישי של הבוט מקובץ לשורה אחת, בלי להציג את הקודים.</Info>
-          </h3>
-          <Chips value={sort} onChange={setSort} label="סדר" options={[{ id: 'count', label: 'לפי כמות' }, { id: 'money', label: 'לפי סכום' }]} />
-        </div>
-        <Bars100
-          label="רכישות"
-          parts={[
-            { value: withCoupon, color: '--bot', text: nf.format(withCoupon), more: 'עם קופון' },
-            { value: v.none, color: '--notbot', text: nf.format(v.none), more: 'בלי קופון' },
-          ]}
-        />
-        <p className="hint tight">{nf.format(v.rows.length)} קודים שונים</p>
-        {sort === 'count'
-          ? <Legend items={[{ label: 'רכישות של הבוט', color: SIDE.yes.color }, { label: 'שאר הרכישות', color: SIDE.no.color }]} />
-          : <Legend items={[{ label: 'סכום', color: SIDE.yes.color }]} />}
-        <BarTable
-          headers={['קוד', '', 'רכישות', 'סכום', 'של הבוט']}
-          max={TOP_CODES}
-          rows={v.rows.map((r) => ({
-            key: r.name,
-            name: <CodeName name={r.name} />,
-            title: r.name,
-            segments: sort === 'count'
-              ? [{ value: r.bot, color: SIDE.yes.color, label: 'של הבוט' }, { value: r.purchases - r.bot, color: SIDE.no.color, label: 'שאר הרכישות' }]
-              : [{ value: Math.round(r.paid), color: SIDE.yes.color, label: 'סכום' }],
-            cells: [nf.format(r.purchases), money.format(r.paid), `${nf.format(r.bot)} (${pct(r.bot, r.purchases)})`],
-          }))}
-        />
-      </div>
+      <ListBlock
+        title="פירוט"
+        items={[
+          {
+            id: 'after', title: 'מה קנו מי שקיבלו קופון', count: `${nf.format(v.after.buyers)} קנו מתוך ${nf.format(v.after.holders)}`,
+            render: () => (
+              <>
+                <p className="hint tight">
+                  איך לקרוא{' '}
+                  <Info>
+                    מי שקיבל קופון אישי מהבוט בטווח, וכל מה שקנה מרגע הקופון והלאה, גם תחת קוד מזהה אחר עם אותו טלפון. הלקוח מקליד את הקוד בעצמו, והוובהוק רושם מה הוקלד
+                    (&quot;קופון מהרכישה&quot;). דמי הפעלה בנפרד, כי שם לא מקלידים קופון. הקוד נרשם בכל רכישה רק מ-{fmtDay(COUPON_RECORDED_FROM)}, ולפני כן &quot;בלי קוד&quot; כולל גם
+                    רכישות שהקוד שלהן לא נרשם.
+                  </Info>
+                </p>
+                <Stats items={[
+                  { label: 'קיבלו קופון', value: nf.format(v.after.holders) },
+                  { label: 'קנו אחר כך', value: nf.format(v.after.buyers), sub: 'אתגר או מוצר', ring: v.after.holders ? v.after.buyers / v.after.holders : null },
+                ]} />
+                <Bars100
+                  label="הקוד שהוקלד"
+                  parts={[
+                    { value: v.after.byKind.personal.length, color: '--bot', text: nf.format(v.after.byKind.personal.length), more: 'הקוד האישי' },
+                    { value: v.after.byKind.generic.length, color: '--notbot', text: nf.format(v.after.byKind.generic.length), more: 'קוד כללי' },
+                    { value: v.after.byKind.none.length, color: '--open-b', text: nf.format(v.after.byKind.none.length), more: 'בלי קוד' },
+                  ]}
+                />
+                <Legend items={[{ label: 'הקוד האישי', color: '--bot' }, { label: 'קוד כללי', color: '--notbot' }, { label: 'בלי קוד', color: '--open-b' }]} />
+                {v.after.generic.length > 0 && (
+                  <>
+                    <h3>הקודים הכלליים שהוקלדו במקום</h3>
+                    <BarList items={v.after.generic} max={6} color="--notbot" />
+                  </>
+                )}
+                <p className="hint tight">ועוד {nf.format(v.after.activation.length)} רכישות דמי הפעלה</p>
+                <ListBlock
+                  note={note}
+                  items={[
+                    { id: 'ac-personal', title: 'קנו עם הקוד האישי', count: buysCount(v.after.byKind.personal), sum: buysSum(v.after.byKind.personal), render: () => <BuyList purchases={v.after.byKind.personal} /> },
+                    { id: 'ac-generic', title: 'קנו עם קוד כללי', count: buysCount(v.after.byKind.generic), sum: buysSum(v.after.byKind.generic), render: () => <BuyList purchases={v.after.byKind.generic} /> },
+                    { id: 'ac-none', title: 'קנו בלי קוד', count: buysCount(v.after.byKind.none), sum: buysSum(v.after.byKind.none), render: () => <BuyList purchases={v.after.byKind.none} /> },
+                    { id: 'ac-act', title: 'דמי הפעלה אחרי הקופון', count: buysCount(v.after.activation), sum: buysSum(v.after.activation), render: () => <BuyList purchases={v.after.activation} /> },
+                  ]}
+                />
+              </>
+            ),
+          },
+          {
+            id: 'codes', title: 'כל הקודים ברכישות', count: `${nf.format(v.rows.length)} קודים`,
+            render: () => (
+              <>
+                <div className="cardhead">
+                  <p className="hint tight">
+                    איך לקרוא{' '}
+                    <Info>הקוד נקרא מ&quot;קופון מהרכישה&quot;, באותיות גדולות. ריק, &quot;-&quot; ו-empty הם רכישה בלי קופון. קוד אישי של הבוט מקובץ לשורה אחת, בלי להציג את הקודים.</Info>
+                  </p>
+                  <Chips value={sort} onChange={setSort} label="סדר" options={[{ id: 'count', label: 'לפי כמות' }, { id: 'money', label: 'לפי סכום' }]} />
+                </div>
+                <Bars100
+                  label="רכישות"
+                  parts={[
+                    { value: withCoupon, color: '--bot', text: nf.format(withCoupon), more: 'עם קופון' },
+                    { value: v.none, color: '--notbot', text: nf.format(v.none), more: 'בלי קופון' },
+                  ]}
+                />
+                {sort === 'count'
+                  ? <Legend items={[{ label: 'רכישות של הבוט', color: SIDE.yes.color }, { label: 'שאר הרכישות', color: SIDE.no.color }]} />
+                  : <Legend items={[{ label: 'סכום', color: SIDE.yes.color }]} />}
+                <BarTable
+                  headers={['קוד', '', 'רכישות', 'סכום', 'של הבוט']}
+                  max={TOP_CODES}
+                  rows={v.rows.map((r) => ({
+                    key: r.name,
+                    name: <CodeName name={r.name} />,
+                    title: r.name,
+                    segments: sort === 'count'
+                      ? [{ value: r.bot, color: SIDE.yes.color, label: 'של הבוט' }, { value: r.purchases - r.bot, color: SIDE.no.color, label: 'שאר הרכישות' }]
+                      : [{ value: Math.round(r.paid), color: SIDE.yes.color, label: 'סכום' }],
+                    cells: [nf.format(r.purchases), money.format(r.paid), `${nf.format(r.bot)} (${pct(r.bot, r.purchases)})`],
+                  }))}
+                />
+              </>
+            ),
+          },
+        ]}
+      />
     </Fold>
   );
 }

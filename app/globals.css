@@ -68,7 +68,7 @@ body {
 
 button, input, select { font: inherit; color: inherit; }
 
-.page { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+.page { max-width: 960px; margin: 0 auto; padding: 28px 16px 48px; }
 
 .head { margin-bottom: 16px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 10px 20px; }
 .refresh { display: flex; flex-direction: column; align-items: end; gap: 4px; }
@@ -474,6 +474,12 @@ button.barrow:hover, .barrow.on { background: var(--surface-2); }
 .fold.open > .foldhead .lchev { transform: rotate(180deg); }
 .card.fold > .foldbody { padding: 0 18px 16px; }
 .card.fold > .foldbody > h3:first-child, .card.fold > .foldbody > .cardhead:first-child h3 { margin-top: 4px; }
+
+/* אריחים בתוך כרטיס נפתח (לשונית "לצוות", #32) */
+.foldbody > .top { margin: 4px 0 12px; }
+.foldbody > .sparkcard { background: var(--surface-2); border: 0; }
+.foldbody > .top .tile { background: var(--surface-2); border: 0; }
+.lpanel .cardhead .hint.tight { margin: 0; }
 
 /* "תובנות שיחה" (הנחיית המנהל 3/11/2026, #26): ארבעה כרטיסים סגורים ושורת הסרות */
 .insights { margin: 0 0 16px; }
