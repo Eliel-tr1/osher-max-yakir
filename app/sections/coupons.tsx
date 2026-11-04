@@ -60,8 +60,9 @@ export function CouponsSection({ people, all, ever, range, rangeKey, open, onTog
       id="coupons" title="קופונים" open={open} onToggle={onToggle}
       mini={[v.bc.made, v.after.buyers, v.bc.used]}
       stats={[
-        { label: 'הופקו', value: nf.format(v.bc.made) },
-        { label: 'שומשו', value: nf.format(v.bc.used) },
+        { label: 'הופקו', value: nf.format(v.bc.made), bot: true },
+        { label: 'שומשו', value: nf.format(v.bc.used), bot: true },
+        { label: 'מהקופונים', value: money.format(v.bc.usedPaid), bot: true },
         { label: 'יחס שימוש', value: pct(v.bc.used, v.bc.made) },
       ]}
     >

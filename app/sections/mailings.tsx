@@ -34,8 +34,8 @@ export function MailingsSection({ mailings, waves, open, onToggle }: { mailings:
       mini={[t.sent ?? 0, t.delivered ?? 0, t.buyers ?? 0, v.linkBuyers]}
       stats={[
         { label: 'נשלחו', value: n(t.sent) },
-        { label: 'רכישות', value: nf.format(counted) },
-        { label: 'הכנסות', value: money.format(levels.link.concat(levels.spooky, levels.rest).reduce((s, m) => s + (m.amount && m.amount > 0 ? m.amount : 0), 0)) },
+        { label: 'רכישות של נמענים', value: nf.format(counted), bot: true },
+        { label: 'מהנמענים', value: money.format(levels.link.concat(levels.spooky, levels.rest).reduce((s, m) => s + (m.amount && m.amount > 0 ? m.amount : 0), 0)), bot: true },
       ]}
     >
       {names.length > 1 && <div className="cardhead"><span /><Chips value={campaign} onChange={setPicked} label="קמפיין" options={names.map((x) => ({ id: x, label: x }))} /></div>}

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from 'react';
 import type { Lead, MailingPurchase, Purchase } from '@/lib/leads/types';
-import { campaignOf, NO_PRODUCT, normalizeMode, reasonOf, type PopupPerson } from '@/lib/metrics';
+import { botSide, campaignOf, NO_PRODUCT, normalizeMode, reasonOf, type PopupPerson } from '@/lib/metrics';
 import { ChatLink, useAuth, type LinkKind } from './auth';
 import { fmtDate, fmtDateTime, money, MoreTable, nf } from './charts';
 
@@ -56,7 +56,7 @@ export function BuyList({ purchases }: { purchases: Purchase[] }) {
       headers={links ? [...HEAD, ''] : HEAD}
       rows={rows.map((p, n) => {
         const i = purchaseIndex.get(p);
-        return { key: `${i ?? 'x'}-${n}`, cells: [...buyCells(p.at, p.product, p.amount, reasonOf(p), campaignOf(p, leads)), ...(links ? [<ChatLink key="l" kind="purchase" i={i} />] : [])] };
+        return { key: `${i ?? 'x'}-${n}`, cells: [...buyCells(p.at, p.product, p.amount, reasonCell(p), campaignOf(p, leads)), ...(links ? [<ChatLink key="l" kind="purchase" i={i} />] : [])] };
       })}
     />
   );
@@ -72,13 +72,19 @@ export function MailList({ rows: ms }: { rows: MailingPurchase[] }) {
       headers={links ? [...HEAD, ''] : HEAD}
       rows={rows.map((m, n) => {
         const i = mailingIndex.get(m);
-        return { key: `${i ?? 'x'}-${n}`, cells: [...buyCells(m.at, m.product, m.amount, reasonOf(m), m.campaign), ...(links ? [<ChatLink key="l" kind={'mailing' as LinkKind} i={i} />] : [])] };
+        return { key: `${i ?? 'x'}-${n}`, cells: [...buyCells(m.at, m.product, m.amount, reasonCell(m), m.campaign), ...(links ? [<ChatLink key="l" kind={'mailing' as LinkKind} i={i} />] : [])] };
       })}
     />
   );
 }
 
-function buyCells(at: string, product: string | null, amount: number | null, reason: string, campaign: string | null): ReactNode[] {
+/** רכישה של הבוט בולטת ברשימה: כחול, נקודה ומשקל, כדי שלא תהיה תלויה בצבע בלבד (#34) */
+function reasonCell(p: { reason: string | null; bot: 'yes' | 'no' | null }): ReactNode {
+  const text = reasonOf(p);
+  return botSide(p) === 'yes' ? <span key="r" className="isbot">● {text}</span> : text;
+}
+
+function buyCells(at: string, product: string | null, amount: number | null, reason: ReactNode, campaign: string | null): ReactNode[] {
   return [fmtDateTime(at), product ?? NO_PRODUCT, amount === null ? '-' : money.format(amount), reason, campaign ?? '-'];
 }
 

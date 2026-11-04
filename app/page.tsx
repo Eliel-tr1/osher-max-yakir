@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BASE_PATH } from '@/lib/app';
 import { testLeadsOf, type Scope } from '@/lib/insights';
 import { unpack } from '@/lib/leads/file';
+import { BOT_SOURCE } from '@/lib/leads/fromSheet';
 import type { LeadsFile } from '@/lib/leads/types';
 import {
-  annotate, autoBucket, capabilities, countBy, dupesIn, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange, matrixByMonth,
+  annotate, autoBucket, botBreakdown, capabilities, countBy, dupesIn, examSummary, examsByFamily, examsBySize, examsByPlatform, funnel, inRange, matrixByMonth,
   passFailOverTime, POPUP, previousRange, purchaseGaps, REASON_SALES, removedIn, sourceRows, summarize, testStats, timeSeries, withPurchasesAfterEntry,
   type Bucket, type CapabilityId, type Range,
 } from '@/lib/metrics';
@@ -17,7 +18,7 @@ import { DataProvider } from './lists';
 import { ThemeToggle } from './theme';
 import { Capabilities } from './sections/capabilities';
 import { CouponsSection } from './sections/coupons';
-import { BotHero } from './sections/hero';
+import { BotHero, BotTraffic } from './sections/hero';
 import { InsightsSection } from './sections/insights';
 import { MailingsSection } from './sections/mailings';
 import { OverTime } from './sections/overTime';
@@ -202,6 +203,7 @@ export default function Dashboard() {
       missingDays: purchaseGaps(file.purchases).missing,
       dupes: dupesIn(file.dupes, range),
       summary: summarize(leads, purchasesAll),
+      bot: botBreakdown(purchasesAll).yes,
       funnel: funnel(leads),
       removed: removedIn(scoped, range),
       auto,
@@ -313,6 +315,7 @@ export default function Dashboard() {
           {tab === 'main' ? (
             <div role="tabpanel" id="panel-main" aria-labelledby="tab-main">
               <BotHero all={view.purchasesAll} prev={view.purchasesBefore} />
+              <BotTraffic bySource={view.bySource} summary={s} people={people} range={view.range} />
               <Capabilities caps={view.caps} onOpen={openDetail} />
               <OverTime all={view.purchasesAll} missingDays={view.missingDays} by={buysBy} setBy={setBuysBy} />
               <InsightsSection insights={file.insights} generatedAt={file.generatedAt} scope={view.scope} filtered={view.filtered} open={open} toggle={toggle} />
@@ -322,7 +325,7 @@ export default function Dashboard() {
                 <PurchasesSection all={view.purchasesAll} channel={channel} setChannel={setChannel} open={!!open.buys} onToggle={() => toggle('buys')} chip={chip} setChip={setChip} />
                 <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} open={!!open.coupons} onToggle={() => toggle('coupons')} />
                 {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} open={!!open.mail} onToggle={() => toggle('mail')} />}
-                {hasPopup && <PopupSection people={people} range={view.range} rangeKey={rangeKey} open={!!open.popup} onToggle={() => toggle('popup')} />}
+                {hasPopup && <PopupSection people={people} range={view.range} rangeKey={rangeKey} analysis={file.insights.analysis?.rows ?? null} scope={view.scope} open={!!open.popup} onToggle={() => toggle('popup')} />}
                 </div>
               </section>
             </div>
@@ -330,10 +333,10 @@ export default function Dashboard() {
             <div role="tabpanel" id="panel-team" aria-labelledby="tab-team">
               {trackingBanner(health) && (
                 <p className="notice error top-alert" role="alert">
-                  {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking" onClick={() => reveal('tracking')}>לפרטים</a>
+                  {nf.format(health.last7)} אנשים ב-7 הימים האחרונים הגיעו ממודעות <bdi>{health.platforms.join(' ו-')}</bdi> שה-<bdi>utm_campaign</bdi> שלהן לא מולא. <a href="#tracking" onClick={() => reveal('tracking')}>לפרטים</a>
                 </p>
               )}
-              <TeamTiles s={s} removed={view.removed} dupes={view.dupes} leadsSeries={view.leadsSeries} leadsBy={view.leadsBy} autoBucket={view.auto} setLeadsBy={setLeadsBy} open={!!open['t-more']} onToggle={() => toggle('t-more')} />
+              <TeamTiles s={s} botLeads={view.bySource.find((r) => r.name === BOT_SOURCE)?.leads ?? 0} botBuyers={view.bot.buyers} botPaid={view.bot.paid} removed={view.removed} dupes={view.dupes} leadsSeries={view.leadsSeries} leadsBy={view.leadsBy} autoBucket={view.auto} setLeadsBy={setLeadsBy} open={!!open['t-more']} onToggle={() => toggle('t-more')} />
               <FunnelCard funnel={view.funnel} siteBuyers={s.siteBuyers} conversion={pct(s.leadsWhoBought, s.leads)} />
               <TrackingSection health={health} all={view.purchasesAll} open={!!open.tracking} onToggle={() => toggle('tracking')} />
               <ExamsCard

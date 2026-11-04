@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { Purchase } from '@/lib/leads/types';
 import { ACTIVATION, botBreakdown, botSide, byReason, isActivation, matrixByMonth, productStats, purchaseFamily, reasonOf, repeatBuyers, SIDE_LABEL } from '@/lib/metrics';
-import { BarList, Bars100, Fold, HeatTable, Info, ListBlock, SimpleTable, Stats, money, nf, pct } from '../charts';
+import { BarList, Bars100, Fold, HeatTable, Info, Legend, ListBlock, SimpleTable, Stats, money, nf, pct } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum } from '../lists';
 import { Chips, shortReason } from './shared';
@@ -42,6 +42,7 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
       reasons: byReason(all),
       groups,
       activation,
+      botBuys: all.filter((p) => botSide(p) === 'yes'),
       act: { all: botBreakdown(activation).all, yes: botBreakdown(activation).yes, rest: botBreakdown(activation.filter((p) => botSide(p) !== 'yes')).all },
       repeat: repeatBuyers(all),
       families: productStats(ps, purchaseFamily),
@@ -57,9 +58,10 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
       id="buys" title="רכישות" open={open} onToggle={onToggle}
       mini={v.reasons.slice(0, 6).map((r) => r.purchases)}
       stats={[
-        { label: 'רכישות', value: nf.format(v.x.all.purchases) },
-        { label: 'הכנסות', value: money.format(v.x.all.paid) },
-        { label: 'קונים', value: nf.format(v.x.all.buyers) },
+        { label: 'רכישות של הבוט', value: nf.format(v.x.yes.purchases), bot: true },
+        { label: 'של הבוט', value: money.format(v.x.yes.paid), bot: true },
+        { label: 'מכל הרכישות', value: nf.format(v.x.all.purchases) },
+        { label: 'מכל ההכנסות', value: money.format(v.x.all.paid) },
       ]}
     >
       <h3>
@@ -87,6 +89,7 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
         <span />
         <Chips value={channel} onChange={setChannel} label="איזה רכישות" options={[{ id: 'all', label: 'כל הרכישות' }, { id: 'bot', label: 'רק של הבוט' }]} />
       </div>
+      {channel === 'all' ? <Legend items={[{ label: 'של הבוט', color: '--bot' }, { label: 'לא של הבוט', color: '--notbot' }]} /> : null}
       <div className="two">
         <div>
           <h3>לפי סוג מוצר <Info>עד 20/10 שם המוצר לא נרשם בלשונית הרכישות, ולכן רכישות מלפני כן בלי שם מופיעות כ&quot;לפני 20/10 (בלי שם מוצר)&quot;. בכחול: רכישות של הבוט.</Info></h3>
@@ -122,6 +125,7 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
         title="פירוט"
         note={note}
         items={[
+          { id: 'botall', title: 'כל הרכישות של הבוט', count: buysCount(v.botBuys), sum: buysSum(v.botBuys), render: () => <BuyList purchases={v.botBuys} /> },
           {
             id: 'activation', title: ACTIVATION, count: buysCount(v.activation), sum: buysSum(v.activation),
             render: () => (
