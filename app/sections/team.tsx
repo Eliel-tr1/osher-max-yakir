@@ -7,7 +7,8 @@ import {
   type Bucket, type ExamSummary, type Funnel, type Matrix, type PassFailRow, type SourceRow, type Summary,
 } from '@/lib/metrics';
 import { INSIGHTS_FROM } from '@/lib/insights';
-import { BarList, Columns, fmtDay, Fold, FunnelStrip, HeatTable, Info, ListBlock, money, nf, pct, pctOf, Ring, SimpleTable, Sparkline, SplitList, Stats } from '../charts';
+import { BOT_SOURCE } from '@/lib/leads/fromSheet';
+import { BarList, Columns, fmtDay, Fold, FunnelStrip, HeatTable, Info, Legend, ListBlock, money, nf, pct, pctOf, Ring, SimpleTable, Sparkline, SplitList, Stats } from '../charts';
 import { BucketChips, fmtBucket } from './shared';
 
 /**
@@ -17,13 +18,17 @@ import { BucketChips, fmtBucket } from './shared';
 
 const BUCKET_WORD: Record<Bucket, string> = { day: 'יום', week: 'שבוע', month: 'חודש' };
 
-function Tile({ label, value, sub, info, ring }: { label: string; value: string; sub?: string; info?: ReactNode; ring?: number | null }) {
+/** מקור שהתנועה ממנו היא בזכות הבוט: נכנסו דרך הבוט, או הגיעו מהקישור שלו (utm_source = vitrue) */
+const botColor = (name: string) => (name === BOT_SOURCE || name === 'vitrue' ? '--bot' : undefined);
+
+function Tile({ label, value, sub, botSub, info, ring }: { label: string; value: string; sub?: string; botSub?: string; info?: ReactNode; ring?: number | null }) {
   return (
     <article className={`tile${ring !== undefined ? ' has-ring' : ''}`}>
       <div>
         <p className="label">{label}{info ? <Info>{info}</Info> : null}</p>
         <p className="value">{value}</p>
         {sub ? <p className="sub">{sub}</p> : null}
+        {botSub ? <p className="sub isbot">{botSub}</p> : null}
       </div>
       {ring !== undefined && <Ring value={ring} size={60} label={label} />}
     </article>
@@ -31,8 +36,11 @@ function Tile({ label, value, sub, info, ring }: { label: string; value: string;
 }
 
 /** המספרים שהיו בראש הדף עד 3/11, עכשיו לצוות */
-export function TeamTiles({ s, removed, dupes, leadsSeries, leadsBy, autoBucket, setLeadsBy, open, onToggle }: {
+export function TeamTiles({ s, botLeads, botBuyers, botPaid, removed, dupes, leadsSeries, leadsBy, autoBucket, setLeadsBy, open, onToggle }: {
   s: Summary;
+  botLeads: number;
+  botBuyers: number;
+  botPaid: number;
   removed: number;
   dupes: number;
   leadsSeries: { key: string; values: number[] }[];
@@ -46,11 +54,11 @@ export function TeamTiles({ s, removed, dupes, leadsSeries, leadsBy, autoBucket,
     <>
       <section className="top" aria-label="מספרי מפתח" id="team-top">
         <Tile
-          label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`}
+          label="לידים" value={nf.format(s.people)} sub={`${nf.format(s.leads)} בלי מי שקנה באתר`} botSub={`${nf.format(botLeads)} דרך הבוט`}
           info={`כל האנשים בטווח, לפי קוד מזהה. המשפך ואחוז ההמרה בלי ${nf.format(s.siteBuyers)} שנוצרו בלשונית הלידים עד ${SITE_BUY_MINUTES} דקות לפני הרכישה הראשונה שלהם, או אחריה.`}
         />
-        <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
-        <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
+        <Tile label="קונים" value={nf.format(s.buyers)} sub={`${nf.format(s.purchases)} רכישות`} botSub={`${nf.format(botBuyers)} של הבוט`} info="קודים מזהים שונים שקנו בטווח, לפי תאריך הרכישה בלשונית הרכישות." />
+        <Tile label="שולם" value={money.format(s.totalPaid)} sub={`עסקה ממוצעת ${s.avgDeal === null ? '-' : money.format(s.avgDeal)}`} botSub={`${money.format(botPaid)} של הבוט`} info="סכום הרכישות בטווח. עסקה ממוצעת: רק רכישות עם סכום." />
         <Tile
           label="אחוז המרה" ring={s.leads ? s.leadsWhoBought / s.leads : null} value={pct(s.leadsWhoBought, s.leads)} sub={`${nf.format(s.leadsWhoBought)} לידים רכשו`}
           info="אחוז ההמרה של הדשבורד: מתוך הלידים בטווח (בלי מי שקנה באתר בלי לעבור בבוט), כמה רכשו. זה המספר היחיד שנקרא אחוז המרה."
@@ -170,6 +178,7 @@ export function SourcesCard({ bySource, bySourceRaw, purchases, open, onToggle }
     <Fold
       id="sources" title="מקור הגעה" open={open} onToggle={onToggle}
       stats={[
+        { label: 'לידים דרך הבוט', value: nf.format(bySource.find((r) => r.name === BOT_SOURCE)?.leads ?? 0), bot: true },
         { label: 'מקורות', value: nf.format(bySource.length) },
         { label: 'מקור מוביל', value: bySource[0]?.name ?? '-' },
       ]}
@@ -180,14 +189,15 @@ export function SourcesCard({ bySource, bySourceRaw, purchases, open, onToggle }
         </>
       )}
     >
+      <Legend items={[{ label: 'בזכות הבוט', color: '--bot' }, { label: 'מקור אחר', color: '--notbot' }]} />
       <div className="two">
         <div>
           <h3>לידים</h3>
-          <BarList items={bySource.map((r) => ({ name: r.name, count: r.leads }))} extra={(n) => { const r = bySource.find((x) => x.name === n); return r ? `רכשו ${nf.format(r.bought)}` : null; }} />
+          <BarList color="--notbot" colorOf={botColor} items={bySource.map((r) => ({ name: r.name, count: r.leads }))} extra={(n) => { const r = bySource.find((x) => x.name === n); return r ? `רכשו ${nf.format(r.bought)}` : null; }} />
         </div>
         <div>
           <h3>מקור הרכישה (utm) <Info>&quot;מקור הגעה&quot; בלשונית הרכישות: ה-utm_source שהגיע עם הרכישה, או שם המוצר כשלא היה utm. נרשם מ-27/10.</Info></h3>
-          <BarList items={sources.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = sources.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
+          <BarList color="--notbot" colorOf={botColor} items={sources.map((f) => ({ name: f.name, count: f.count }))} extra={(n) => { const f = sources.find((x) => x.name === n); return f ? money.format(f.revenue) : null; }} />
         </div>
       </div>
       <ListBlock items={[{

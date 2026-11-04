@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import { BOT_SOURCE } from '@/lib/leads/fromSheet';
 import type { Purchase } from '@/lib/leads/types';
-import { botHero, botKpis, botSeries, type BotKpi } from '@/lib/metrics';
+import { botHero, botKpis, botSeries, fromPopup, inside, type BotKpi, type PopupPerson, type Range, type SourceRow, type Summary } from '@/lib/metrics';
 import { Delta, Info, Trend, money, nf, pctOf } from '../charts';
 import { fmtBucket } from './shared';
 
@@ -73,6 +74,47 @@ export function BotHero({ all, prev }: { all: Purchase[]; prev: Purchase[] | nul
           <span><b>{money.format(h.open.paid)}</b> עוד לא הוכרעו ({nf.format(h.open.purchases)} רכישות)</span>
           <span><b>{money.format(h.totalPaid)}</b> סך ההכנסות</span>
         </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * "התנועה שהבוט מביא" (הנחיית המנהל 4/11/2026, #34): מי שהגיע בזכות הבוט, ליד ה-€ שהוא הביא. כל המספרים כבר נספרים בדף, כאן הם רק מרוכזים.
+ */
+export function BotTraffic({ bySource, summary, people, range }: { bySource: SourceRow[]; summary: Summary; people: PopupPerson[]; range: Range }) {
+  const v = useMemo(() => {
+    const popup = people.filter((x) => fromPopup(x.lead) && inside(x.entry, range));
+    return {
+      bot: bySource.find((r) => r.name === BOT_SOURCE),
+      link: bySource.find((r) => r.name === 'vitrue'),
+      popup: popup.length,
+      popupBuyers: popup.filter((x) => x.after.length > 0).length,
+    };
+  }, [bySource, people, range]);
+  const items = [
+    { label: 'נכנסו דרך הבוט', value: v.bot?.leads ?? 0, sub: `${nf.format(v.bot?.bought ?? 0)} קנו` },
+    { label: 'נכנסו מהפופאפ', value: v.popup, sub: `${nf.format(v.popupBuyers)} קנו` },
+    { label: 'הגיעו מקישור של הבוט', value: v.link?.leads ?? 0, sub: `${nf.format(v.link?.bought ?? 0)} קנו` },
+    { label: 'שיחות אמיתיות', value: summary.realConversations, sub: `${nf.format(summary.salesConversations)} מכירתיות` },
+  ];
+  return (
+    <section className="card traffic" aria-labelledby="traffic-h">
+      <h2 id="traffic-h" className="capshead">
+        התנועה שהבוט מביא{' '}
+        <Info>
+          נכנסו דרך הבוט: אנשים שמקור ההגעה שלהם &quot;{BOT_SOURCE}&quot;. נכנסו מהפופאפ: <bdi>utm_campaign</bdi> של האדם הוא <bdi>popup_website</bdi>. הגיעו מקישור של הבוט:
+          <bdi> utm_source = vitrue</bdi>. שיחות אמיתיות: מתוך מי שהסוכן כבר סרק. הקבוצות יכולות לחפוף, למשל מי שנכנס מהפופאפ הוא בדרך כלל גם &quot;דרך הבוט&quot;, ולכן אין לחבר ביניהן.
+        </Info>
+      </h2>
+      <div className="kpis">
+        {items.map((k) => (
+          <div key={k.label} className="kpi">
+            <span className="kpilabel">{k.label}</span>
+            <span className="kpivalue"><b className="isbot">{nf.format(k.value)}</b></span>
+            <span className="kpisub">{k.sub}</span>
+          </div>
+        ))}
       </div>
     </section>
   );

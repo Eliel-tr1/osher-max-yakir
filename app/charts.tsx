@@ -765,8 +765,8 @@ export function MoreTable({ headers, rows, step = 50 }: { headers: string[]; row
 export function Fold({ id, title, stats, big, sentence, seg, mini, open, onToggle, info, className, children, level = 2 }: {
   id: string;
   title: ReactNode;
-  /** עד 3 מספרים קטנים בכותרת */
-  stats?: { label: string; value: string }[];
+  /** מספרים קטנים בכותרת. bot: מספר של הבוט, בכחול (#34) */
+  stats?: { label: string; value: string; bot?: boolean }[];
   /** מספר אחד גדול ומשפט אחד, לכרטיסי התובנות */
   big?: string;
   sentence?: ReactNode;
@@ -799,7 +799,7 @@ export function Fold({ id, title, stats, big, sentence, seg, mini, open, onToggl
               {sentence !== undefined && <span className="fsent">{sentence}</span>}
               {stats && (
                 <span className="fstats">
-                  {stats.map((s) => <span key={s.label}><b>{s.value}</b> {s.label}</span>)}
+                  {stats.map((s) => <span key={s.label}><b className={s.bot ? 'isbot' : undefined}>{s.value}</b> {s.label}</span>)}
                 </span>
               )}
             </span>

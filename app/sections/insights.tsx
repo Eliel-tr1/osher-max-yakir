@@ -304,7 +304,7 @@ function Removals({ rows, scope, open, onToggle }: { rows: AnalysisRow[]; scope:
 // ---------- רשימות ----------
 
 /** רשימת אנשים מ"ניתוח שיחות": תאריך, שם, מסלול, שלב, הפירוט הקצר וקישור לשיחה. השם והפירוט מהקובץ הפרטי */
-function AnalysisList({ rows }: { rows: Indexed<AnalysisRow>[] }) {
+export function AnalysisList({ rows }: { rows: Indexed<AnalysisRow>[] }) {
   const { name, text } = useAuth();
   const sorted = [...rows].sort((a, b) => (b.r.at ?? '').localeCompare(a.r.at ?? ''));
   return (

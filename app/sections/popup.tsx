@@ -1,17 +1,29 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { abandonView, type Scope } from '@/lib/insights';
+import type { AnalysisRow } from '@/lib/leads/types';
 import { botSide, fromPopup, inside, POPUP_START, popupCompare, popupFunnel, timeSeries, type Bucket, type CompareRow, type PopupPerson, type Range } from '@/lib/metrics';
 import { BarList, Columns, Fold, FunnelStrip, ListBlock, RateBars, Stats, fmtDay, money, nf, pct, pctOf } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum, peopleCount, PeopleList } from '../lists';
+import { AnalysisList } from './insights';
 import { BucketChips, fmtBucket } from './shared';
 
 /**
  * הפופאפ באתר (הנחיית המנהל, 31/10, 1/11 ו-3/11/2026): מי שב-utm_campaign שלו כתוב popup_website.
  * זמן הכניסה הוא "תאריך כניסה" המוקדם ביותר שלו, וטווח התאריכים חל עליו. ההשוואה למי שלא הגיע מהפופאפ בלשונית "לצוות".
  */
-export function PopupSection({ people, range, rangeKey, open, onToggle }: { people: PopupPerson[]; range: Range; rangeKey: string; open: boolean; onToggle: () => void }) {
+export function PopupSection({ people, range, rangeKey, analysis, scope, open, onToggle }: {
+  people: PopupPerson[];
+  range: Range;
+  rangeKey: string;
+  /** "ניתוח שיחות": למה מי שהגיע מהפופאפ לא קנה */
+  analysis: AnalysisRow[] | null;
+  scope: Scope;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const [by, setBy] = useState<Bucket | null>(null);
   const [lastKey, setLastKey] = useState(rangeKey);
   if (lastKey !== rangeKey) {
@@ -24,8 +36,11 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
     const b = by ?? 'day';
     const buyers = popup.filter((x) => x.after.length > 0);
     const after = buyers.flatMap((x) => x.after);
+    const noBuy = (xs: PopupPerson[]) => xs.filter((x) => x.after.length === 0);
     return {
       popup, b,
+      why: analysis ? abandonView(analysis, scope, 'פופאפ') : null,
+      noBuy,
       f: popupFunnel(popup),
       series: timeSeries(popup, (x) => x.entry, b, 1, () => [1]),
       steps: {
@@ -37,7 +52,7 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
       after,
       bot: after.filter((p) => botSide(p) === 'yes'),
     };
-  }, [people, range, by]);
+  }, [people, range, by, analysis, scope]);
   const { f } = v;
   if (!people.some((x) => fromPopup(x.lead))) return null;
 
@@ -48,7 +63,8 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
       stats={[
         { label: 'נכנסו', value: nf.format(f.entered) },
         { label: 'שיחות אמיתיות', value: nf.format(f.real) },
-        { label: 'קנו אחרי הכניסה', value: nf.format(f.buyers) },
+        { label: 'רכישות של הבוט', value: nf.format(f.botPurchases), bot: true },
+        { label: 'של הבוט', value: money.format(f.botPaid), bot: true },
       ]}
     >
       <FunnelStrip
@@ -104,8 +120,26 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
           { id: 'real', title: 'ניהלו שיחה אמיתית', count: peopleCount(v.steps.real), render: () => <PeopleList people={v.steps.real} /> },
           { id: 'after', title: 'רכישות אחרי הכניסה', count: buysCount(v.after), sum: buysSum(v.after), render: () => <BuyList purchases={v.after} /> },
           { id: 'bot', title: 'רכישות של הבוט אחרי הכניסה', count: buysCount(v.bot), sum: buysSum(v.bot), render: () => <BuyList purchases={v.bot} /> },
+          { id: 'no-sentence', title: 'שלחו רק את המשפט המוכן ולא קנו', count: peopleCount(v.noBuy(v.steps.sentence)), render: () => <PeopleList people={v.noBuy(v.steps.sentence)} /> },
+          { id: 'no-two', title: 'שלחו 2 הודעות ולא קנו', count: peopleCount(v.noBuy(v.steps.two)), render: () => <PeopleList people={v.noBuy(v.steps.two)} /> },
+          { id: 'no-real', title: 'ניהלו שיחה אמיתית ולא קנו', count: peopleCount(v.noBuy(v.steps.real)), render: () => <PeopleList people={v.noBuy(v.steps.real)} /> },
         ]}
       />
+
+      {v.why && v.why.reasons.length > 0 ? (
+        <>
+          <h3>
+            למה לא קנו{' '}
+            <Info>מי שהמסלול שלו ב&quot;ניתוח שיחות&quot; הוא &quot;פופאפ&quot;, ניהל שיחה ולא קנה, לפי &quot;סיבת נטישה&quot;. הספירה לפי הסריקה, ולכן היא יכולה להיות שונה מהמספרים של הלשונית שמעליה.</Info>
+          </h3>
+          <BarList items={v.why.reasons.map((r) => ({ name: r.name, count: r.count }))} color="--bot" extra={(n) => pct(v.why!.reasons.find((r) => r.name === n)?.count ?? 0, v.why!.abandoned)} />
+          <ListBlock
+            title="מי לא קנה, לפי סיבה"
+            note={note}
+            items={v.why.reasons.map((r) => ({ id: `popup-why-${r.name}`, title: r.name, count: `${nf.format(r.count)} אנשים`, render: () => <AnalysisList rows={r.rows} /> }))}
+          />
+        </>
+      ) : null}
     </Fold>
   );
 }
