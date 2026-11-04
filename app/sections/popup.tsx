@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { abandonView, type Scope } from '@/lib/insights';
 import type { AnalysisRow } from '@/lib/leads/types';
 import { botSide, fromPopup, inside, POPUP_START, popupCompare, popupFunnel, timeSeries, type Bucket, type CompareRow, type PopupPerson, type Range } from '@/lib/metrics';
-import { BarList, Columns, Fold, FunnelStrip, ListBlock, RateBars, Stats, fmtDay, money, nf, pct, pctOf } from '../charts';
+import { BarList, Columns, Fold, FunnelStrip, Info, ListBlock, RateBars, Stats, fmtDay, money, nf, pct, pctOf } from '../charts';
 import { useLinkNote } from '../auth';
 import { BuyList, buysCount, buysSum, peopleCount, PeopleList } from '../lists';
 import { AnalysisList } from './insights';
