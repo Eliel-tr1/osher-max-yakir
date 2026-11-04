@@ -55,6 +55,7 @@ export function PurchasesSection({ all, channel, setChannel, open, onToggle, chi
   return (
     <Fold
       id="buys" title="רכישות" open={open} onToggle={onToggle}
+      mini={v.reasons.slice(0, 6).map((r) => r.purchases)}
       stats={[
         { label: 'רכישות', value: nf.format(v.x.all.purchases) },
         { label: 'הכנסות', value: money.format(v.x.all.paid) },

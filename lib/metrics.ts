@@ -1092,6 +1092,36 @@ export function botHero(ps: Purchase[], prev: Purchase[] | null): BotHero {
   };
 }
 
+export interface BotKpi {
+  id: 'share' | 'purchases' | 'buyers' | 'avgDeal';
+  value: number | null;
+  /** שינוי מול התקופה הקודמת. ב"share" בנקודות אחוז (0.02 = 2 נקודות), בשאר יחסי (0.1 = 10%). null = אין השוואה */
+  change: number | null;
+  /** הערך לפי שבוע. null = אין ערך בשבוע הזה */
+  weekly: (number | null)[];
+}
+
+/** ארבעת המדדים מתחת ל"מה הבוט הביא" (#34): אותו חישוב של "של הבוט" כמו ב-botHero, עם שינוי וסדרה לפי שבוע */
+export function botKpis(ps: Purchase[], prev: Purchase[] | null): BotKpi[] {
+  const now = botBreakdown(ps);
+  const before = prev ? botBreakdown(prev) : null;
+  const byWeek = new Map<string, Purchase[]>();
+  for (const p of ps) {
+    const k = bucketOf(p.at, 'week');
+    byWeek.set(k, [...(byWeek.get(k) ?? []), p]);
+  }
+  const weeks = timeSeries(ps, (p) => p.at, 'week', 1, () => [1]).map((d) => botBreakdown(byWeek.get(d.key) ?? []));
+  const relative = (a: number | null, b: number | null | undefined) => (a === null || b === null || b === undefined ? null : change(a, b));
+  const shareNow = now.share.paid;
+  const shareBefore = before?.share.paid ?? null;
+  return [
+    { id: 'share', value: shareNow, change: shareNow === null || shareBefore === null ? null : shareNow - shareBefore, weekly: weeks.map((w) => w.share.paid) },
+    { id: 'purchases', value: now.yes.purchases, change: relative(now.yes.purchases, before?.yes.purchases), weekly: weeks.map((w) => w.yes.purchases) },
+    { id: 'buyers', value: now.yes.buyers, change: relative(now.yes.buyers, before?.yes.buyers), weekly: weeks.map((w) => w.yes.buyers) },
+    { id: 'avgDeal', value: now.yes.avgDeal, change: relative(now.yes.avgDeal, before?.yes.avgDeal), weekly: weeks.map((w) => w.yes.avgDeal) },
+  ];
+}
+
 /** החלק של הבוט מה-€ בכל תקופה (0 עד 1). null כשאין בה הכנסות */
 export function moneyShareSeries(ps: Purchase[], b: Bucket): { key: string; share: number | null }[] {
   return timeSeries(ps, (p) => p.at, b, 2, (p) => {

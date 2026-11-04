@@ -1,8 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Capability, CapabilityId } from '@/lib/metrics';
-import { Info, Sparkline, money, nf } from '../charts';
+import { Chev, Info, Sparkline, Trend, money, nf } from '../charts';
 import { fmtBucket } from './shared';
 
 /** אייקונים קטנים בצבע אחד (הצבע של הבוט), בלי צבעים נוספים בכרטיסי היכולת */
@@ -24,12 +24,13 @@ export const CAPABILITIES: { id: CapabilityId; name: string; unit: string; targe
 ];
 
 /**
- * "מה הבוט עושה" (הנחיית המנהל 3/11/2026, #27): חמישה כרטיסי יכולת בשורה. בכל כרטיס מספר גדול אחד, € שהביא וגרף שבועי.
- * לחיצה פותחת את הפירוט שלו למטה.
+ * "מה הבוט עושה" (עיצוב א4, #34): שורה לכל יכולת, עם הכמות, ה-€ והמגמה. לחיצה פותחת את הגרף השבועי,
+ * ומשם אפשר לעבור לפירוט המלא למטה.
  */
 export function Capabilities({ caps, onOpen }: { caps: Record<CapabilityId, Capability>; onOpen: (id: CapabilityId, target: string) => void }) {
+  const [open, setOpen] = useState<CapabilityId | null>(null);
   return (
-    <section className="caps" aria-labelledby="caps-h">
+    <section className="card caps" aria-labelledby="caps-h">
       <h2 id="caps-h" className="capshead">
         מה הבוט עושה{' '}
         <Info>
@@ -40,25 +41,33 @@ export function Capabilities({ caps, onOpen }: { caps: Record<CapabilityId, Capa
           יכולה להיות גם רכישה אחרי שיחה מכירתית, ואז היא נספרת בשני כרטיסים. לכן הסכום של חמשת הכרטיסים יכול להיות גדול מה-€ של הבוט.
         </Info>
       </h2>
-      <div className="caprow">
-        {CAPABILITIES.map((c) => {
-          const x = caps[c.id];
-          return (
-            <div key={c.id} className="cap">
+      {CAPABILITIES.map((c) => {
+        const x = caps[c.id];
+        const isOpen = open === c.id;
+        const panel = `cap-${c.id}`;
+        return (
+          <div key={c.id} className={`cap${isOpen ? ' open' : ''}`}>
+            <button type="button" className="capbtn" aria-expanded={isOpen} aria-controls={panel} onClick={() => setOpen(isOpen ? null : c.id)}>
               <span className="capname">
                 <svg className="capicon" viewBox="0 0 24 24" aria-hidden="true">{ICONS[c.id]}</svg>
                 {c.name}
               </span>
-              <span className="capnum">{nf.format(x.count)}</span>
-              <span className="capunit">{c.unit}</span>
+              <span className="capcount"><b>{nf.format(x.count)}</b> {c.unit}</span>
               <span className="capmoney">{money.format(x.paid)}</span>
-              <Sparkline labels={x.weekly.map((d) => fmtBucket(d.key, 'week'))} values={x.weekly.map((d) => d.values[0])} color="--bot" height={26} label={`${c.name} לפי שבוע`} />
-              {/* כל הכרטיס לחיץ: כפתור שקוף מעליו, כי בתוך כפתור אי אפשר לשים את הגרף */}
-              <button type="button" className="capbtn" onClick={() => onOpen(c.id, c.target)} aria-label={`${c.name}: ${nf.format(x.count)} ${c.unit}, ${money.format(x.paid)}. לפירוט`} />
-            </div>
-          );
-        })}
-      </div>
+              <span className="captrend">
+                <Trend values={x.weekly.map((d) => d.values[0])} color="--bot" />
+                <Chev />
+              </span>
+            </button>
+            {isOpen ? (
+              <div className="cappanel" id={panel}>
+                <Sparkline labels={x.weekly.map((d) => fmtBucket(d.key, 'week'))} values={x.weekly.map((d) => d.values[0])} color="--bot" height={60} label={`${c.name} לפי שבוע`} />
+                <button type="button" className="linkbtn" onClick={() => onOpen(c.id, c.target)}>לפירוט המלא</button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </section>
   );
 }

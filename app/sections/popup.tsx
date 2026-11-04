@@ -44,6 +44,7 @@ export function PopupSection({ people, range, rangeKey, open, onToggle }: { peop
   return (
     <Fold
       id="popup" title="הפופאפ באתר" open={open} onToggle={onToggle}
+      mini={[f.entered, f.real, f.buyers]}
       stats={[
         { label: 'נכנסו', value: nf.format(f.entered) },
         { label: 'שיחות אמיתיות', value: nf.format(f.real) },

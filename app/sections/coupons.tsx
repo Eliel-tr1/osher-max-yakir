@@ -58,6 +58,7 @@ export function CouponsSection({ people, all, ever, range, rangeKey, open, onTog
   return (
     <Fold
       id="coupons" title="קופונים" open={open} onToggle={onToggle}
+      mini={[v.bc.made, v.after.buyers, v.bc.used]}
       stats={[
         { label: 'הופקו', value: nf.format(v.bc.made) },
         { label: 'שומשו', value: nf.format(v.bc.used) },

@@ -48,11 +48,13 @@ export function InsightsSection({ insights, generatedAt, scope, filtered, open, 
       {none ? <p className="empty">אין עדיין נתונים</p> : null}
       {!none && (
         <>
-          <AbandonCard rows={analysis?.rows ?? null} scope={scope} open={!!open['i-why']} onToggle={() => toggle('i-why')} />
-          <InquiryCard rows={inquiries?.rows ?? null} scope={scope} open={!!open['i-inq']} onToggle={() => toggle('i-inq')} />
-          <FeedbackCard rows={feedback?.rows ?? null} scope={scope} open={!!open['i-fb']} onToggle={() => toggle('i-fb')} />
-          <QuestionCard insights={insights} scope={scope} filtered={filtered} open={!!open['i-q']} onToggle={() => toggle('i-q')} />
-          {analysis ? <Removals rows={analysis.rows} scope={scope} /> : null}
+          <div className="foldgrid">
+            <AbandonCard rows={analysis?.rows ?? null} scope={scope} open={!!open['i-why']} onToggle={() => toggle('i-why')} />
+            <InquiryCard rows={inquiries?.rows ?? null} scope={scope} open={!!open['i-inq']} onToggle={() => toggle('i-inq')} />
+            <FeedbackCard rows={feedback?.rows ?? null} scope={scope} open={!!open['i-fb']} onToggle={() => toggle('i-fb')} />
+            <QuestionCard insights={insights} scope={scope} filtered={filtered} open={!!open['i-q']} onToggle={() => toggle('i-q')} />
+            {analysis ? <Removals rows={analysis.rows} scope={scope} open={!!open['i-rm']} onToggle={() => toggle('i-rm')} /> : null}
+          </div>
         </>
       )}
     </section>
@@ -79,6 +81,7 @@ function AbandonCard({ rows, scope, open, onToggle }: { rows: AnalysisRow[] | nu
     <Fold
       id="i-why" level={3} className="icard" title="למה נטשו" open={open} onToggle={onToggle}
       big={head ? nf.format(head.abandoned) : '-'}
+      seg={head?.reasons.map((r) => r.count)}
       sentence={head ? <>ניהלו שיחה ולא קנו{top ? <> · הסיבה המובילה: {top.name} ({pct(top.count, head.abandoned)})</> : null}</> : 'אין עדיין נתונים'}
     >
       {!v ? <Empty /> : (
@@ -143,6 +146,7 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
     <Fold
       id="i-inq" level={3} className="icard" title="פניות שירות" open={open} onToggle={onToggle}
       big={v ? nf.format(v.categorized) : '-'}
+      seg={v?.cats.map((c) => c.count)}
       sentence={v ? <>פניות{top ? <> · הנושא המוביל: {top.name} ({pctOf(top.share)})</> : null}</> : 'אין עדיין נתונים'}
     >
       {!v ? <Empty /> : (
@@ -196,6 +200,7 @@ function FeedbackCard({ rows, scope, open, onToggle }: { rows: FeedbackRow[] | n
     <Fold
       id="i-fb" level={3} className="icard" title="משובים אחרי מבחן" open={open} onToggle={onToggle}
       big={head ? nf.format(head.categorized) : '-'}
+      seg={head?.cats.map((c) => c.count)}
       sentence={head ? <>משובים{head.cats[0] ? <> · המוביל: {head.cats[0].name}</> : null}</> : 'אין עדיין נתונים'}
     >
       {!v ? <Empty /> : (
@@ -229,6 +234,7 @@ function QuestionCard({ insights, scope, filtered, open, onToggle }: { insights:
     <Fold
       id="i-q" level={3} className="icard" title="שאלות ליקיר" open={open} onToggle={onToggle}
       big={v ? nf.format(v.all.length) : '-'}
+      seg={v ? [v.answered, v.waiting] : undefined}
       sentence={v ? <>שאלות · {nf.format(v.waiting)} ממתינות לתשובה · {sampleText}</> : 'אין עדיין נתונים'}
     >
       {!v ? <Empty /> : (
@@ -281,19 +287,17 @@ function QuestionCard({ insights, scope, filtered, open, onToggle }: { insights:
 
 // ---------- הסירו את עצמם ----------
 
-function Removals({ rows, scope }: { rows: AnalysisRow[]; scope: Scope }) {
-  const [open, setOpen] = useState(false);
+function Removals({ rows, scope, open, onToggle }: { rows: AnalysisRow[]; scope: Scope; open: boolean; onToggle: () => void }) {
   const v = useMemo(() => removalView(rows, scope), [rows, scope]);
   return (
-    <div className={`removals${open ? ' open' : ''}`}>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} disabled={v.count === 0}>
-        הסירו את עצמם: <b>{nf.format(v.count)}</b>
-        {v.count ? <span className="lchev" aria-hidden="true">⌄</span> : null}
-      </button>
-      {open && v.count ? (
-        <ul>{v.reasons.map((r) => <li key={r.name}>{r.name}: {nf.format(r.count)}</li>)}</ul>
-      ) : null}
-    </div>
+    <Fold
+      id="i-rm" level={3} className="icard" title="הסירו את עצמם" open={open} onToggle={onToggle}
+      big={nf.format(v.count)}
+      seg={v.reasons.map((r) => r.count)}
+      sentence={v.reasons[0] ? <>המוביל: {v.reasons[0].name}</> : 'אין הסרות בטווח הזה'}
+    >
+      <BarList items={v.reasons} color="--bot" />
+    </Fold>
   );
 }
 

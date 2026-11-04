@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export const nf = new Intl.NumberFormat('he-IL');
-export const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const whole = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 });
+/** "€45,100" (#34). בלי רווח: בכתב המכונה של המספרים רווח נראה ענק */
+export const money = { format: (v: number) => `€${whole.format(v)}` };
 const dec1 = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 1 });
 /** מספר עם ספרה אחת אחרי הנקודה, למשל רכישות לקונה */
 export function num1(v: number | null): string {
@@ -104,7 +106,7 @@ function useWidth(initial = 640) {
  * עמודות לאורך זמן, אחת או כמה סדרות זו על זו. הזמן זורם משמאל לימין, כמו בכל ציר זמן.
  * ריחוף על עמודה מראה את הערכים המדויקים. money: הערכים הם כסף.
  */
-export function Columns({ labels, series, values, height = 150, labelEvery, isMoney, note, extraTip, line, gaps }: {
+export function Columns({ labels, series, values, height = 150, labelEvery, isMoney, note, extraTip, line, gaps, picked, onPick }: {
   labels: string[];
   series: Series[];
   /** values[i][s] = ערך העמודה i בסדרה s */
@@ -120,6 +122,9 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
   line?: { values: (number | null)[]; label: string; color: string };
   /** תקופות עם ימים בלי שורות בגיליון. full = כל התקופה (פס מקווקו "אין נתונים" ולא 0), אחרת נקודה מתחת לעמודה. text לחלונית */
   gaps?: ({ full: boolean; text: string } | null)[];
+  /** העמודה שנבחרה בלחיצה (#34): רקע בהיר מאחוריה, והמספרים שלה מוצגים מחוץ לגרף */
+  picked?: number | null;
+  onPick?: (i: number) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const { box, W } = useWidth();
@@ -160,8 +165,8 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
           let acc = 0;
           const gap = gaps?.[i] ?? null;
           return (
-            <g key={labels[i]} onMouseEnter={() => setHover(i)}>
-              <rect x={padL + slot * i} y={padT} width={slot} height={H - padT - padB} fill="transparent" />
+            <g key={labels[i]} onMouseEnter={() => setHover(i)} onClick={onPick ? () => onPick(i) : undefined} className={onPick ? 'pickable' : undefined}>
+              <rect x={padL + slot * i} y={padT} width={slot} height={H - padT - padB} fill={picked === i ? 'var(--surface-2)' : 'transparent'} />
               {gap?.full && totals[i] === 0 && (
                 <rect x={x + 0.75} y={padT + 0.75} width={Math.max(1, bw - 1.5)} height={H - padT - padB - 1.5} className="gapbox" rx={2}><title>{gap.text}</title></rect>
               )}
@@ -215,6 +220,34 @@ export function Columns({ labels, series, values, height = 150, labelEvery, isMo
         <Legend items={[...(series.length > 1 ? series : []), ...(line ? [{ label: line.label, color: line.color, line: true }] : []), ...gapLegend]} />
       )}
     </div>
+  );
+}
+
+/** חץ של דרופ-דאון. מסתובב ב-CSS כשהשורה פתוחה */
+export function Chev() {
+  return (
+    <svg className="lchev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+  );
+}
+
+/** קו קטן בלי צירים, למגמה (#34). area: שטח צבוע מתחתיו. null = אין ערך בתקופה, והקו נקטע */
+export function Trend({ values, color = '--ink-3', height = 26, area, label }: { values: (number | null)[]; color?: string; height?: number; area?: boolean; label?: string }) {
+  const nums = values.filter((v): v is number => v !== null);
+  if (nums.length < 2) return <span className="trendline" style={{ height }} aria-hidden="true" />;
+  const min = area ? 0 : Math.min(...nums);
+  const span = Math.max(...nums) - min || 1;
+  const x = (i: number) => ((i / (values.length - 1)) * 100).toFixed(2);
+  const y = (v: number) => (height - 1 - ((v - min) / span) * (height - 2)).toFixed(2);
+  let d = '';
+  values.forEach((v, i) => {
+    if (v === null) return;
+    d += `${i === 0 || values[i - 1] === null ? 'M' : 'L'}${x(i)},${y(v)} `;
+  });
+  return (
+    <svg className="trendline" viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ height }} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
+      {area ? <path d={`${d}L100,${height} L0,${height} Z`} fill={`var(${color})`} fillOpacity={0.2} /> : null}
+      <path d={d} fill="none" stroke={`var(${color})`} strokeWidth={area ? 2 : 1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
@@ -729,7 +762,7 @@ export function MoreTable({ headers, rows, step = 50 }: { headers: string[]; row
  * סקשן מקופל (הנחיית המנהל 3/11/2026): סגור כברירת מחדל, ובכותרת שלו מספרים קטנים או מספר אחד גדול עם משפט.
  * השליטה בפתיחה אצל הדף, כדי שלחיצה על כרטיס יכולת תפתח את הפירוט שלו.
  */
-export function Fold({ id, title, stats, big, sentence, open, onToggle, info, className, children, level = 2 }: {
+export function Fold({ id, title, stats, big, sentence, seg, mini, open, onToggle, info, className, children, level = 2 }: {
   id: string;
   title: ReactNode;
   /** עד 3 מספרים קטנים בכותרת */
@@ -737,6 +770,10 @@ export function Fold({ id, title, stats, big, sentence, open, onToggle, info, cl
   /** מספר אחד גדול ומשפט אחד, לכרטיסי התובנות */
   big?: string;
   sentence?: ReactNode;
+  /** פס חלוקה בכותרת הסגורה (#34), למשל הסיבות מהגדולה לקטנה. מעל 5 חלקים השאר מתאחדים */
+  seg?: number[];
+  /** עמודות קטנות בכותרת הסגורה (#34), למשל שלבי המשפך */
+  mini?: number[];
   open: boolean;
   onToggle: () => void;
   info?: ReactNode;
@@ -746,20 +783,37 @@ export function Fold({ id, title, stats, big, sentence, open, onToggle, info, cl
 }) {
   const panel = `${id}-panel`;
   const H = level === 2 ? 'h2' : 'h3';
+  const parts = seg ? [...seg.slice(0, 4), seg.slice(4).reduce((s, v) => s + v, 0)].filter((v) => v > 0) : [];
+  const partsTotal = parts.reduce((s, v) => s + v, 0);
+  const miniTop = Math.max(...(mini ?? []), 1);
   return (
     <section className={`card fold${open ? ' open' : ''}${className ? ` ${className}` : ''}`} id={id}>
       <div className="foldhead">
         <H className="foldtitle">
           <button type="button" aria-expanded={open} aria-controls={panel} onClick={onToggle}>
-            <span className="ftitle">{title}</span>
-            {big !== undefined && <span className="fbig">{big}</span>}
-            {sentence !== undefined && <span className="fsent">{sentence}</span>}
-            {stats && (
-              <span className="fstats">
-                {stats.map((s) => <span key={s.label}><b>{s.value}</b> {s.label}</span>)}
+            <span className="fmain">
+              <span className="fline">
+                {big !== undefined && <span className="fbig">{big}</span>}
+                <span className="ftitle">{title}</span>
               </span>
-            )}
-            <span className="lchev" aria-hidden="true">⌄</span>
+              {sentence !== undefined && <span className="fsent">{sentence}</span>}
+              {stats && (
+                <span className="fstats">
+                  {stats.map((s) => <span key={s.label}><b>{s.value}</b> {s.label}</span>)}
+                </span>
+              )}
+            </span>
+            <Chev />
+            {parts.length > 0 ? (
+              <span className="fseg" aria-hidden="true">
+                {parts.map((v, i) => <span key={i} style={{ width: `${(v / partsTotal) * 100}%`, background: `var(--seg-${i + 1})` }} />)}
+              </span>
+            ) : null}
+            {mini && mini.length > 0 ? (
+              <span className="fmini" aria-hidden="true">
+                {mini.map((v, i) => <span key={i} style={{ height: `${(v / miniTop) * 100}%` }} />)}
+              </span>
+            ) : null}
           </button>
         </H>
         {info ? <Info>{info}</Info> : null}
@@ -814,10 +868,12 @@ export function ListBlock({ items, title = 'רשימות', note }: { items: List
               aria-controls={panel}
               onClick={() => setOpen(isOpen ? null : it.id)}
             >
-              <span className="ltitle" dir="auto">{it.title}</span>
-              <span className="lcount">{it.count ?? ''}</span>
-              <span className="lsum">{it.sum ?? ''}</span>
-              <span className="lchev" aria-hidden="true">⌄</span>
+              <span className="lmain">
+                <span className="ltitle" dir="auto">{it.title}</span>
+                {it.count ? <span className="lcount">{it.count}</span> : null}
+                {it.sum ? <span className="lsum">{it.sum}</span> : null}
+              </span>
+              <Chev />
             </button>
             {isOpen ? <div id={panel} role="region" aria-label={it.title} className="lpanel">{it.render()}</div> : null}
           </div>

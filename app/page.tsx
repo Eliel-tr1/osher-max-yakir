@@ -318,10 +318,12 @@ export default function Dashboard() {
               <InsightsSection insights={file.insights} generatedAt={file.generatedAt} scope={view.scope} filtered={view.filtered} open={open} toggle={toggle} />
               <section className="details" aria-labelledby="details-h">
                 <h2 id="details-h" className="sectlabel">פירוט</h2>
+                <div className="foldgrid">
                 <PurchasesSection all={view.purchasesAll} channel={channel} setChannel={setChannel} open={!!open.buys} onToggle={() => toggle('buys')} chip={chip} setChip={setChip} />
                 <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} open={!!open.coupons} onToggle={() => toggle('coupons')} />
                 {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} open={!!open.mail} onToggle={() => toggle('mail')} />}
                 {hasPopup && <PopupSection people={people} range={view.range} rangeKey={rangeKey} open={!!open.popup} onToggle={() => toggle('popup')} />}
+                </div>
               </section>
             </div>
           ) : (

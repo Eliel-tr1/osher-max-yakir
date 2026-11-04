@@ -31,6 +31,7 @@ export function MailingsSection({ mailings, waves, open, onToggle }: { mailings:
   return (
     <Fold
       id="mail" title={<>דיוור <bdi>{campaign}</bdi></>} open={open} onToggle={onToggle}
+      mini={[t.sent ?? 0, t.delivered ?? 0, t.buyers ?? 0, v.linkBuyers]}
       stats={[
         { label: 'נשלחו', value: n(t.sent) },
         { label: 'רכישות', value: nf.format(counted) },
