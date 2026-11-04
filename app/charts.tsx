@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export const nf = new Intl.NumberFormat('he-IL');
-export const money = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const whole = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 });
+/** "€45,100" (#34). בלי רווח: בכתב המכונה של המספרים רווח נראה ענק */
+export const money = { format: (v: number) => `€${whole.format(v)}` };
 const dec1 = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 1 });
 /** מספר עם ספרה אחת אחרי הנקודה, למשל רכישות לקונה */
 export function num1(v: number | null): string {

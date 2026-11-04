@@ -51,16 +51,17 @@ export function OverTime({ all, missingDays, by, setBy }: { all: Purchase[]; mis
         <BucketChips value={by} auto={v.auto} onChange={setBy} />
       </div>
       {cur ? (
-        <div className="readout">
-          <button type="button" className="readnav" onClick={() => setPick(Math.max(0, i - 1))} disabled={i === 0} aria-label="תקופה קודמת">›</button>
-          <p aria-live="polite">
+        <div className="readout" dir="ltr">
+          {/* הזמן זורם משמאל לימין כמו העמודות: החץ השמאלי לתקופה מוקדמת יותר */}
+          <button type="button" className="readnav" onClick={() => setPick(Math.max(0, i - 1))} disabled={i === 0} aria-label="תקופה קודמת">‹</button>
+          <p dir="rtl" aria-live="polite">
             <b className="readtitle">{v.b === 'week' ? `השבוע של ${curLabel}` : curLabel}</b>
             <span>של הבוט <b className="isbot">{money.format(cur.values[0])}</b></span>
             <span>לא של הבוט <b>{money.format(cur.values[1])}</b></span>
             <span>עוד לא הוכרע <b>{money.format(cur.values[2])}</b></span>
             <span>החלק של הבוט <b>{pctOf(v.share[i])}</b></span>
           </p>
-          <button type="button" className="readnav" onClick={() => setPick(Math.min(n - 1, i + 1))} disabled={i === n - 1} aria-label="תקופה הבאה">‹</button>
+          <button type="button" className="readnav" onClick={() => setPick(Math.min(n - 1, i + 1))} disabled={i === n - 1} aria-label="תקופה הבאה">›</button>
         </div>
       ) : null}
       <Columns

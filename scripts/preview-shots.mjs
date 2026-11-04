@@ -59,6 +59,12 @@ async function shoot(size, theme, tabs) {
     await page.screenshot({ path: `${prefix}-open.png`, fullPage: true });
     const open = await overflow(page);
     rows.push({ size: `${size.name} ${size.width}`, theme, tab: tab.name, closed, open });
+    // טווח עם השוואה לתקופה הקודמת, כדי לראות גם את השינוי ליד המספרים
+    if (tab.name === 'bot' && size.name !== 'tablet' && size.name !== 'small') {
+      await page.getByRole('button', { name: '30 יום' }).click();
+      await page.waitForTimeout(300);
+      await page.locator('#bot').screenshot({ path: `${prefix}-30d.png` });
+    }
     if (closed > 0 || open > 0) {
       failed = true;
       console.log(`::error title=גלישה לצדדים::${size.name} ${size.width} ${theme} ${tab.name}: סגור ${closed}, פתוח ${open}`);

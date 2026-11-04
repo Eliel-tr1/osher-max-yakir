@@ -35,7 +35,8 @@
   --tab-on: #ffffff;
   --radius: 4px;
   --font: var(--font-sans), system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', Arial, sans-serif;
-  --mono: var(--font-mono), ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  /* עברית שנמצאת ליד מספר נשארת בגופן הרגיל: בכתב מכונה של המערכת היא נפרשת עם רווחים גדולים */
+  --mono: var(--font-mono), var(--font-sans), ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 
 /* מצב כהה: ברירת המחדל (הנחיית המנהל, 1/11). הבחירה נשמרת בדפדפן, ראו app/layout.tsx. הפלטה מעיצוב א4 (#34) */
@@ -508,6 +509,7 @@ p.small a { color: var(--series-1); font-weight: 600; }
 .dates, .selects { justify-content: center; }
 .dates label, .selects label { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; }
 .dates input, .selects select { border-radius: 3px; min-height: 32px; padding: 0 6px; }
+.selects select { max-width: 180px; }
 .jump { justify-content: safe center; margin-bottom: 12px; }
 .jump a { border-radius: 3px; }
 
@@ -533,6 +535,7 @@ p.small a { color: var(--series-1); font-weight: 600; }
 .chipsline, .whyring { justify-content: center; }
 .delta { font-weight: 500; }
 .vfunnel .vlabel { text-align: center; }
+.vfunnel .vbar, .b100track { border-radius: 2px; }
 .how { text-align: start; }
 .trendline { display: block; width: 100%; }
 
