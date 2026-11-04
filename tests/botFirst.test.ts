@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Lead, MailingPurchase, Purchase } from '../lib/leads/types';
 import {
-  annotate, BEFORE_NAMES, botHero, capabilities, mailingLevels, moneyShareSeries, NO_PRODUCT, noProductLabel, normalizeMode, purchaseFamily, salesConversation,
+  annotate, BEFORE_NAMES, botHero, botKpis, capabilities, mailingLevels, moneyShareSeries, NO_PRODUCT, noProductLabel, normalizeMode, purchaseFamily, salesConversation,
   withPurchasesAfterEntry,
 } from '../lib/metrics';
 
@@ -35,6 +35,24 @@ describe('what the bot brought (section 2.1)', () => {
   it('gives the bot share of money per week', () => {
     const s = moneyShareSeries([buy({ at: '2026-10-19T07:00:00.000Z', amount: 30 }), buy({ at: '2026-10-19T08:00:00.000Z', bot: 'no', amount: 70 }), buy({ at: '2026-10-27T07:00:00.000Z', amount: 0 })], 'week');
     expect(s.map((x) => [x.key, x.share])).toEqual([['2026-10-18', 0.3], ['2026-10-25', null]]);
+  });
+  it('gives the four numbers under it the same values as the hero, with their change and weeks (#34)', () => {
+    const h = botHero(ps, null);
+    const k = Object.fromEntries(botKpis(ps, null).map((x) => [x.id, x]));
+    expect(k.share.value).toBe(h.share);
+    expect(k.purchases.value).toBe(h.purchases);
+    expect(k.buyers.value).toBe(h.buyers);
+    expect(k.avgDeal.value).toBe(h.avgDeal);
+    expect(Object.values(k).every((x) => x.change === null)).toBe(true);
+
+    const weeks = [buy({ at: '2026-10-19T07:00:00.000Z', amount: 30, buyer: 1 }), buy({ at: '2026-10-19T08:00:00.000Z', bot: 'no', amount: 70, buyer: 2 }), buy({ at: '2026-11-03T07:00:00.000Z', amount: 50, buyer: 3 })];
+    const before = [buy({ amount: 20, buyer: 1 }), buy({ bot: 'no', amount: 80, buyer: 2 })];
+    const w = Object.fromEntries(botKpis(weeks, before).map((x) => [x.id, x]));
+    expect(w.purchases.weekly).toEqual([1, 0, 1]);
+    expect(w.avgDeal.weekly).toEqual([30, null, 50]);
+    expect(w.share.weekly).toEqual([0.3, null, 1]);
+    expect(w.purchases.change).toBe(1);
+    expect(w.share.change).toBeCloseTo(80 / 150 - 0.2);
   });
 });
 
