@@ -403,7 +403,12 @@ function osher_insights_from_rows(array $extra, string $readAt, array $leadOfNs,
         $priv = ['ns' => [], 'names' => [], 'texts' => []];
         foreach ($dated($data, $c, 'תאריך פניה') as $r) {
             $ns = $c($r, 'מזהה לקוח');
-            $rows[] = ['at' => $iso($c($r, 'תאריך פניה')), 'lead' => $lead($ns), 'who' => $who($ns), 'category' => osher_clean($c($r, 'קטגוריה'))];
+            $counted = $c($r, 'נספר');
+            $rows[] = [
+                'at' => $iso($c($r, 'תאריך פניה')), 'lead' => $lead($ns), 'who' => $who($ns), 'category' => osher_clean($c($r, 'קטגוריה')),
+                'sub' => osher_clean($c($r, 'תת קטגוריה')), 'topic' => osher_clean($c($r, 'נושא')), 'question' => osher_clean($c($r, 'שאלה')),
+                'dup' => $counted !== '' && $counted !== 'כן',
+            ];
             $priv['ns'][] = $ns;
             $priv['names'][] = $name($c($r, 'שם לקוח'), $ns);
             $priv['texts'][] = osher_clip($c($r, 'תוכן הפניה'));

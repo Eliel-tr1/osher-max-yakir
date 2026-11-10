@@ -76,7 +76,7 @@ describe('why people left (section 4)', () => {
 });
 
 describe('service inquiries (section 5)', () => {
-  const inq = (category: string | null, who: number, at = '2026-10-20T07:00:00.000Z', lead: number | null = null): InquiryRow => ({ at, lead, who, category });
+  const inq = (category: string | null, who: number, at = '2026-10-20T07:00:00.000Z', lead: number | null = null): InquiryRow => ({ at, lead, who, category, sub: null, topic: null, question: null, dup: false });
   const rows: InquiryRow[] = [
     ...Array.from({ length: 6 }, (_, k) => inq('הפעלת חשבון ושדרוג', k % 4)),
     ...Array.from({ length: 5 }, (_, k) => inq('מכירות והנחות', 10 + k, '2026-10-28T07:00:00.000Z')),

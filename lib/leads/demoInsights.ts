@@ -42,6 +42,9 @@ const STALL_STOPS = [
 const STALL_TEMPLATES = ['client_notification_new_lead_v1', 'client_notification_new_lead_v2', 'demo_exam_failed'];
 const STALL_QUESTIONS = ['מה גודל החשבון שמעניין אותך? (הדגמה)', 'כמה ניסיון יש לך במסחר? (הדגמה)', 'באיזו פלטפורמה תרצה לסחור? (הדגמה)', 'מה התקציב שלך לאתגר? (הדגמה)'];
 
+const DEMO_SUBS = ['תת נושא ראשון', 'תת נושא שני', 'תת נושא שלישי'];
+const DEMO_QUESTIONS = ['איך מפעילים את החשבון? (הדגמה)', 'מתי מגיע החשבון הממומן? (הדגמה)', 'למה העסקה נסגרה? (הדגמה)', 'אפשר הנחה? (הדגמה)'];
+
 function weighted(rnd: () => number, xs: [string, number][]): string {
   const total = xs.reduce((s, x) => s + x[1], 0);
   let r = rnd() * total;
@@ -92,7 +95,11 @@ export function demoInsights(leads: Lead[], purchases: Purchase[], until: Date, 
     if (at > until) continue;
     if (!whoOf.has(i)) whoOf.set(i, whoOf.size);
     const category = rnd() < 0.09 ? null : weighted(rnd, INQUIRY_CATS);
-    inquiries.push({ at: at.toISOString(), lead: i, who: whoOf.get(i)!, category });
+    // תת קטגוריה, נושא ושאלה (#38): בלי rnd, כדי שלא ישנה את שאר ההדגמה
+    inquiries.push({
+      at: at.toISOString(), lead: i, who: whoOf.get(i)!, category, sub: category ? `${DEMO_SUBS[k % 3]} (הדגמה)` : null,
+      topic: category ? `נושא ${(k % 5) + 1} (הדגמה)` : null, question: category ? DEMO_QUESTIONS[k % DEMO_QUESTIONS.length] : null, dup: k % 11 === 0,
+    });
     ip.ns.push(`DEMO${i}`);
     ip.names.push(name(i));
     ip.texts.push(`פנייה לדוגמה: ${category ?? 'שאלה כללית'} (הדגמה)`);

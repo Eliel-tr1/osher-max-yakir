@@ -724,3 +724,7 @@ p.small a { color: var(--series-1); font-weight: 600; }
 #undecided .chipsline button { font-size: 14px; max-width: 100%; white-space: normal; text-align: start; }
 .undsum { margin: 4px 0 12px; font-size: 15px; line-height: 1.6; color: var(--ink-2); }
 .undsum b { color: var(--ink); font-family: var(--num); font-weight: 600; }
+
+/* פירוט הפניות (#38): רמה בתוך רמה, עם קו בצד כדי שיהיה ברור איפה נמצאים */
+.drill .lists { margin-top: 10px; border-inline-start: 2px solid var(--line); padding-inline-start: 10px; }
+.drillhead { margin: 12px 0 4px; font-size: 15px; font-weight: 600; text-align: center; }

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import {
-  abandonView, BOT_FAILURE, feedbackView, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, stallView, startsBeforeData, STARTED_Q,
-  STALL_QUESTION, STALL_TEMPLATE, TOP_QUESTIONS, type ExamFilter, type Indexed, type Scope,
+  abandonView, BOT_FAILURE, feedbackView, inquiryDrill, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, stallView, startsBeforeData, STARTED_Q,
+  STALL_QUESTION, STALL_TEMPLATE, TOP_INQUIRY_QUESTIONS, TOP_QUESTIONS, type ExamFilter, type Indexed, type Scope, type SubRow, type TopicRow,
 } from '@/lib/insights';
 import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, StallRow } from '@/lib/leads/types';
 import { Bars100, BarList, Fold, fmtDate, fmtDateTime, Info, ListBlock, MoreTable, Ring, Sparkline, nf, pct, pctOf } from '../charts';
@@ -226,7 +226,8 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
             לפי נושא{' '}
             <Info>
               כל שורה בלשונית &quot;פניות&quot; היא פנייה, מ-2/10. אדם אחד יכול לפנות כמה פעמים ובכמה נושאים. נושא עם פחות מ-5 פניות בטווח שבחרת נכנס ל&quot;אחר&quot;.
-              האחוז מתוך הפניות המסווגות.
+              האחוז מתוך הפניות המסווגות. פנייה שבעמודה &quot;נספר&quot; שלה כתוב &quot;כפילות&quot; (אותו לקוח, אותו יום ואותו נושא) לא נספרת. לחיצה על נושא בפירוט
+              פותחת תת קטגוריות, נושאים והשאלות הנפוצות.
             </Info>
           </h3>
           <BarList
@@ -234,6 +235,7 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
             extra={(n) => { const c = v.cats.find((x) => x.name === n); return c ? `${nf.format(c.people)} אנשים · ${pctOf(c.share)}` : null; }}
           />
           {v.pending ? <p className="muted small">{nf.format(v.pending)} עוד בסיווג</p> : null}
+          {v.dupes ? <p className="muted small">פניות כפולות של אותו לקוח באותו יום ובאותו נושא נספרות פעם אחת · {nf.format(v.dupes)} כפולות לא נספרו</p> : null}
           {v.top3.length > 0 ? (
             <>
               <h3>לפי שבוע <Info>שלושת הנושאים הגדולים בטווח, כל אחד בגרף משלו ובאותו סולם, כדי שלא יהיו צבעים נוספים.</Info></h3>
@@ -252,11 +254,63 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
           ) : null}
           <ListBlock
             note={note}
-            items={v.cats.map((c) => ({ id: `inq-${c.name}`, title: c.name, count: `${nf.format(c.count)} פניות`, render: () => <TextList kind="inquiry" rows={c.rows} head="תוכן הפנייה" /> }))}
+            items={v.cats.map((c, k) => ({ id: `inq-${k}`, title: c.name, count: `${nf.format(c.count)} פניות`, render: () => <InquiryDrill rows={c.rows} /> }))}
           />
         </>
       )}
     </Fold>
+  );
+}
+
+/**
+ * הפירוט של קטגוריה (#38): תת קטגוריות, בכל אחת נושאים, ובכל נושא השאלות הנפוצות והפניות עצמן.
+ * בלי תת קטגוריה ונושא (נתונים ישנים): רק רשימת הפניות, כמו קודם
+ */
+function InquiryDrill({ rows }: { rows: Indexed<InquiryRow>[] }) {
+  const subs = useMemo(() => inquiryDrill(rows), [rows]);
+  if (!rows.some((x) => x.r.sub !== null || x.r.topic !== null)) return <TextList kind="inquiry" rows={rows} head="תוכן הפנייה" />;
+  return (
+    <div className="drill">
+      <BarList items={subs.map((x) => ({ name: x.name, count: x.count }))} color="--bot" max={20} extra={(n) => pctOf(subs.find((x) => x.name === n)?.share ?? null)} />
+      <ListBlock
+        title="לפי תת קטגוריה"
+        items={subs.map((x, k) => ({ id: `sub-${k}`, title: x.name, count: `${nf.format(x.count)} פניות`, render: () => <SubDrill sub={x} /> }))}
+      />
+    </div>
+  );
+}
+
+function SubDrill({ sub }: { sub: SubRow }) {
+  const note = useLinkNote();
+  return (
+    <div className="drill">
+      <BarList items={sub.topics.map((t) => ({ name: t.name, count: t.count }))} color="--bot" max={20} extra={(n) => pctOf(sub.topics.find((t) => t.name === n)?.share ?? null)} />
+      <ListBlock
+        title="לפי נושא"
+        note={note}
+        items={sub.topics.map((t, k) => ({ id: `topic-${k}`, title: t.name, count: `${nf.format(t.count)} פניות`, render: () => <TopicDrill topic={t} /> }))}
+      />
+    </div>
+  );
+}
+
+function TopicDrill({ topic }: { topic: TopicRow }) {
+  return (
+    <div className="drill">
+      {topic.questions.length ? (
+        <>
+          <h4 className="drillhead">
+            השאלות הנפוצות{topic.questionCount > TOP_INQUIRY_QUESTIONS ? ` (${nf.format(TOP_INQUIRY_QUESTIONS)} מתוך ${nf.format(topic.questionCount)})` : ''}
+          </h4>
+          <MoreTable
+            headers={['השאלה', 'פניות']}
+            rows={topic.questions.map((q) => ({ key: q.name, cells: [<span key="q" className="qtext">{q.name}</span>, nf.format(q.count)] }))}
+          />
+        </>
+      ) : null}
+      <h4 className="drillhead">הפניות</h4>
+      <TextList kind="inquiry" rows={topic.rows} head="תוכן הפנייה" />
+    </div>
   );
 }
 

@@ -29,7 +29,7 @@ const EMPTY_ANALYSIS: AnalysisRow = {
   messages: null, scannedAt: null, removal: null, basis: null,
 };
 const EMPTY_QUESTION: QuestionRow = { text: '', category: null, count: 0, lastAt: null, status: null, answer: null };
-const EMPTY_INQUIRY: Omit<InquiryRow, 'who'> = { at: null, lead: null, category: null };
+const EMPTY_INQUIRY: Omit<InquiryRow, 'who'> = { at: null, lead: null, category: null, sub: null, topic: null, question: null, dup: false };
 const EMPTY_FEEDBACK: Omit<FeedbackRow, 'who'> = { at: null, lead: null, category: null, exam: null };
 const EMPTY_STALL: StallRow = { at: null, lead: null, process: null, stop: null, detail: null, messages: null, lastAt: null, scannedAt: null };
 

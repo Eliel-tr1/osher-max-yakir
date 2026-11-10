@@ -96,7 +96,9 @@ export const ANALYSIS_OPTIONAL = ['פירוט קצר', 'פנה לנציג', 'ק�
 export const QUESTION_COLUMNS = ['שאלה', 'מופעים'] as const;
 export const QUESTION_OPTIONAL = ['קטגוריה', 'נשאל לאחרונה', 'דוגמאות (קוד מזהה)', 'סטטוס', 'תשובת יקיר'] as const;
 export const INQUIRY_COLUMNS = ['תאריך פניה', 'מזהה לקוח', 'קטגוריה'] as const;
-export const INQUIRY_OPTIONAL = ['שם לקוח', 'תוכן הפניה'] as const;
+export const INQUIRY_OPTIONAL = ['שם לקוח', 'תוכן הפניה', 'תת קטגוריה', 'נושא', 'שאלה', 'נספר'] as const;
+/** "נספר" ברשומה שנספרת. כל ערך אחר ("כפילות") לא נספר; ריק נספר (#38) */
+export const COUNTED_YES = 'כן';
 export const FEEDBACK_COLUMNS = ['תאריך', 'קוד מזהה', 'קטגוריה'] as const;
 export const FEEDBACK_OPTIONAL = ['מבחן', 'שם לקוח', 'הערות'] as const;
 /** "נקודות עצירה" (10/11/2026, #38): העמודות שחייבות להיות, ואלה שנקראות כשהן קיימות */
@@ -458,7 +460,11 @@ export function insightsFromRows(extra: InsightRows, readAt: string, leadOfNs: M
     const priv: PrivateRows = { ns: [], names: [], texts: [] };
     for (const r of dated(I, 'תאריך פניה')) {
       const ns = I.col(r, 'מזהה לקוח');
-      rows.push({ at: iso(I.col(r, 'תאריך פניה')), lead: lead(ns), who: who(ns), category: cleanText(I.col(r, 'קטגוריה')) });
+      const counted = I.col(r, 'נספר');
+      rows.push({
+        at: iso(I.col(r, 'תאריך פניה')), lead: lead(ns), who: who(ns), category: cleanText(I.col(r, 'קטגוריה')), sub: cleanText(I.col(r, 'תת קטגוריה')),
+        topic: cleanText(I.col(r, 'נושא')), question: cleanText(I.col(r, 'שאלה')), dup: counted !== '' && counted !== COUNTED_YES,
+      });
       priv.ns.push(ns);
       priv.names.push(name(I.col(r, 'שם לקוח'), ns));
       priv.texts.push(clip(I.col(r, 'תוכן הפניה')));

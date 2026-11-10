@@ -163,12 +163,14 @@ function insightsFixture(n: number): { analysis: string; questions: string; inqu
     ql.push([pick(['מה המגבלה היומית?', 'כמה עולה תוסף, "פרו"?', '', ' ']), pick(['חוקי תוכנית ומסחר', '']), pick(['1', '3', '', 'x']), pick(dates),
       pick(['A1', 'A1, B2,C3', 'A1 B2\nC3', '']), pick(['ממתין לתשובה', 'נענה', '']), pick(['', 'תשובה, עם "מרכאות"']), 'הערה'].map(q).join(','));
   }
-  const ih = ['תאריך פניה', ...INQUIRY_COLUMNS.slice(1), 'שם לקוח', 'טלפון', 'סוג פניה', 'תוכן הפניה', 'לינק לשיחה', 'סומן ב-CloudChat'];
+  const ih = ['תאריך פניה', ...INQUIRY_COLUMNS.slice(1), 'שם לקוח', 'טלפון', 'סוג פניה', 'תוכן הפניה', 'לינק לשיחה', 'סומן ב-CloudChat', 'תת קטגוריה', 'נושא', 'שאלה', 'נספר'];
   const il = [ih.map(q).join(',')];
   for (let i = 0; i < n; i++) {
     il.push(ih.map((h) => q(({
       'תאריך פניה': pick(dates), 'מזהה לקוח': pick([`ID${i}`, `ID${i % 7}`, '']), קטגוריה: pick(['הפעלת חשבון ושדרוג', 'אחר', '']), 'שם לקוח': pick(['', 'לקוח, "בדיקה"']),
       'תוכן הפניה': pick(['', long, 'שלום,\nיש לי שאלה']), טלפון: '050', 'סוג פניה': 'ישן', 'לינק לשיחה': 'https://example.com', 'סומן ב-CloudChat': '',
+      'תת קטגוריה': pick(['', 'הפעלה אחרי מעבר', ' - ']), נושא: pick(['', 'לא קיבל פרטי חשבון']), שאלה: pick(['', 'מתי אקבל את החשבון?', 'שורה\nשנייה, "מרכאות"']),
+      נספר: pick(['כן', 'כן', 'כפילות', '', ' כן ']),
     } as Record<string, string>)[h] ?? '')).join(','));
   }
   const fh = [...FEEDBACK_COLUMNS.slice(0, 2), 'שם לקוח', 'הערות', FEEDBACK_COLUMNS[2], 'מבחן'];
@@ -278,6 +280,9 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     // פניות ומשובים מלפני 2/10 לא נכנסים; תאריך שלא פוענח נשאר
     expect(ins.inquiries!.rows.length).toBeLessThan(120);
     expect(ins.inquiries!.rows.some((r) => r.at === null)).toBe(true);
+    // תת קטגוריה, נושא, שאלה ונספר (#38)
+    expect(ins.inquiries!.rows.some((r) => r.dup) && ins.inquiries!.rows.some((r) => !r.dup)).toBe(true);
+    expect(ins.inquiries!.rows.some((r) => r.sub === 'הפעלה אחרי מעבר' && r.topic !== null) && ins.inquiries!.rows.some((r) => r.question !== null)).toBe(true);
     expect(ins.feedback!.rows.some((r) => r.exam === 'passed') && ins.feedback!.rows.some((r) => r.exam === 'failed')).toBe(true);
     expect(ins.questions!.rows.every((r) => r.text.trim() !== '')).toBe(true);
     // נקודות עצירה: כל השורות, ליד לפי הקוד המזהה, ערכים נקיים

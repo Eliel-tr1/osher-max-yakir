@@ -32,7 +32,7 @@ describe('page filter (source / process)', () => {
   });
 
   it('the insight cards follow the filter (it used to be inverted)', () => {
-    const inq = (lead: number | null): InquiryRow => ({ at: '2026-10-20T07:00:00.000Z', lead, who: lead ?? 99, category: 'הפעלת חשבון' });
+    const inq = (lead: number | null): InquiryRow => ({ at: '2026-10-20T07:00:00.000Z', lead, who: lead ?? 99, category: 'הפעלת חשבון', sub: null, topic: null, question: null, dup: false });
     const rows = [inq(0), inq(1), inq(null)];
     const scope = (source: string): Scope => ({ range: all, keep: leadFilter(leads, source, ALL).keep, testLeads: new Set() });
     // בלי סינון: כל הפניות, גם בלי ליד
