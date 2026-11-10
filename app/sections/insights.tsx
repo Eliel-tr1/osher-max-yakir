@@ -172,7 +172,7 @@ function StallCard({ rows, scope, open, onToggle }: { rows: StallRow[]; scope: S
                 render: () => <BarList items={v.templates.map((c) => ({ name: c.name, count: c.count }))} color="--bot" max={20} extra={(n) => pctOf(v.templates.find((c) => c.name === n)?.share ?? null)} />,
               }] : []),
               ...(v.questions.length ? [{
-                id: 'st-q', title: `${STALL_QUESTION}: השאלות`, count: `${nf.format(Math.min(TOP_QUESTIONS, v.questionCount))} מתוך ${nf.format(v.questionCount)} שאלות`,
+                id: 'st-q', title: `${STALL_QUESTION}: השאלות`, count: v.questionCount > TOP_QUESTIONS ? `${nf.format(TOP_QUESTIONS)} מתוך ${nf.format(v.questionCount)} שאלות` : `${nf.format(v.questionCount)} שאלות`,
                 render: () => (
                   <MoreTable
                     headers={['השאלה האחרונה של הבוט', 'לידים', 'אחוז']}
