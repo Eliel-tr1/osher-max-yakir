@@ -203,11 +203,11 @@ export function LoginGate({ onIn }: { onIn: () => void }) {
 }
 
 /** כפתור קטן "לשיחה ↗" בשורה של רשימה, רק למי שמחובר */
-export function ChatLink({ kind, i }: { kind: LinkKind; i: number | undefined }) {
+export function ChatLink({ kind, i, label = 'לשיחה' }: { kind: LinkKind; i: number | undefined; label?: string }) {
   const { link } = useAuth();
   const url = link(kind, i);
   if (!url) return null;
-  return <a className="chatlink" href={url} target="_blank" rel="noopener noreferrer">לשיחה ↗</a>;
+  return <a className="chatlink" href={url} target="_blank" rel="noopener noreferrer">{label} ↗</a>;
 }
 
 /** הכיתוב ליד כותרת הרשימות: מה צריך כדי לראות קישורים */

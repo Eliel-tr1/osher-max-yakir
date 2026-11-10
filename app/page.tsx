@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BASE_PATH } from '@/lib/app';
+import { ALL, leadFilter, purchasesIn } from '@/lib/filters';
 import { testLeadsOf, type Scope } from '@/lib/insights';
 import { unpack } from '@/lib/leads/file';
 import { BOT_SOURCE } from '@/lib/leads/fromSheet';
@@ -24,10 +25,10 @@ import { MailingsSection } from './sections/mailings';
 import { OverTime } from './sections/overTime';
 import { PopupCompare, PopupSection } from './sections/popup';
 import { PurchasesSection, type Channel } from './sections/purchases';
+import { UndecidedSection } from './sections/undecided';
 import { ExamsCard, FunnelCard, HowCounted, SourcesCard, TeamTiles } from './sections/team';
 import { trackingBanner, TrackingSection, useTrackingHealth } from './sections/tracking';
 
-const ALL = '';
 const EMPTY: LeadsFile['leads'] = [];
 /** הגרסה של הבנייה. כשבשרת יש גרסה אחרת, הדף נטען מחדש לבד (הדפדפן שומר את הדף הישן בזיכרון) */
 const BUILD = process.env.NEXT_PUBLIC_BUILD_SHA ?? '';
@@ -179,16 +180,15 @@ export default function Dashboard() {
     if (!file) return null;
     const now = new Date();
     const range = rangeFor(preset, now, custom);
-    const scoped = all.filter((l) => (source === ALL || l.sourceGroup === source) && (proc === ALL || l.process === proc));
+    // keep = null בלי סינון. פעם היה כאן הפוך לתובנות השיחה (#38): עכשיו המשמעות במקום אחד, ב-lib/filters.ts
+    const { scoped, keep, active } = leadFilter(all, source, proc);
     const leads = inRange(scoped, range);
-    const keep = new Set(scoped.map((l) => l.i));
-    const filtered = source === ALL && proc === ALL;
     // רכישות לפי תאריך הרכישה. כשמסננים לפי מקור או תהליך, רק הרכישות של הלידים שנשארו
-    const pick = (r: Range) => inRange(file.purchases, r).filter((p) => filtered || (p.lead !== null && keep.has(p.lead)));
+    const pick = (r: Range) => purchasesIn(file.purchases, r, keep);
     const purchasesAll = pick(range);
     const before = COMPARED.includes(preset) ? previousRange(range, now) : null;
     const auto = autoBucket(leads);
-    const scope: Scope = { range, keep: filtered ? keep : null, testLeads: testLeadsOf(file.insights.analysis?.rows ?? null) };
+    const scope: Scope = { range, keep, testLeads: testLeadsOf(file.insights.analysis?.rows ?? null) };
     const lb = leadsBy ?? auto;
     const tb = testsBy ?? auto;
     return {
@@ -199,7 +199,7 @@ export default function Dashboard() {
       purchasesBefore: before ? pick(before) : null,
       caps: capabilities({ leads, couponLeads: scoped, purchases: purchasesAll, people, mailings: file.mailings, range }),
       scope,
-      filtered: !filtered,
+      filtered: active,
       missingDays: purchaseGaps(file.purchases).missing,
       dupes: dupesIn(file.dupes, range),
       summary: summarize(leads, purchasesAll),
@@ -240,7 +240,7 @@ export default function Dashboard() {
   const red = health.last7 > 0;
   const jump: [string, string][] = tab === 'main'
     ? [
-      ['bot', 'מה הבוט הביא'], ['time', 'לאורך זמן'], ['insights', 'תובנות שיחה'], ['buys', 'רכישות'], ['coupons', 'קופונים'],
+      ['bot', 'מה הבוט הביא'], ['time', 'לאורך זמן'], ['insights', 'תובנות שיחה'], ['buys', 'רכישות'], ['undecided', 'לא הוכרעו'], ['coupons', 'קופונים'],
       ...(hasMail ? [['mail', 'דיוור'] as [string, string]] : []), ...(hasPopup ? [['popup', 'פופאפ'] as [string, string]] : []),
     ]
     : [['funnel', 'משפך'], ['tracking', 'תקינות קמפיינים'], ['exams', 'מבחנים'], ['sources', 'מקור הגעה'], ...(hasPopup ? [['popupcmp', 'פופאפ מול השאר'] as [string, string]] : []), ['how', 'איך נספר']];
@@ -323,6 +323,7 @@ export default function Dashboard() {
                 <h2 id="details-h" className="sectlabel">פירוט</h2>
                 <div className="foldgrid">
                 <PurchasesSection all={view.purchasesAll} channel={channel} setChannel={setChannel} open={!!open.buys} onToggle={() => toggle('buys')} chip={chip} setChip={setChip} />
+                <UndecidedSection all={view.purchasesAll} analysis={file.insights.analysis?.rows ?? null} open={!!open.undecided} onToggle={() => toggle('undecided')} />
                 <CouponsSection people={view.scoped} all={view.purchasesAll} ever={view.purchasesEver} range={view.range} rangeKey={rangeKey} open={!!open.coupons} onToggle={() => toggle('coupons')} />
                 {hasMail && <MailingsSection mailings={file.mailings!} waves={file.mailingWaves!} open={!!open.mail} onToggle={() => toggle('mail')} />}
                 {hasPopup && <PopupSection people={people} range={view.range} rangeKey={rangeKey} analysis={file.insights.analysis?.rows ?? null} scope={view.scope} open={!!open.popup} onToggle={() => toggle('popup')} />}

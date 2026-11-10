@@ -718,3 +718,9 @@ p.small a { color: var(--series-1); font-weight: 600; }
   .tile.has-ring { display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; }
   .tile.has-ring .ring { position: static; width: 44px; height: 44px; }
 }
+
+/* "עוד לא הוכרעו" (#38): צ'יפ שמסנן את הרשימה, ושורת הסיכום */
+.chipsline button[aria-pressed='true'] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+#undecided .chipsline button { font-size: 14px; max-width: 100%; white-space: normal; text-align: start; }
+.undsum { margin: 4px 0 12px; font-size: 15px; line-height: 1.6; color: var(--ink-2); }
+.undsum b { color: var(--ink); font-family: var(--num); font-weight: 600; }
