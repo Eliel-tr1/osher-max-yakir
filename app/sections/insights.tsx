@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import {
-  abandonView, BOT_FAILURE, feedbackView, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, startsBeforeData, STARTED_Q,
-  type ExamFilter, type Indexed, type Scope,
+  abandonView, BOT_FAILURE, feedbackView, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, stallView, startsBeforeData, STARTED_Q,
+  STALL_QUESTION, STALL_TEMPLATE, TOP_QUESTIONS, type ExamFilter, type Indexed, type Scope,
 } from '@/lib/insights';
-import type { AnalysisRow, FeedbackRow, InquiryRow, Insights } from '@/lib/leads/types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, StallRow } from '@/lib/leads/types';
 import { Bars100, BarList, Fold, fmtDate, fmtDateTime, Info, ListBlock, MoreTable, Ring, Sparkline, nf, pct, pctOf } from '../charts';
 import { ChatLink, useAuth, useLinkNote, type RowKind } from '../auth';
 import { Chips, fmtBucket } from './shared';
@@ -24,11 +24,11 @@ export function InsightsSection({ insights, generatedAt, scope, filtered, open, 
   open: Record<string, boolean>;
   toggle: (id: string) => void;
 }) {
-  const { analysis, questions, inquiries, feedback } = insights;
+  const { analysis, questions, inquiries, feedback, stalls } = insights;
   const last = lastScan(analysis?.rows ?? null);
-  const none = !analysis && !questions && !inquiries && !feedback;
+  const none = !analysis && !questions && !inquiries && !feedback && !stalls?.rows.length;
   // לשונית שהקריאה שלה נכשלה ברענון האחרון: נשארים הנתונים הקודמים, עם הזמן האמיתי שלהם
-  const stale = [analysis, questions, inquiries, feedback].map((p) => p?.readAt).filter((t): t is string => !!t && t !== generatedAt).sort()[0] ?? null;
+  const stale = [analysis, questions, inquiries, feedback, stalls].map((p) => p?.readAt).filter((t): t is string => !!t && t !== generatedAt).sort()[0] ?? null;
   return (
     <section className="insights" id="insights" aria-labelledby="insights-h">
       <div className="secthead">
@@ -50,6 +50,7 @@ export function InsightsSection({ insights, generatedAt, scope, filtered, open, 
         <>
           <div className="foldgrid">
             <AbandonCard rows={analysis?.rows ?? null} scope={scope} open={!!open['i-why']} onToggle={() => toggle('i-why')} />
+            {stalls && stalls.rows.length > 0 ? <StallCard rows={stalls.rows} scope={scope} open={!!open['i-stall']} onToggle={() => toggle('i-stall')} /> : null}
             <InquiryCard rows={inquiries?.rows ?? null} scope={scope} open={!!open['i-inq']} onToggle={() => toggle('i-inq')} />
             <FeedbackCard rows={feedback?.rows ?? null} scope={scope} open={!!open['i-fb']} onToggle={() => toggle('i-fb')} />
             <QuestionCard insights={insights} scope={scope} filtered={filtered} open={!!open['i-q']} onToggle={() => toggle('i-q')} />
@@ -133,6 +134,76 @@ function AbandonCard({ rows, scope, open, onToggle }: { rows: AnalysisRow[] | nu
         </>
       )}
     </Fold>
+  );
+}
+
+// ---------- איפה נתקעים (#38) ----------
+
+function StallCard({ rows, scope, open, onToggle }: { rows: StallRow[]; scope: Scope; open: boolean; onToggle: () => void }) {
+  const note = useLinkNote();
+  const v = useMemo(() => stallView(rows, scope), [rows, scope]);
+  const top = v.stops[0];
+  const since = v.since ? <>מ-<bdi>{fmtDate(v.since)}</bdi></> : null;
+  const of = (stop: string) => v.stops.find((s) => s.name === stop);
+  return (
+    <Fold
+      id="i-stall" level={3} className="icard" title="איפה נתקעים" open={open} onToggle={onToggle}
+      big={nf.format(v.total)}
+      seg={v.stops.map((c) => c.count)}
+      sentence={<>לידים שלא קנו{top ? <> · הכי הרבה: {top.name} ({pctOf(top.share)})</> : null}</>}
+    >
+      <h3>
+        לפי נקודת עצירה{' '}
+        <Info>
+          לשונית &quot;נקודות עצירה&quot; בגיליון: ליד שנכנס ולא קנה, והנקודה שבה השיחה נעצרה, כמו שהסקריפט של המנהל כתב בלילה. הטווח לפי תאריך הכניסה. האחוז מתוך כל
+          הלידים שנתקעו בטווח.
+        </Info>
+      </h3>
+      <p className="muted small">רק לידים שלא קנו{since ? <> · {since}</> : null}</p>
+      {v.total === 0 ? <p className="empty">אין לידים שנתקעו בטווח הזה</p> : (
+        <>
+          <BarList items={v.stops.map((c) => ({ name: c.name, count: c.count }))} color="--bot" max={10} extra={(n) => pctOf(of(n)?.share ?? null)} />
+          <ListBlock
+            title="פירוט"
+            note={note}
+            items={[
+              ...(v.templates.length ? [{
+                id: 'st-tpl', title: `${STALL_TEMPLATE}: לפי טמפלייט`, count: `${nf.format(v.templates.length)} טמפלייטים`,
+                render: () => <BarList items={v.templates.map((c) => ({ name: c.name, count: c.count }))} color="--bot" max={20} extra={(n) => pctOf(v.templates.find((c) => c.name === n)?.share ?? null)} />,
+              }] : []),
+              ...(v.questions.length ? [{
+                id: 'st-q', title: `${STALL_QUESTION}: השאלות`, count: `${nf.format(Math.min(TOP_QUESTIONS, v.questionCount))} מתוך ${nf.format(v.questionCount)} שאלות`,
+                render: () => (
+                  <MoreTable
+                    headers={['השאלה האחרונה של הבוט', 'לידים', 'אחוז']}
+                    rows={v.questions.map((c) => ({ key: c.name, cells: [<span key="t" className="qtext">{c.name}</span>, nf.format(c.count), pctOf(c.share)] }))}
+                  />
+                ),
+              }] : []),
+              ...v.stops.map((c, k) => ({ id: `st-${k}`, title: c.name, count: `${nf.format(c.count)} לידים`, render: () => <StallList rows={c.rows} /> })),
+            ]}
+          />
+        </>
+      )}
+    </Fold>
+  );
+}
+
+/** רשימת לידים שנתקעו: תאריך כניסה, שם, תהליך, פירוט, הודעות וקישור לשיחה. השם והקישור רק אחרי כניסה */
+function StallList({ rows }: { rows: Indexed<StallRow>[] }) {
+  const { name } = useAuth();
+  const sorted = [...rows].sort((a, b) => (b.r.at ?? '').localeCompare(a.r.at ?? ''));
+  return (
+    <MoreTable
+      headers={['תאריך כניסה', 'שם', 'תהליך', 'פירוט', 'הודעות', '']}
+      rows={sorted.map(({ r, i }) => ({
+        key: `s-${i}`,
+        cells: [
+          r.at ? fmtDateTime(r.at) : '-', name('stall', i) || '-', r.process ?? '-', <span key="d" className="cliptext">{r.detail ?? '-'}</span>,
+          r.messages === null ? '-' : nf.format(r.messages), <ChatLink key="l" kind="stall" i={i} label="פתח שיחה ב-CloudChat" />,
+        ],
+      }))}
+    />
   );
 }
 

@@ -2,7 +2,7 @@
  * "תובנות שיחה" (הנחיית המנהל 3/11/2026, #26): ההגדרות והחישובים של ארבעת הכרטיסים ושורת ההסרות.
  * הנתונים מגיעים מהסריקה של המנהל בגיליון. הדשבורד לא מסווג ולא מחשב סיבות: רק סופר את מה שכתוב.
  */
-import type { AnalysisRow, FeedbackRow, InquiryRow, QuestionRow } from './leads/types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, QuestionRow, StallRow } from './leads/types';
 import { inside, timeSeries, type Bucket, type Range } from './metrics';
 import { israelDayStart } from './sheet/parse';
 
@@ -260,4 +260,61 @@ export function lastScan(analysis: AnalysisRow[] | null): string | null {
   let last: string | null = null;
   for (const r of analysis ?? []) if (r.scannedAt && (!last || r.scannedAt > last)) last = r.scannedAt;
   return last;
+}
+
+// ---------- איפה נתקעים (#38) ----------
+
+/** הערכים של "נקודת עצירה" שיש להם פירוט משלהם */
+export const STALL_TEMPLATE = 'לא ענה לטמפלייט';
+export const STALL_QUESTION = 'נעצר בשאלון';
+/** "נקודת עצירה" ריקה */
+export const STALL_UNKNOWN = 'לא ידוע';
+/** "פירוט" ריק */
+export const NO_DETAIL = 'בלי פירוט';
+/** כמה שאלות מוצגות ב"נעצר בשאלון" */
+export const TOP_QUESTIONS = 15;
+
+export interface StallCount extends Count<StallRow> {
+  /** מתוך כל הלידים שנתקעו בטווח */
+  share: number;
+}
+
+export interface StallView {
+  /** כל הלידים שנתקעו בטווח ובסינון, בלי שיחות בדיקה */
+  total: number;
+  /** לפי "נקודת עצירה", מהגדולה לקטנה */
+  stops: StallCount[];
+  /** "לא ענה לטמפלייט" לפי שם הטמפלייט */
+  templates: StallCount[];
+  /** "נעצר בשאלון": 15 השאלות הנפוצות */
+  questions: StallCount[];
+  /** כמה שאלות שונות יש בסך הכול */
+  questionCount: number;
+  /** ה"נסרק ב:" המוקדם ביותר בלשונית (לא רק בטווח): מאז מתי יש נתונים */
+  since: string | null;
+}
+
+function shares(xs: Count<StallRow>[], total: number): StallCount[] {
+  return xs.map((c) => ({ ...c, share: total ? c.count / total : 0 }));
+}
+
+/**
+ * "איפה נתקעים" (בקשת המנהל 10/11/2026, #38): לידים שלא קנו, לפי הנקודה שבה נעצרו. הטווח לפי "תאריך כניסה", והסינון
+ * לפי מקור ותהליך דרך הליד, כמו בשאר הכרטיסים. הדשבורד לא מסווג: רק סופר את מה שהסקריפט כתב.
+ */
+export function stallView(stalls: StallRow[], scope: Scope): StallView {
+  const rows = inScope(stalls, (r) => r.at, scope);
+  const total = rows.length;
+  const of = (stop: string) => rows.filter((x) => x.r.stop === stop);
+  const q = group(of(STALL_QUESTION), (r) => r.detail ?? NO_DETAIL);
+  let since: string | null = null;
+  for (const r of stalls) if (r.scannedAt && (!since || r.scannedAt < since)) since = r.scannedAt;
+  return {
+    total,
+    stops: shares(group(rows, (r) => r.stop ?? STALL_UNKNOWN), total),
+    templates: shares(group(of(STALL_TEMPLATE), (r) => r.detail ?? NO_DETAIL), of(STALL_TEMPLATE).length),
+    questions: shares(q.slice(0, TOP_QUESTIONS), of(STALL_QUESTION).length),
+    questionCount: q.length,
+    since,
+  };
 }

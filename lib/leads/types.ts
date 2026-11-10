@@ -202,6 +202,29 @@ export interface FeedbackRow {
   exam: 'passed' | 'failed' | null;
 }
 
+/**
+ * ליד שלא קנה, והנקודה שבה נעצר (לשונית "נקודות עצירה", 10/11/2026, #38). הסקריפט של המנהל כותב אותה בכל לילה.
+ * בלי קוד מזהה ובלי שם: הם רק בקובץ הפרטי.
+ */
+export interface StallRow {
+  /** "תאריך כניסה", ISO. null = תאריך שלא פוענח */
+  at: string | null;
+  /** הליד עם אותו קוד מזהה (לסינון לפי מקור ותהליך), או null */
+  lead: number | null;
+  /** "שם תהליך" */
+  process: string | null;
+  /** "נקודת עצירה" כמו שכתוב. null = ריק */
+  stop: string | null;
+  /** "פירוט": שם הטמפלייט או השאלה האחרונה של הבוט */
+  detail: string | null;
+  /** "הודעות לקוח" */
+  messages: number | null;
+  /** "פעילות אחרונה", ISO */
+  lastAt: string | null;
+  /** "נסרק ב:", ISO */
+  scannedAt: string | null;
+}
+
 /** מה שנקרא מלשונית אחת, עם הזמן שבו נקרא. כשהקריאה נכשלת, נשאר החלק הקודם עם הזמן האמיתי שלו */
 export interface Part<T> {
   readAt: string;
@@ -214,6 +237,8 @@ export interface Insights {
   questions: Part<QuestionRow> | null;
   inquiries: Part<InquiryRow> | null;
   feedback: Part<FeedbackRow> | null;
+  /** "נקודות עצירה" (10/11/2026, #38) */
+  stalls: Part<StallRow> | null;
 }
 
 export interface LeadsFile {

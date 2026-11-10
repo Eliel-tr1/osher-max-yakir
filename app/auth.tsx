@@ -24,15 +24,17 @@ interface Ids {
   analysis?: PrivateRows | null;
   inquiries?: PrivateRows | null;
   feedback?: PrivateRows | null;
+  /** נקודות עצירה (#38): קוד מזהה ושם */
+  stalls?: PrivateRows | null;
   questions?: string[][] | null;
   /** קישור ללשונית "שאלות לסוכן" בגיליון, רק אחרי כניסה */
   questionsUrl?: string | null;
 }
 
 type Status = 'loading' | 'off' | 'out' | 'in';
-export type LinkKind = 'lead' | 'purchase' | 'mailing' | 'analysis' | 'inquiry' | 'feedback';
+export type LinkKind = 'lead' | 'purchase' | 'mailing' | 'analysis' | 'inquiry' | 'feedback' | 'stall';
 /** שורות של תובנות השיחה, שיש להן שם וטקסט בקובץ הפרטי */
-export type RowKind = 'analysis' | 'inquiry' | 'feedback';
+export type RowKind = 'analysis' | 'inquiry' | 'feedback' | 'stall';
 
 interface Auth {
   status: Status;
@@ -110,7 +112,7 @@ export function AuthProvider({ generatedAt, children }: { generatedAt: string; c
 
   const fresh = ids !== null && ids.generatedAt === generatedAt;
   const rowsOf = useCallback(
-    (kind: RowKind): PrivateRows | null => (!fresh || !ids ? null : (kind === 'analysis' ? ids.analysis : kind === 'inquiry' ? ids.inquiries : ids.feedback) ?? null),
+    (kind: RowKind): PrivateRows | null => (!fresh || !ids ? null : (kind === 'analysis' ? ids.analysis : kind === 'inquiry' ? ids.inquiries : kind === 'stall' ? ids.stalls : ids.feedback) ?? null),
     [fresh, ids],
   );
   const link = useCallback(

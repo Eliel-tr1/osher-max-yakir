@@ -1,5 +1,5 @@
 import { cleanText, parseAmount, parseSheetDate, israelDayStart } from '../sheet/parse';
-import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, Lead, LeadsFile, MailingPurchase, MailingWave, Part, Purchase, QuestionRow } from './types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, StallRow, Lead, LeadsFile, MailingPurchase, MailingWave, Part, Purchase, QuestionRow } from './types';
 
 /** עמודות שהדשבורד צריך בלשונית הלידים. אם אחת מהן חסרה, הבנייה נכשלת בהודעה ברורה ולא מציגה מספרים שגויים. */
 export const REQUIRED_COLUMNS = [
@@ -99,6 +99,9 @@ export const INQUIRY_COLUMNS = ['תאריך פניה', 'מזהה לקוח', 'ק�
 export const INQUIRY_OPTIONAL = ['שם לקוח', 'תוכן הפניה'] as const;
 export const FEEDBACK_COLUMNS = ['תאריך', 'קוד מזהה', 'קטגוריה'] as const;
 export const FEEDBACK_OPTIONAL = ['מבחן', 'שם לקוח', 'הערות'] as const;
+/** "נקודות עצירה" (10/11/2026, #38): העמודות שחייבות להיות, ואלה שנקראות כשהן קיימות */
+export const STALL_COLUMNS = ['קוד מזהה', 'תאריך כניסה', 'נקודת עצירה'] as const;
+export const STALL_OPTIONAL = ['שם תהליך', 'פירוט', 'הודעות לקוח', 'פעילות אחרונה', 'נסרק ב:'] as const;
 /** פניות ומשובים מלפני היום הזה לא נכנסים: הסריקה מתחילה בו (הנחיית המנהל 3/11/2026) */
 export const INSIGHTS_START_DAY = '2026-10-02';
 /** טקסט חופשי ברשימות (פירוט, תוכן פנייה, הערות): עד כמה תווים נשמרים */
@@ -202,6 +205,8 @@ export interface PrivateIds {
   analysis: PrivateRows | null;
   inquiries: PrivateRows | null;
   feedback: PrivateRows | null;
+  /** "נקודות עצירה": קוד מזהה ושם (בלי טקסט) */
+  stalls: PrivateRows | null;
   /** "דוגמאות (קוד מזהה)" לכל שאלה */
   questions: string[][] | null;
 }
@@ -218,6 +223,7 @@ export interface InsightRows {
   questions?: string[][] | null;
   inquiries?: string[][] | null;
   feedback?: string[][] | null;
+  stalls?: string[][] | null;
 }
 
 /**
@@ -370,7 +376,7 @@ export function buildData(
   };
 }
 
-type PrivatePart = Pick<PrivateIds, 'analysis' | 'inquiries' | 'feedback' | 'questions'>;
+type PrivatePart = Pick<PrivateIds, 'analysis' | 'inquiries' | 'feedback' | 'stalls' | 'questions'>;
 
 /** ארבע הלשוניות של תובנות השיחה. כל לשונית לחוד: חסרה או בלי עמודת חובה = null, בלי להפיל את השאר */
 export function insightsFromRows(extra: InsightRows, readAt: string, leadOfNs: Map<string, number>, nameOfNs: Map<string, string>): { file: Insights; ids: PrivatePart } {
@@ -483,9 +489,30 @@ export function insightsFromRows(extra: InsightRows, readAt: string, leadOfNs: M
     feedbackIds = priv;
   }
 
+  // נקודות עצירה: כל השורות, בלי סינון תאריך (הסקריפט כותב רק לידים מהימים האחרונים)
+  let stalls: Part<StallRow> | null = null;
+  let stallIds: PrivateRows | null = null;
+  const S = extra.stalls ? optionalIndexer(extra.stalls, STALL_COLUMNS) : null;
+  if (S) {
+    const rows: StallRow[] = [];
+    const priv: PrivateRows = { ns: [], names: [], texts: [] };
+    for (const r of S.data) {
+      const ns = S.col(r, 'קוד מזהה');
+      rows.push({
+        at: iso(S.col(r, 'תאריך כניסה')), lead: lead(ns), process: cleanText(S.col(r, 'שם תהליך')), stop: cleanText(S.col(r, 'נקודת עצירה')),
+        detail: cleanText(S.col(r, 'פירוט')), messages: num(S.col(r, 'הודעות לקוח')), lastAt: iso(S.col(r, 'פעילות אחרונה')), scannedAt: iso(S.col(r, 'נסרק ב:')),
+      });
+      priv.ns.push(ns);
+      priv.names.push(name('', ns));
+      priv.texts.push('');
+    }
+    stalls = part(rows);
+    stallIds = priv;
+  }
+
   return {
-    file: { analysis, questions, inquiries, feedback },
-    ids: { analysis: analysisIds, inquiries: inquiryIds, feedback: feedbackIds, questions: examples },
+    file: { analysis, questions, inquiries, feedback, stalls },
+    ids: { analysis: analysisIds, inquiries: inquiryIds, feedback: feedbackIds, stalls: stallIds, questions: examples },
   };
 }
 

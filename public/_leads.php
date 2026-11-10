@@ -25,6 +25,8 @@ const OSHER_ANALYSIS = ['קוד מזהה', 'תאריך כניסה', 'מסלול'
 const OSHER_QUESTIONS = ['שאלה', 'מופעים'];
 const OSHER_INQUIRIES = ['תאריך פניה', 'מזהה לקוח', 'קטגוריה'];
 const OSHER_FEEDBACK = ['תאריך', 'קוד מזהה', 'קטגוריה'];
+// "נקודות עצירה" (10/11/2026, #38), כמו STALL_COLUMNS
+const OSHER_STALLS = ['קוד מזהה', 'תאריך כניסה', 'נקודת עצירה'];
 const OSHER_INSIGHTS_START_DAY = '2026-10-02';
 const OSHER_TEXT_MAX = 600;
 
@@ -324,7 +326,7 @@ function osher_build(array $leadRows, ?array $purchaseRows, DateTimeImmutable $g
     ];
 }
 
-/** כמו insightsFromRows: ארבע הלשוניות של תובנות השיחה, כל אחת לחוד */
+/** כמו insightsFromRows: חמש הלשוניות של תובנות השיחה, כל אחת לחוד */
 function osher_insights_from_rows(array $extra, string $readAt, array $leadOfNs, array $nameOfNs): array {
     $start = osher_day_start(OSHER_INSIGHTS_START_DAY);
     $iso = function (string $v): ?string { $d = osher_parse_date($v); return $d ? osher_iso($d) : null; };
@@ -432,9 +434,31 @@ function osher_insights_from_rows(array $extra, string $readAt, array $leadOfNs,
         $feedbackIds = $priv;
     }
 
+    // נקודות עצירה: כל השורות, בלי סינון תאריך
+    $stalls = null; $stallIds = null;
+    $s = isset($extra['stalls']) && $extra['stalls'] !== null ? osher_optional_indexer($extra['stalls'], OSHER_STALLS) : null;
+    if ($s !== null) {
+        [$c, $data] = $s;
+        $rows = [];
+        $priv = ['ns' => [], 'names' => [], 'texts' => []];
+        foreach ($data as $r) {
+            $ns = $c($r, 'קוד מזהה');
+            $rows[] = [
+                'at' => $iso($c($r, 'תאריך כניסה')), 'lead' => $lead($ns), 'process' => osher_clean($c($r, 'שם תהליך')), 'stop' => osher_clean($c($r, 'נקודת עצירה')),
+                'detail' => osher_clean($c($r, 'פירוט')), 'messages' => osher_number($c($r, 'הודעות לקוח')), 'lastAt' => $iso($c($r, 'פעילות אחרונה')),
+                'scannedAt' => $iso($c($r, 'נסרק ב:')),
+            ];
+            $priv['ns'][] = $ns;
+            $priv['names'][] = $name('', $ns);
+            $priv['texts'][] = '';
+        }
+        $stalls = ['readAt' => $readAt, 'rows' => $rows];
+        $stallIds = $priv;
+    }
+
     return [
-        'file' => ['analysis' => $analysis, 'questions' => $questions, 'inquiries' => $inquiries, 'feedback' => $feedback],
-        'ids' => ['analysis' => $analysisIds, 'inquiries' => $inquiryIds, 'feedback' => $feedbackIds, 'questions' => $examples],
+        'file' => ['analysis' => $analysis, 'questions' => $questions, 'inquiries' => $inquiries, 'feedback' => $feedback, 'stalls' => $stalls],
+        'ids' => ['analysis' => $analysisIds, 'inquiries' => $inquiryIds, 'feedback' => $feedbackIds, 'stalls' => $stallIds, 'questions' => $examples],
     ];
 }
 
@@ -608,7 +632,7 @@ function osher_pack(array $file): string {
     }
     // תובנות שיחה: חלק חסר לא נכתב, וכשכולם חסרים נשאר אובייקט ריק (כמו ב-JSON.stringify)
     $ins = [];
-    foreach (['analysis', 'questions', 'inquiries', 'feedback'] as $k) {
+    foreach (['analysis', 'questions', 'inquiries', 'feedback', 'stalls'] as $k) {
         $part = $file['insights'][$k] ?? null;
         if ($part === null) continue;
         $ins[$k] = ['readAt' => $part['readAt'], 'rows' => array_map($strip, $part['rows'])];
