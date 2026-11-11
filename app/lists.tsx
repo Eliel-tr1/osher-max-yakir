@@ -13,7 +13,7 @@ interface DataLookup {
   mailingIndex: Map<MailingPurchase, number>;
 }
 
-const DataContext = createContext<DataLookup>({ leads: [], purchaseIndex: new Map(), mailingIndex: new Map() });
+export const DataContext = createContext<DataLookup>({ leads: [], purchaseIndex: new Map(), mailingIndex: new Map() });
 
 export function DataProvider({ value, children }: { value: DataLookup; children: ReactNode }) {
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

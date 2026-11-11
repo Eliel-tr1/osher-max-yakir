@@ -1,5 +1,5 @@
 import type { PrivateIds, PrivateRows } from './fromSheet';
-import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, Lead, Purchase, QuestionRow } from './types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, Lead, Purchase, QuestionRow, StallRow } from './types';
 
 /**
  * "תובנות שיחה" מומצאות לגמרי, לתצוגה ולצילומים (3/11/2026). שמות, טקסטים ושאלות של הדגמה בלבד.
@@ -35,6 +35,16 @@ const QUESTIONS: [string, string][] = [
   ['מה ההבדל בין שני המסלולים?', 'אחר'], ['האם התוסף מחזיר את הכסף?', 'מחירי תוספים'], ['איך מבקשים משיכה?', 'אחר'],
 ];
 
+const STALL_STOPS = [
+  'לא ענה לטמפלייט', 'לא ענה לטמפלייט', 'לא ענה לטמפלייט', 'נעצר בשאלון', 'נעצר בשאלון', 'לא כתב לבוט', 'נעצר אחרי קישור או קופון', 'נעצר אחרי תשובת הבוט',
+  'ממתין לתשובת הבוט', 'נעצר בשאלון',
+];
+const STALL_TEMPLATES = ['client_notification_new_lead_v1', 'client_notification_new_lead_v2', 'demo_exam_failed'];
+const STALL_QUESTIONS = ['מה גודל החשבון שמעניין אותך? (הדגמה)', 'כמה ניסיון יש לך במסחר? (הדגמה)', 'באיזו פלטפורמה תרצה לסחור? (הדגמה)', 'מה התקציב שלך לאתגר? (הדגמה)'];
+
+const DEMO_SUBS = ['תת נושא ראשון', 'תת נושא שני', 'תת נושא שלישי'];
+const DEMO_QUESTIONS = ['איך מפעילים את החשבון? (הדגמה)', 'מתי מגיע החשבון הממומן? (הדגמה)', 'למה העסקה נסגרה? (הדגמה)', 'אפשר הנחה? (הדגמה)'];
+
 function weighted(rnd: () => number, xs: [string, number][]): string {
   const total = xs.reduce((s, x) => s + x[1], 0);
   let r = rnd() * total;
@@ -45,7 +55,7 @@ function weighted(rnd: () => number, xs: [string, number][]): string {
   return xs[xs.length - 1][0];
 }
 
-export function demoInsights(leads: Lead[], purchases: Purchase[], until: Date, rnd: () => number): { insights: Insights; ids: Pick<PrivateIds, 'analysis' | 'inquiries' | 'feedback' | 'questions'> } {
+export function demoInsights(leads: Lead[], purchases: Purchase[], until: Date, rnd: () => number): { insights: Insights; ids: Pick<PrivateIds, 'analysis' | 'inquiries' | 'feedback' | 'stalls' | 'questions'> } {
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const readAt = until.toISOString();
   const bought = new Set(purchases.map((p) => p.lead));
@@ -85,7 +95,11 @@ export function demoInsights(leads: Lead[], purchases: Purchase[], until: Date, 
     if (at > until) continue;
     if (!whoOf.has(i)) whoOf.set(i, whoOf.size);
     const category = rnd() < 0.09 ? null : weighted(rnd, INQUIRY_CATS);
-    inquiries.push({ at: at.toISOString(), lead: i, who: whoOf.get(i)!, category });
+    // תת קטגוריה, נושא ושאלה (#38): בלי rnd, כדי שלא ישנה את שאר ההדגמה
+    inquiries.push({
+      at: at.toISOString(), lead: i, who: whoOf.get(i)!, category, sub: category ? `${DEMO_SUBS[k % 3]} (הדגמה)` : null,
+      topic: category ? `נושא ${(k % 5) + 1} (הדגמה)` : null, question: category ? DEMO_QUESTIONS[k % DEMO_QUESTIONS.length] : null, dup: k % 11 === 0,
+    });
     ip.ns.push(`DEMO${i}`);
     ip.names.push(name(i));
     ip.texts.push(`פנייה לדוגמה: ${category ?? 'שאלה כללית'} (הדגמה)`);
@@ -110,10 +124,28 @@ export function demoInsights(leads: Lead[], purchases: Purchase[], until: Date, 
     answer: k === 1 ? 'אפשר, לפי חוקי התוכנית של ההדגמה' : k === 3 ? 'המחיר מופיע בעמוד התוספים (הדגמה)' : null,
   }));
 
+  // נקודות עצירה (#38): לידים של 14 הימים האחרונים שלא קנו. בלי rnd, כדי שלא ישנה את שאר ההדגמה
+  const stalls: StallRow[] = [];
+  const sp: PrivateRows = { ns: [], names: [], texts: [] };
+  const from = until.getTime() - 14 * 86_400_000;
+  leads.forEach((l, i) => {
+    if (bought.has(i) || new Date(l.at).getTime() < from) return;
+    const stop = STALL_STOPS[(i * 7) % STALL_STOPS.length];
+    const detail = stop === 'לא ענה לטמפלייט' ? STALL_TEMPLATES[i % STALL_TEMPLATES.length] : stop === 'נעצר בשאלון' ? STALL_QUESTIONS[(i * 3) % STALL_QUESTIONS.length] : null;
+    stalls.push({
+      at: l.at, lead: i, process: l.process, stop, detail, messages: l.messages, lastAt: l.at,
+      scannedAt: new Date(until.getTime() - ((i % 5) + 1) * 86_400_000).toISOString(),
+    });
+    sp.ns.push(`DEMO${i}`);
+    sp.names.push(name(i));
+    sp.texts.push('');
+  });
+
   return {
     insights: {
       analysis: { readAt, rows: analysis }, questions: { readAt, rows: questions }, inquiries: { readAt, rows: inquiries }, feedback: { readAt, rows: feedback },
+      stalls: { readAt, rows: stalls },
     },
-    ids: { analysis: ap, inquiries: ip, feedback: fp, questions: questions.map((_, k) => [`DEMO${k}`]) },
+    ids: { analysis: ap, inquiries: ip, feedback: fp, stalls: sp, questions: questions.map((_, k) => [`DEMO${k}`]) },
   };
 }

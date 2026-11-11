@@ -1,4 +1,4 @@
-import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, Lead, LeadsFile, MailingPurchase, MailingWave, Part, Purchase, QuestionRow } from './types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, StallRow, Lead, LeadsFile, MailingPurchase, MailingWave, Part, Purchase, QuestionRow } from './types';
 
 /** בקובץ לא נשמרים שדות ריקים (null או false), כדי שיהיה קטן. unpack משלים אותם. */
 export function pack(file: LeadsFile): string {
@@ -29,8 +29,9 @@ const EMPTY_ANALYSIS: AnalysisRow = {
   messages: null, scannedAt: null, removal: null, basis: null,
 };
 const EMPTY_QUESTION: QuestionRow = { text: '', category: null, count: 0, lastAt: null, status: null, answer: null };
-const EMPTY_INQUIRY: Omit<InquiryRow, 'who'> = { at: null, lead: null, category: null };
+const EMPTY_INQUIRY: Omit<InquiryRow, 'who'> = { at: null, lead: null, category: null, sub: null, topic: null, question: null, dup: false };
 const EMPTY_FEEDBACK: Omit<FeedbackRow, 'who'> = { at: null, lead: null, category: null, exam: null };
+const EMPTY_STALL: StallRow = { at: null, lead: null, process: null, stop: null, detail: null, messages: null, lastAt: null, scannedAt: null };
 
 /** חלק של תובנות השיחה: שורות עם ערכי ברירת מחדל, או null כשהחלק לא קיים */
 function partOf<T>(p: unknown, fill: (row: Partial<T>, i: number) => T): Part<T> | null {
@@ -46,6 +47,7 @@ export function unpackInsights(json: unknown): Insights {
     questions: partOf<QuestionRow>(x.questions, (r) => ({ ...EMPTY_QUESTION, ...r })),
     inquiries: partOf<InquiryRow>(x.inquiries, (r, i) => ({ ...EMPTY_INQUIRY, ...r, who: r.who ?? -1 - i })),
     feedback: partOf<FeedbackRow>(x.feedback, (r, i) => ({ ...EMPTY_FEEDBACK, ...r, who: r.who ?? -1 - i })),
+    stalls: partOf<StallRow>(x.stalls, (r) => ({ ...EMPTY_STALL, ...r })),
   };
 }
 

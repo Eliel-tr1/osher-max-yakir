@@ -25,7 +25,7 @@ function buy(p: Partial<Purchase>): Purchase {
 function file(leads: Lead[], purchases: Purchase[]): LeadsFile {
   leads.forEach((l, i) => { if (l.person === -1) l.person = i; });
   purchases.forEach((p, k) => { if (p.person === -1) p.person = p.lead ?? 100_000 + k; });
-  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null } };
+  return { version: 2, origin: 'demo', generatedAt: '', sheetRows: leads.length, purchaseRows: purchases.length, leads, purchases, mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null, stalls: null } };
 }
 
 const L = [

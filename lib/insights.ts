@@ -2,7 +2,7 @@
  * "תובנות שיחה" (הנחיית המנהל 3/11/2026, #26): ההגדרות והחישובים של ארבעת הכרטיסים ושורת ההסרות.
  * הנתונים מגיעים מהסריקה של המנהל בגיליון. הדשבורד לא מסווג ולא מחשב סיבות: רק סופר את מה שכתוב.
  */
-import type { AnalysisRow, FeedbackRow, InquiryRow, QuestionRow } from './leads/types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, QuestionRow, StallRow } from './leads/types';
 import { inside, timeSeries, type Bucket, type Range } from './metrics';
 import { israelDayStart } from './sheet/parse';
 
@@ -178,11 +178,17 @@ export interface InquiryView {
   /** פניות לפי שבוע: שלוש הקטגוריות הגדולות ו"שאר" */
   weekly: { key: string; values: number[] }[];
   top3: string[];
+  /** פניות כפולות בטווח ("נספר" = כפילות): לא נספרות בשום מספר אחר בכרטיס */
+  dupes: number;
 }
 
-/** כרטיס "פניות שירות" (סעיף 5). כל שורה היא פנייה; "סוג פניה" הישן לא בשימוש */
+/**
+ * כרטיס "פניות שירות" (סעיף 5). כל שורה היא פנייה; "סוג פניה" הישן לא בשימוש.
+ * פנייה כפולה (אותו לקוח, אותו יום ואותו נושא; "נספר" שאינו "כן") לא נספרת (בקשת המנהל 10/11/2026, #38)
+ */
 export function inquiryView(inquiries: InquiryRow[], scope: Scope, bucket: Bucket = 'week'): InquiryView {
-  const rows = inScope(inquiries, (r) => r.at, scope);
+  const inRange = inScope(inquiries, (r) => r.at, scope);
+  const rows = inRange.filter((x) => !x.r.dup);
   const done = rows.filter((x) => x.r.category !== null);
   const cats = categories(done, MIN_INQUIRIES);
   const top3 = cats.filter((c) => c.name !== OTHER).slice(0, 3).map((c) => c.name);
@@ -193,6 +199,7 @@ export function inquiryView(inquiries: InquiryRow[], scope: Scope, bucket: Bucke
     people: new Set(done.map((x) => x.r.who)).size,
     cats,
     top3,
+    dupes: inRange.length - rows.length,
     weekly: timeSeries(dated, (x) => x.r.at!, bucket, top3.length + 1, (x) => {
       const v = new Array<number>(top3.length + 1).fill(0);
       const k = top3.indexOf(x.r.category!);
@@ -200,6 +207,41 @@ export function inquiryView(inquiries: InquiryRow[], scope: Scope, bucket: Bucke
       return v;
     }),
   };
+}
+
+/** "תת קטגוריה" / "נושא" ריקים */
+export const NO_SUB = 'בלי תת קטגוריה';
+export const NO_TOPIC = 'בלי נושא';
+/** כמה שאלות מוצגות בכל נושא */
+export const TOP_INQUIRY_QUESTIONS = 10;
+
+export interface DrillLevel extends Count<InquiryRow> {
+  /** מתוך הרמה שמעליה */
+  share: number;
+}
+
+export interface TopicRow extends DrillLevel {
+  /** "שאלה" זהה מקובצת, מהנפוצה, עד 10. בלי שאלה לא נכנס */
+  questions: { name: string; count: number }[];
+  /** כמה שאלות שונות יש בנושא */
+  questionCount: number;
+}
+
+export interface SubRow extends DrillLevel {
+  topics: TopicRow[];
+}
+
+/** הפירוט של קטגוריה אחת (#38): תת קטגוריה, בתוכה נושא, ובתוכו השאלות הנפוצות. מקבל את הפניות שכבר נספרות */
+export function inquiryDrill(rows: Indexed<InquiryRow>[]): SubRow[] {
+  const share = (n: number, of: number) => (of ? n / of : 0);
+  return group(rows, (r) => r.sub ?? NO_SUB).map((s) => ({
+    ...s,
+    share: share(s.count, rows.length),
+    topics: group(s.rows, (r) => r.topic ?? NO_TOPIC).map((t) => {
+      const q = group(t.rows.filter((x) => x.r.question !== null), (r) => r.question!);
+      return { ...t, share: share(t.count, s.count), questions: q.slice(0, TOP_INQUIRY_QUESTIONS).map(({ name, count }) => ({ name, count })), questionCount: q.length };
+    }),
+  }));
 }
 
 // ---------- משובים אחרי מבחן ----------
@@ -260,4 +302,61 @@ export function lastScan(analysis: AnalysisRow[] | null): string | null {
   let last: string | null = null;
   for (const r of analysis ?? []) if (r.scannedAt && (!last || r.scannedAt > last)) last = r.scannedAt;
   return last;
+}
+
+// ---------- איפה נתקעים (#38) ----------
+
+/** הערכים של "נקודת עצירה" שיש להם פירוט משלהם */
+export const STALL_TEMPLATE = 'לא ענה לטמפלייט';
+export const STALL_QUESTION = 'נעצר בשאלון';
+/** "נקודת עצירה" ריקה */
+export const STALL_UNKNOWN = 'לא ידוע';
+/** "פירוט" ריק */
+export const NO_DETAIL = 'בלי פירוט';
+/** כמה שאלות מוצגות ב"נעצר בשאלון" */
+export const TOP_QUESTIONS = 15;
+
+export interface StallCount extends Count<StallRow> {
+  /** מתוך כל הלידים שנתקעו בטווח */
+  share: number;
+}
+
+export interface StallView {
+  /** כל הלידים שנתקעו בטווח ובסינון, בלי שיחות בדיקה */
+  total: number;
+  /** לפי "נקודת עצירה", מהגדולה לקטנה */
+  stops: StallCount[];
+  /** "לא ענה לטמפלייט" לפי שם הטמפלייט */
+  templates: StallCount[];
+  /** "נעצר בשאלון": 15 השאלות הנפוצות */
+  questions: StallCount[];
+  /** כמה שאלות שונות יש בסך הכול */
+  questionCount: number;
+  /** ה"נסרק ב:" המוקדם ביותר בלשונית (לא רק בטווח): מאז מתי יש נתונים */
+  since: string | null;
+}
+
+function shares(xs: Count<StallRow>[], total: number): StallCount[] {
+  return xs.map((c) => ({ ...c, share: total ? c.count / total : 0 }));
+}
+
+/**
+ * "איפה נתקעים" (בקשת המנהל 10/11/2026, #38): לידים שלא קנו, לפי הנקודה שבה נעצרו. הטווח לפי "תאריך כניסה", והסינון
+ * לפי מקור ותהליך דרך הליד, כמו בשאר הכרטיסים. הדשבורד לא מסווג: רק סופר את מה שהסקריפט כתב.
+ */
+export function stallView(stalls: StallRow[], scope: Scope): StallView {
+  const rows = inScope(stalls, (r) => r.at, scope);
+  const total = rows.length;
+  const of = (stop: string) => rows.filter((x) => x.r.stop === stop);
+  const q = group(of(STALL_QUESTION), (r) => r.detail ?? NO_DETAIL);
+  let since: string | null = null;
+  for (const r of stalls) if (r.scannedAt && (!since || r.scannedAt < since)) since = r.scannedAt;
+  return {
+    total,
+    stops: shares(group(rows, (r) => r.stop ?? STALL_UNKNOWN), total),
+    templates: shares(group(of(STALL_TEMPLATE), (r) => r.detail ?? NO_DETAIL), of(STALL_TEMPLATE).length),
+    questions: shares(q.slice(0, TOP_QUESTIONS), of(STALL_QUESTION).length),
+    questionCount: q.length,
+    since,
+  };
 }

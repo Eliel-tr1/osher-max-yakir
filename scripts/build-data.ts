@@ -46,12 +46,13 @@ async function optionalTab(id: string, gid: string): Promise<string[][] | null> 
 }
 
 /** הלשוניות של תובנות השיחה (הנחיית המנהל 3/11/2026) */
-export const INSIGHT_GIDS = { analysis: '710427304', questions: '613597171', inquiries: '1189797577', feedback: '1067761873' };
+export const INSIGHT_GIDS = { analysis: '710427304', questions: '613597171', inquiries: '1189797577', feedback: '1067761873', stalls: '1492149500' };
 
 async function fromSheet(id: string, gid: string, purchasesGid: string, mailingsGid: string, wavesGid: string): Promise<{ file: LeadsFile; ids: PrivateIds }> {
   return buildData(await fetchTab(id, gid), await fetchTab(id, purchasesGid), new Date(), await optionalTab(id, mailingsGid), await optionalTab(id, wavesGid), {
     analysis: await optionalTab(id, INSIGHT_GIDS.analysis), questions: await optionalTab(id, INSIGHT_GIDS.questions),
     inquiries: await optionalTab(id, INSIGHT_GIDS.inquiries), feedback: await optionalTab(id, INSIGHT_GIDS.feedback),
+    stalls: await optionalTab(id, INSIGHT_GIDS.stalls),
   });
 }
 

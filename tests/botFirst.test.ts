@@ -64,12 +64,24 @@ describe('what the bot does (section 2.2)', () => {
       // לא של הבוט: לא נספר גם כשהסיבה מתאימה
       buy({ bot: 'no', reason: 'שיחה מכירתית לפני הרכישה', amount: 1000 }),
     ];
-    const leads = annotate({ version: 2, origin: 'demo', generatedAt: '', sheetRows: 3, purchaseRows: 0, leads: [lead({ mode: 'מכירתי' }), lead({ mode: 'מכירתית - קנה' }), lead({ mode: 'שירותית' })], purchases: [], mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null } });
+    const leads = annotate({ version: 2, origin: 'demo', generatedAt: '', sheetRows: 3, purchaseRows: 0, leads: [lead({ mode: 'מכירתי' }), lead({ mode: 'מכירתית - קנה' }), lead({ mode: 'שירותית' })], purchases: [], mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null, stalls: null } });
     const c = capabilities({ leads, couponLeads: [], purchases: ps, people: [], mailings: null, range: all });
     expect([c.sales.count, c.sales.paid]).toEqual([2, 100]);
     expect(c.coupons.paid).toBe(15);
     expect([c.links.count, c.links.paid]).toEqual([2, 50]);
     expect(c.sales.paid + c.coupons.paid + c.links.paid).toBeLessThanOrEqual(botHero(ps, null).paid);
+  });
+
+  it('counts the 24-hour reasons of 11/11/2026 in the sales and templates cards', () => {
+    const ps = [
+      buy({ reason: 'שיחה מכירתית עד 24 שעות לפני הרכישה', amount: 100 }),
+      buy({ reason: 'רכישה עד 24 שעות אחרי טמפלייט שיווקי', amount: 20 }),
+      buy({ reason: 'שיחה אחרי טמפלייט מבחן, רכישה עד 24 שעות', amount: 30 }),
+      buy({ bot: 'no', reason: 'שיחה מכירתית מוקדמת מ-24 שעות לפני הרכישה', amount: 1000 }),
+    ];
+    const c = capabilities({ leads: [], couponLeads: [], purchases: ps, people: [], mailings: null, range: all });
+    expect(c.sales.paid).toBe(100);
+    expect([c.links.count, c.links.paid]).toEqual([2, 50]);
   });
 
   it('counts "מכירתי" as a sales conversation, by the first word (section 3.5)', () => {
@@ -82,7 +94,7 @@ describe('what the bot does (section 2.2)', () => {
     const file = {
       version: 2 as const, origin: 'demo' as const, generatedAt: '', sheetRows: 2, purchaseRows: 1,
       leads: [lead({ campaign: 'popup_website', aiConversation: 'yes', person: 1 }), lead({ campaign: 'popup_website', aiConversation: 'no', person: 2 })],
-      purchases: [buy({ person: 1, amount: 80 })], mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null },
+      purchases: [buy({ person: 1, amount: 80 })], mailings: null, mailingWaves: null, dupes: [], insights: { analysis: null, questions: null, inquiries: null, feedback: null, stalls: null },
     };
     const people = withPurchasesAfterEntry(annotate(file), file.purchases);
     const c = capabilities({ leads: [], couponLeads: [], purchases: [], people, mailings: null, range: all });

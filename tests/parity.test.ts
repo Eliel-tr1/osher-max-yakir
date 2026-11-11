@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { pack } from '../lib/leads/file';
 import {
   ANALYSIS_COLUMNS, ANALYSIS_OPTIONAL, buildData, FEEDBACK_COLUMNS, INQUIRY_COLUMNS, leadsFromRows, MAILING_COLUMNS, MAILING_WAVE_COLUMNS, OPTIONAL_COLUMNS, PURCHASE_COLUMNS,
-  REQUIRED_COLUMNS, type InsightRows,
+  REQUIRED_COLUMNS, STALL_COLUMNS, STALL_OPTIONAL, type InsightRows,
 } from '../lib/leads/fromSheet';
 import { parseCsv } from '../lib/sheet/parse';
 
@@ -139,7 +139,7 @@ function mailingFixture(): { mailings: string; waves: string } {
 }
 
 /** ארבע הלשוניות של תובנות השיחה, עם כל המקרים הקשים: שתי צורות תאריך, תאריך בלי שעה ושבור, טקסט ארוך ואמוג'י, שם חסר */
-function insightsFixture(n: number): { analysis: string; questions: string; inquiries: string; feedback: string } {
+function insightsFixture(n: number): { analysis: string; questions: string; inquiries: string; feedback: string; stalls: string } {
   const rnd = seeded(303);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const dates = ['02/11/2026 10:47', '3/11/2026 10:47', '03/11/2026 08:35:00', '01/10/2026 09:00', '15/10/2026', '31/02/2026 10:00', '', 'שבור'];
@@ -163,12 +163,14 @@ function insightsFixture(n: number): { analysis: string; questions: string; inqu
     ql.push([pick(['מה המגבלה היומית?', 'כמה עולה תוסף, "פרו"?', '', ' ']), pick(['חוקי תוכנית ומסחר', '']), pick(['1', '3', '', 'x']), pick(dates),
       pick(['A1', 'A1, B2,C3', 'A1 B2\nC3', '']), pick(['ממתין לתשובה', 'נענה', '']), pick(['', 'תשובה, עם "מרכאות"']), 'הערה'].map(q).join(','));
   }
-  const ih = ['תאריך פניה', ...INQUIRY_COLUMNS.slice(1), 'שם לקוח', 'טלפון', 'סוג פניה', 'תוכן הפניה', 'לינק לשיחה', 'סומן ב-CloudChat'];
+  const ih = ['תאריך פניה', ...INQUIRY_COLUMNS.slice(1), 'שם לקוח', 'טלפון', 'סוג פניה', 'תוכן הפניה', 'לינק לשיחה', 'סומן ב-CloudChat', 'תת קטגוריה', 'נושא', 'שאלה', 'נספר'];
   const il = [ih.map(q).join(',')];
   for (let i = 0; i < n; i++) {
     il.push(ih.map((h) => q(({
       'תאריך פניה': pick(dates), 'מזהה לקוח': pick([`ID${i}`, `ID${i % 7}`, '']), קטגוריה: pick(['הפעלת חשבון ושדרוג', 'אחר', '']), 'שם לקוח': pick(['', 'לקוח, "בדיקה"']),
       'תוכן הפניה': pick(['', long, 'שלום,\nיש לי שאלה']), טלפון: '050', 'סוג פניה': 'ישן', 'לינק לשיחה': 'https://example.com', 'סומן ב-CloudChat': '',
+      'תת קטגוריה': pick(['', 'הפעלה אחרי מעבר', ' - ']), נושא: pick(['', 'לא קיבל פרטי חשבון']), שאלה: pick(['', 'מתי אקבל את החשבון?', 'שורה\nשנייה, "מרכאות"']),
+      נספר: pick(['כן', 'כן', 'כפילות', '', ' כן ']),
     } as Record<string, string>)[h] ?? '')).join(','));
   }
   const fh = [...FEEDBACK_COLUMNS.slice(0, 2), 'שם לקוח', 'הערות', FEEDBACK_COLUMNS[2], 'מבחן'];
@@ -179,10 +181,20 @@ function insightsFixture(n: number): { analysis: string; questions: string; inqu
       מבחן: pick(['עבר', 'לא עבר', '', 'אחר']),
     } as Record<string, string>)[h] ?? '')).join(','));
   }
-  return { analysis: al.join('\r\n'), questions: ql.join('\n'), inquiries: il.join('\n'), feedback: fl.join('\r\n') };
+  // נקודות עצירה (#38): עמודות בסדר אחר, עמודה לא מוכרת, תאריכים בלי שניות ושבורים
+  const sh = ['נסרק ב:', ...STALL_COLUMNS, 'עמודה עתידית', ...STALL_OPTIONAL.filter((c) => c !== 'נסרק ב:')];
+  const sl = [sh.map(q).join(',')];
+  for (let i = 0; i < n; i++) {
+    sl.push(sh.map((h) => q(({
+      'קוד מזהה': pick([`ID${i}`, `NEW${i}`, '']), 'תאריך כניסה': pick(dates), 'נקודת עצירה': pick(['לא ענה לטמפלייט', 'נעצר בשאלון', ' לא כתב לבוט ', '']),
+      'שם תהליך': pick(['תהליך ראשי', '']), פירוט: pick(['client_notification_new_lead_v1', 'מה גודל החשבון?', '', 'שורה\nשנייה, "מרכאות"']),
+      'הודעות לקוח': pick(['0', '3', '', 'x']), 'פעילות אחרונה': pick(dates), 'נסרק ב:': pick(['10/11/2026 02:15', '']), 'עמודה עתידית': 'x',
+    } as Record<string, string>)[h] ?? '')).join(','));
+  }
+  return { analysis: al.join('\r\n'), questions: ql.join('\n'), inquiries: il.join('\n'), feedback: fl.join('\r\n'), stalls: sl.join('\r\n') };
 }
 
-function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string, ids = false, extra: Partial<Record<'analysis' | 'questions' | 'inquiries' | 'feedback', string>> = {}): unknown {
+function viaPhp(leads: string, at: string, purchases?: string, mailings?: string, waves?: string, ids = false, extra: Partial<Record<'analysis' | 'questions' | 'inquiries' | 'feedback' | 'stalls', string>> = {}): unknown {
   const dir = mkdtempSync(join(tmpdir(), 'parity-'));
   const write = (name: string, text: string | undefined) => {
     if (text === undefined) return '-';
@@ -192,7 +204,7 @@ function viaPhp(leads: string, at: string, purchases?: string, mailings?: string
   };
   const args = [
     write('leads.csv', leads), at, write('purchases.csv', purchases), write('mailings.csv', mailings), write('waves.csv', waves),
-    write('analysis.csv', extra.analysis), write('questions.csv', extra.questions), write('inquiries.csv', extra.inquiries), write('feedback.csv', extra.feedback),
+    write('analysis.csv', extra.analysis), write('questions.csv', extra.questions), write('inquiries.csv', extra.inquiries), write('feedback.csv', extra.feedback), write('stalls.csv', extra.stalls),
   ];
   return JSON.parse(execFileSync('php', ['scripts/php-leads.php', ...args], { encoding: 'utf8', maxBuffer: 50e6, env: { ...process.env, OSHER_IDS: ids ? '1' : '' } }));
 }
@@ -258,7 +270,7 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     const tabs = insightsFixture(120);
     const rows = (t: Partial<typeof tabs>): InsightRows => ({
       analysis: t.analysis ? parseCsv(t.analysis) : null, questions: t.questions ? parseCsv(t.questions) : null,
-      inquiries: t.inquiries ? parseCsv(t.inquiries) : null, feedback: t.feedback ? parseCsv(t.feedback) : null,
+      inquiries: t.inquiries ? parseCsv(t.inquiries) : null, feedback: t.feedback ? parseCsv(t.feedback) : null, stalls: t.stalls ? parseCsv(t.stalls) : null,
     });
     const built = (t: Partial<typeof tabs>) => buildData(parseCsv(leads), parseCsv(purchases), new Date(at), null, null, rows(t));
     const full = built(tabs);
@@ -268,8 +280,16 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     // פניות ומשובים מלפני 2/10 לא נכנסים; תאריך שלא פוענח נשאר
     expect(ins.inquiries!.rows.length).toBeLessThan(120);
     expect(ins.inquiries!.rows.some((r) => r.at === null)).toBe(true);
+    // תת קטגוריה, נושא, שאלה ונספר (#38)
+    expect(ins.inquiries!.rows.some((r) => r.dup) && ins.inquiries!.rows.some((r) => !r.dup)).toBe(true);
+    expect(ins.inquiries!.rows.some((r) => r.sub === 'הפעלה אחרי מעבר' && r.topic !== null) && ins.inquiries!.rows.some((r) => r.question !== null)).toBe(true);
     expect(ins.feedback!.rows.some((r) => r.exam === 'passed') && ins.feedback!.rows.some((r) => r.exam === 'failed')).toBe(true);
     expect(ins.questions!.rows.every((r) => r.text.trim() !== '')).toBe(true);
+    // נקודות עצירה: כל השורות, ליד לפי הקוד המזהה, ערכים נקיים
+    expect(ins.stalls!.rows.length).toBe(120);
+    expect(ins.stalls!.rows.some((r) => r.stop === 'לא כתב לבוט')).toBe(true);
+    expect(ins.stalls!.rows.some((r) => r.lead !== null) && ins.stalls!.rows.some((r) => r.lead === null)).toBe(true);
+    expect(full.ids.stalls!.ns).toHaveLength(120);
     // שם וטקסט רק בקובץ הפרטי, ובאורך מוגבל
     expect(full.ids.analysis!.names.some((n) => n !== '')).toBe(true);
     expect(full.ids.inquiries!.texts.some((t) => t.endsWith('…'))).toBe(true);
@@ -279,10 +299,11 @@ describe.skipIf(!php)('PHP on the server gives exactly the same data as TypeScri
     expect(viaPhp(leads, at, purchases, undefined, undefined, false, tabs)).toEqual(JSON.parse(json));
     expect(viaPhp(leads, at, purchases, undefined, undefined, true, tabs)).toEqual(JSON.parse(JSON.stringify(full.ids)));
     // לשונית חסרה, או בלי עמודת חובה: רק החלק שלה null
-    const broken = { ...tabs, inquiries: undefined, feedback: tabs.feedback.replace('קטגוריה', 'סוג') };
+    const broken = { ...tabs, inquiries: undefined, feedback: tabs.feedback.replace('קטגוריה', 'סוג'), stalls: tabs.stalls.replace('נקודת עצירה', 'עצירה') };
     const part = built(broken);
     expect(part.file.insights.inquiries).toBeNull();
     expect(part.file.insights.feedback).toBeNull();
+    expect(part.file.insights.stalls).toBeNull();
     expect(part.file.insights.analysis).not.toBeNull();
     expect(viaPhp(leads, at, purchases, undefined, undefined, false, broken)).toEqual(JSON.parse(pack(part.file)));
     // בלי אף לשונית: אובייקט ריק, כמו בקובץ ישן

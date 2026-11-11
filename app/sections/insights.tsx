@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import {
-  abandonView, BOT_FAILURE, feedbackView, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, startsBeforeData, STARTED_Q,
-  type ExamFilter, type Indexed, type Scope,
+  abandonView, BOT_FAILURE, feedbackView, inquiryDrill, inquiryView, lastScan, OTHER, PATHS, questionView, removalView, sampleSize, stallView, startsBeforeData, STARTED_Q,
+  STALL_QUESTION, STALL_TEMPLATE, TOP_INQUIRY_QUESTIONS, TOP_QUESTIONS, type ExamFilter, type Indexed, type Scope, type SubRow, type TopicRow,
 } from '@/lib/insights';
-import type { AnalysisRow, FeedbackRow, InquiryRow, Insights } from '@/lib/leads/types';
+import type { AnalysisRow, FeedbackRow, InquiryRow, Insights, StallRow } from '@/lib/leads/types';
 import { Bars100, BarList, Fold, fmtDate, fmtDateTime, Info, ListBlock, MoreTable, Ring, Sparkline, nf, pct, pctOf } from '../charts';
 import { ChatLink, useAuth, useLinkNote, type RowKind } from '../auth';
 import { Chips, fmtBucket } from './shared';
@@ -24,11 +24,11 @@ export function InsightsSection({ insights, generatedAt, scope, filtered, open, 
   open: Record<string, boolean>;
   toggle: (id: string) => void;
 }) {
-  const { analysis, questions, inquiries, feedback } = insights;
+  const { analysis, questions, inquiries, feedback, stalls } = insights;
   const last = lastScan(analysis?.rows ?? null);
-  const none = !analysis && !questions && !inquiries && !feedback;
+  const none = !analysis && !questions && !inquiries && !feedback && !stalls?.rows.length;
   // לשונית שהקריאה שלה נכשלה ברענון האחרון: נשארים הנתונים הקודמים, עם הזמן האמיתי שלהם
-  const stale = [analysis, questions, inquiries, feedback].map((p) => p?.readAt).filter((t): t is string => !!t && t !== generatedAt).sort()[0] ?? null;
+  const stale = [analysis, questions, inquiries, feedback, stalls].map((p) => p?.readAt).filter((t): t is string => !!t && t !== generatedAt).sort()[0] ?? null;
   return (
     <section className="insights" id="insights" aria-labelledby="insights-h">
       <div className="secthead">
@@ -50,6 +50,7 @@ export function InsightsSection({ insights, generatedAt, scope, filtered, open, 
         <>
           <div className="foldgrid">
             <AbandonCard rows={analysis?.rows ?? null} scope={scope} open={!!open['i-why']} onToggle={() => toggle('i-why')} />
+            {stalls && stalls.rows.length > 0 ? <StallCard rows={stalls.rows} scope={scope} open={!!open['i-stall']} onToggle={() => toggle('i-stall')} /> : null}
             <InquiryCard rows={inquiries?.rows ?? null} scope={scope} open={!!open['i-inq']} onToggle={() => toggle('i-inq')} />
             <FeedbackCard rows={feedback?.rows ?? null} scope={scope} open={!!open['i-fb']} onToggle={() => toggle('i-fb')} />
             <QuestionCard insights={insights} scope={scope} filtered={filtered} open={!!open['i-q']} onToggle={() => toggle('i-q')} />
@@ -136,6 +137,76 @@ function AbandonCard({ rows, scope, open, onToggle }: { rows: AnalysisRow[] | nu
   );
 }
 
+// ---------- איפה נתקעים (#38) ----------
+
+function StallCard({ rows, scope, open, onToggle }: { rows: StallRow[]; scope: Scope; open: boolean; onToggle: () => void }) {
+  const note = useLinkNote();
+  const v = useMemo(() => stallView(rows, scope), [rows, scope]);
+  const top = v.stops[0];
+  const since = v.since ? <>מ-<bdi>{fmtDate(v.since)}</bdi></> : null;
+  const of = (stop: string) => v.stops.find((s) => s.name === stop);
+  return (
+    <Fold
+      id="i-stall" level={3} className="icard" title="איפה נתקעים" open={open} onToggle={onToggle}
+      big={nf.format(v.total)}
+      seg={v.stops.map((c) => c.count)}
+      sentence={<>לידים שלא קנו{top ? <> · הכי הרבה: {top.name} ({pctOf(top.share)})</> : null}</>}
+    >
+      <h3>
+        לפי נקודת עצירה{' '}
+        <Info>
+          לשונית &quot;נקודות עצירה&quot; בגיליון: ליד שנכנס ולא קנה, והנקודה שבה השיחה נעצרה, כמו שהסקריפט של המנהל כתב בלילה. הטווח לפי תאריך הכניסה. האחוז מתוך כל
+          הלידים שנתקעו בטווח.
+        </Info>
+      </h3>
+      <p className="muted small">רק לידים שלא קנו{since ? <> · {since}</> : null}</p>
+      {v.total === 0 ? <p className="empty">אין לידים שנתקעו בטווח הזה</p> : (
+        <>
+          <BarList items={v.stops.map((c) => ({ name: c.name, count: c.count }))} color="--bot" max={10} extra={(n) => pctOf(of(n)?.share ?? null)} />
+          <ListBlock
+            title="פירוט"
+            note={note}
+            items={[
+              ...(v.templates.length ? [{
+                id: 'st-tpl', title: `${STALL_TEMPLATE}: לפי טמפלייט`, count: `${nf.format(v.templates.length)} טמפלייטים`,
+                render: () => <BarList items={v.templates.map((c) => ({ name: c.name, count: c.count }))} color="--bot" max={20} extra={(n) => pctOf(v.templates.find((c) => c.name === n)?.share ?? null)} />,
+              }] : []),
+              ...(v.questions.length ? [{
+                id: 'st-q', title: `${STALL_QUESTION}: השאלות`, count: v.questionCount > TOP_QUESTIONS ? `${nf.format(TOP_QUESTIONS)} מתוך ${nf.format(v.questionCount)} שאלות` : `${nf.format(v.questionCount)} שאלות`,
+                render: () => (
+                  <MoreTable
+                    headers={['השאלה האחרונה של הבוט', 'לידים', 'אחוז']}
+                    rows={v.questions.map((c) => ({ key: c.name, cells: [<span key="t" className="qtext">{c.name}</span>, nf.format(c.count), pctOf(c.share)] }))}
+                  />
+                ),
+              }] : []),
+              ...v.stops.map((c, k) => ({ id: `st-${k}`, title: c.name, count: `${nf.format(c.count)} לידים`, render: () => <StallList rows={c.rows} /> })),
+            ]}
+          />
+        </>
+      )}
+    </Fold>
+  );
+}
+
+/** רשימת לידים שנתקעו: תאריך כניסה, שם, תהליך, פירוט, הודעות וקישור לשיחה. השם והקישור רק אחרי כניסה */
+function StallList({ rows }: { rows: Indexed<StallRow>[] }) {
+  const { name } = useAuth();
+  const sorted = [...rows].sort((a, b) => (b.r.at ?? '').localeCompare(a.r.at ?? ''));
+  return (
+    <MoreTable
+      headers={['תאריך כניסה', 'שם', 'תהליך', 'פירוט', 'הודעות', '']}
+      rows={sorted.map(({ r, i }) => ({
+        key: `s-${i}`,
+        cells: [
+          r.at ? fmtDateTime(r.at) : '-', name('stall', i) || '-', r.process ?? '-', <span key="d" className="cliptext">{r.detail ?? '-'}</span>,
+          r.messages === null ? '-' : nf.format(r.messages), <ChatLink key="l" kind="stall" i={i} label="פתח שיחה ב-CloudChat" />,
+        ],
+      }))}
+    />
+  );
+}
+
 // ---------- פניות שירות ----------
 
 function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | null; scope: Scope; open: boolean; onToggle: () => void }) {
@@ -155,7 +226,8 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
             לפי נושא{' '}
             <Info>
               כל שורה בלשונית &quot;פניות&quot; היא פנייה, מ-2/10. אדם אחד יכול לפנות כמה פעמים ובכמה נושאים. נושא עם פחות מ-5 פניות בטווח שבחרת נכנס ל&quot;אחר&quot;.
-              האחוז מתוך הפניות המסווגות.
+              האחוז מתוך הפניות המסווגות. פנייה שבעמודה &quot;נספר&quot; שלה כתוב &quot;כפילות&quot; (אותו לקוח, אותו יום ואותו נושא) לא נספרת. לחיצה על נושא בפירוט
+              פותחת תת קטגוריות, נושאים והשאלות הנפוצות.
             </Info>
           </h3>
           <BarList
@@ -163,6 +235,7 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
             extra={(n) => { const c = v.cats.find((x) => x.name === n); return c ? `${nf.format(c.people)} אנשים · ${pctOf(c.share)}` : null; }}
           />
           {v.pending ? <p className="muted small">{nf.format(v.pending)} עוד בסיווג</p> : null}
+          {v.dupes ? <p className="muted small">פניות כפולות של אותו לקוח באותו יום ובאותו נושא נספרות פעם אחת · {nf.format(v.dupes)} כפולות לא נספרו</p> : null}
           {v.top3.length > 0 ? (
             <>
               <h3>לפי שבוע <Info>שלושת הנושאים הגדולים בטווח, כל אחד בגרף משלו ובאותו סולם, כדי שלא יהיו צבעים נוספים.</Info></h3>
@@ -181,11 +254,63 @@ function InquiryCard({ rows, scope, open, onToggle }: { rows: InquiryRow[] | nul
           ) : null}
           <ListBlock
             note={note}
-            items={v.cats.map((c) => ({ id: `inq-${c.name}`, title: c.name, count: `${nf.format(c.count)} פניות`, render: () => <TextList kind="inquiry" rows={c.rows} head="תוכן הפנייה" /> }))}
+            items={v.cats.map((c, k) => ({ id: `inq-${k}`, title: c.name, count: `${nf.format(c.count)} פניות`, render: () => <InquiryDrill rows={c.rows} /> }))}
           />
         </>
       )}
     </Fold>
+  );
+}
+
+/**
+ * הפירוט של קטגוריה (#38): תת קטגוריות, בכל אחת נושאים, ובכל נושא השאלות הנפוצות והפניות עצמן.
+ * בלי תת קטגוריה ונושא (נתונים ישנים): רק רשימת הפניות, כמו קודם
+ */
+function InquiryDrill({ rows }: { rows: Indexed<InquiryRow>[] }) {
+  const subs = useMemo(() => inquiryDrill(rows), [rows]);
+  if (!rows.some((x) => x.r.sub !== null || x.r.topic !== null)) return <TextList kind="inquiry" rows={rows} head="תוכן הפנייה" />;
+  return (
+    <div className="drill">
+      <BarList items={subs.map((x) => ({ name: x.name, count: x.count }))} color="--bot" max={20} extra={(n) => pctOf(subs.find((x) => x.name === n)?.share ?? null)} />
+      <ListBlock
+        title="לפי תת קטגוריה"
+        items={subs.map((x, k) => ({ id: `sub-${k}`, title: x.name, count: `${nf.format(x.count)} פניות`, render: () => <SubDrill sub={x} /> }))}
+      />
+    </div>
+  );
+}
+
+function SubDrill({ sub }: { sub: SubRow }) {
+  const note = useLinkNote();
+  return (
+    <div className="drill">
+      <BarList items={sub.topics.map((t) => ({ name: t.name, count: t.count }))} color="--bot" max={20} extra={(n) => pctOf(sub.topics.find((t) => t.name === n)?.share ?? null)} />
+      <ListBlock
+        title="לפי נושא"
+        note={note}
+        items={sub.topics.map((t, k) => ({ id: `topic-${k}`, title: t.name, count: `${nf.format(t.count)} פניות`, render: () => <TopicDrill topic={t} /> }))}
+      />
+    </div>
+  );
+}
+
+function TopicDrill({ topic }: { topic: TopicRow }) {
+  return (
+    <div className="drill">
+      {topic.questions.length ? (
+        <>
+          <h4 className="drillhead">
+            השאלות הנפוצות{topic.questionCount > TOP_INQUIRY_QUESTIONS ? ` (${nf.format(TOP_INQUIRY_QUESTIONS)} מתוך ${nf.format(topic.questionCount)})` : ''}
+          </h4>
+          <MoreTable
+            headers={['השאלה', 'פניות']}
+            rows={topic.questions.map((q) => ({ key: q.name, cells: [<span key="q" className="qtext">{q.name}</span>, nf.format(q.count)] }))}
+          />
+        </>
+      ) : null}
+      <h4 className="drillhead">הפניות</h4>
+      <TextList kind="inquiry" rows={topic.rows} head="תוכן הפנייה" />
+    </div>
   );
 }
 
