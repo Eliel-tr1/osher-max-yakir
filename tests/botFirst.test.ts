@@ -72,6 +72,18 @@ describe('what the bot does (section 2.2)', () => {
     expect(c.sales.paid + c.coupons.paid + c.links.paid).toBeLessThanOrEqual(botHero(ps, null).paid);
   });
 
+  it('counts the 24-hour reasons of 11/11/2026 in the sales and templates cards', () => {
+    const ps = [
+      buy({ reason: 'שיחה מכירתית עד 24 שעות לפני הרכישה', amount: 100 }),
+      buy({ reason: 'רכישה עד 24 שעות אחרי טמפלייט שיווקי', amount: 20 }),
+      buy({ reason: 'שיחה אחרי טמפלייט מבחן, רכישה עד 24 שעות', amount: 30 }),
+      buy({ bot: 'no', reason: 'שיחה מכירתית מוקדמת מ-24 שעות לפני הרכישה', amount: 1000 }),
+    ];
+    const c = capabilities({ leads: [], couponLeads: [], purchases: ps, people: [], mailings: null, range: all });
+    expect(c.sales.paid).toBe(100);
+    expect([c.links.count, c.links.paid]).toEqual([2, 50]);
+  });
+
   it('counts "מכירתי" as a sales conversation, by the first word (section 3.5)', () => {
     expect(normalizeMode('מכירתי')).toBe('מכירתית');
     expect(salesConversation(lead({ mode: 'מכירתית, ניסה לקנות' }))).toBe(true);

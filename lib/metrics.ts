@@ -1056,10 +1056,17 @@ export function popupCompare(people: PopupPerson[], range: Range): { popup: Comp
 // ---------- הבוט קודם (הנחיית המנהל 3/11/2026, #27) ----------
 
 /** הסיבות ב"סיבה" שכרטיסי היכולת סופרים. השוואה לפי תחילת הערך, לא התאמה מלאה */
-export const REASON_SALES = 'שיחה מכירתית לפני הרכישה';
+export const REASON_SALES = 'שיחה מכירתית עד 24 שעות לפני הרכישה';
+/** הנוסח של כללי 11/11/2026 (חלון של 24 שעות) והנוסח הקודם, כדי שגם נתונים ישנים ייספרו */
+export const REASON_SALES_ALL = [REASON_SALES, 'שיחה מכירתית לפני הרכישה'];
 /** שתי הסיבות: "קופון הבוט" ו"קופון הבוט (נוצר לאיש קשר אחר של הלקוח)" */
 export const REASON_COUPON = 'קופון הבוט';
-export const REASON_LINKS = ['הבוט שלח קופון או קישור רכישה', 'הבוט שלח קישור לאתר'];
+export const REASON_LINKS = [
+  // כללי 11/11/2026: טמפלייט שיווקי, או טמפלייט מבחן ואחריו שיחה, ורכישה עד 24 שעות
+  'רכישה עד 24 שעות אחרי טמפלייט שיווקי', 'שיחה אחרי טמפלייט מבחן',
+  // הנוסח הקודם
+  'הבוט שלח קופון או קישור רכישה', 'הבוט שלח קישור לאתר',
+];
 /** רכישה של נמען נספרת לדיוור עד 72 שעות אחרי השליחה */
 export const MAILING_WINDOW_HOURS = 72;
 
@@ -1180,7 +1187,7 @@ export function capabilities(input: {
   const { leads, couponLeads, purchases, people, mailings, range } = input;
   const bot = purchases.filter((p) => botSide(p) === 'yes');
   const sales = botLeads(leads).filter(salesConversation);
-  const salesBuys = bot.filter((p) => reasonStarts(p, [REASON_SALES]));
+  const salesBuys = bot.filter((p) => reasonStarts(p, REASON_SALES_ALL));
   const couponBuys = bot.filter((p) => reasonStarts(p, [REASON_COUPON]));
   const linkBuys = bot.filter((p) => reasonStarts(p, REASON_LINKS));
   const mail = mailingRecipients(mailings ?? []).filter((m) => inside(m.at, range));
